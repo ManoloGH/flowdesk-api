@@ -1,0 +1,168 @@
+{
+  "name": "FlowDesk: Propuesta Ganada → Provision Tenant",
+  "nodes": [
+    {
+      "id": "n1-webhook",
+      "name": "Webhook Airtable",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "path": "propuesta-ganada",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "webhookId": "propuesta-ganada"
+    },
+    {
+      "id": "n2-validate",
+      "name": "Validar y preparar datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "parameters": {
+        "jsCode": "// Recibe payload del script de Airtable (01-pago-cobrado)\n// o de la automation nativa de Airtable (cuando Propuesta.Estado = Ganada)\nconst body = $input.first().json.body ?? $input.first().json;\n\nconst company_name = body.company_name?.trim();\nconst owner_email  = body.owner_email?.trim();\nconst owner_name   = body.owner_name?.trim();\n\nif (!company_name || !owner_email || !owner_name) {\n  throw new Error(`Datos incompletos: company_name=${company_name}, owner_email=${owner_email}, owner_name=${owner_name}`);\n}\n\nreturn [{\n  json: {\n    airtable_record_id: body.airtable_record_id ?? '',\n    company_name,\n    owner_email,\n    owner_name,\n    external_ref:  body.external_ref ?? '',\n    tenant_type:   body.tenant_type ?? 'NETWORK',\n    plan:          body.plan ?? 'starter',\n  }\n}];"
+      }
+    },
+    {
+      "id": "n3-provision",
+      "name": "FlowDesk: Provisionar Tenant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWDESK_API_URL }}/webhooks/provision-tenant",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-flowdesk-secret",
+              "value": "={{ $env.FLOWDESK_WEBHOOK_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n4-check",
+      "name": "¿Provisioning exitoso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "check-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n5-airtable-update",
+      "name": "Airtable: Actualizar Propuesta con Tenant ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.airtable.com/v0/{{ $env.AIRTABLE_BASE_ID }}/{{ $env.AIRTABLE_PROPUESTAS_TABLE_ID }}/{{ $('Validar y preparar datos').item.json.airtable_record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.AIRTABLE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ fields: { 'Tenant ID FlowDesk': $json.tenant_id, 'URL Desk': $json.desk_url, 'Estado FlowDesk': 'Activo' } }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n6-respond-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 200],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, tenant_id: $('FlowDesk: Provisionar Tenant').item.json.tenant_id, message: 'Tenant provisionado y Airtable actualizado' }) }}"
+      }
+    },
+    {
+      "id": "n7-respond-error",
+      "name": "Responder Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 420],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 500,
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Provision fallida', detail: $json }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Airtable": {
+      "main": [[{ "node": "Validar y preparar datos", "type": "main", "index": 0 }]]
+    },
+    "Validar y preparar datos": {
+      "main": [[{ "node": "FlowDesk: Provisionar Tenant", "type": "main", "index": 0 }]]
+    },
+    "FlowDesk: Provisionar Tenant": {
+      "main": [[{ "node": "¿Provisioning exitoso?", "type": "main", "index": 0 }]]
+    },
+    "¿Provisioning exitoso?": {
+      "main": [
+        [{ "node": "Airtable: Actualizar Propuesta con Tenant ID", "type": "main", "index": 0 }],
+        [{ "node": "Responder Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Airtable: Actualizar Propuesta con Tenant ID": {
+      "main": [[{ "node": "Responder OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "flowdesk"
+  }
+}
