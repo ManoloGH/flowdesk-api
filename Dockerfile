@@ -7,10 +7,8 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 
 COPY . .
-RUN npm run build
-
-# Generar cliente de Prisma para producción
 RUN npx prisma generate
+RUN npm run build
 
 # ── Stage 2: Production ────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
