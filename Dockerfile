@@ -1,34 +1,18 @@
-# ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:22-alpine
 
 WORKDIR /app
 
+# Copiar manifiestos y schema primero (para cache de layers)
 COPY package*.json ./
-RUN npm ci --ignore-scripts
-
-COPY . .
-RUN npm run build
-
-# Generar cliente de Prisma para producción
-RUN npx prisma generate
-
-# ── Stage 2: Production ────────────────────────────────────────────────────────
-FROM node:22-alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-# Solo dependencias de producción
-COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts
-
-# Copiar build y prisma
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+
+# Instalar todas las dependencias (incluye dev para el build)
+RUN npm ci
+
+# Copiar el resto del código y compilar
+COPY . .
+RUN npm run build
 
 EXPOSE 3001
 
