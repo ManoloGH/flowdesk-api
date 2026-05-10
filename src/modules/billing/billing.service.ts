@@ -9,9 +9,12 @@ export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
   constructor(private prisma: PrismaService) {
-    this.stripe = new StripeLib(process.env.STRIPE_SECRET_KEY ?? '', {
-      apiVersion: '2024-12-18.acacia',
-    });
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (key) {
+      this.stripe = new StripeLib(key, { apiVersion: '2024-12-18.acacia' });
+    } else {
+      this.logger.warn('STRIPE_SECRET_KEY not set — billing disabled');
+    }
   }
 
   async getStatus(tenantId: string) {
