@@ -27,7 +27,7 @@ export class KsfService {
   async getStrategicPurpose(tenantId: string) {
     return this.prisma.strategicPurpose.findUnique({
       where: { tenant_id: tenantId },
-      include: { ksf_factors: { where: { level: KsfLevel.COMPANY, is_active: true } } },
+      include: { key_success_factors: { where: { level: KsfLevel.COMPANY, is_active: true } } },
     });
   }
 

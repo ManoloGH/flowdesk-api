@@ -20,16 +20,7 @@ export class BillingService {
   async getStatus(tenantId: string) {
     return this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: {
-        plan: true,
-        status: true,
-        stripe_customer_id: true,
-        stripe_subscription_id: true,
-        stripe_sub_status: true,
-        current_period_end: true,
-        billing_email: true,
-        name: true,
-      },
+      select: { plan: true, status: true, name: true },
     });
   }
 
@@ -38,31 +29,24 @@ export class BillingService {
     plan: 'starter' | 'professional' | 'enterprise',
     ownerEmail: string,
   ) {
+    if (!this.stripe) throw new Error('Stripe no está configurado');
     const priceId = this.planToPrice(plan);
     if (!priceId) throw new Error(`No hay price de Stripe configurado para el plan: ${plan}`);
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { stripe_customer_id: true, name: true },
+      select: { name: true },
     });
 
-    let customerId = tenant?.stripe_customer_id;
-    if (!customerId) {
-      const customer = await this.stripe.customers.create({
-        email: ownerEmail,
-        name: tenant?.name,
-        metadata: { tenant_id: tenantId },
-      });
-      customerId = customer.id;
-      await this.prisma.tenant.update({
-        where: { id: tenantId },
-        data: { stripe_customer_id: customerId, billing_email: ownerEmail },
-      });
-    }
+    const customer = await this.stripe.customers.create({
+      email: ownerEmail,
+      name: tenant?.name,
+      metadata: { tenant_id: tenantId },
+    });
 
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     const session = await this.stripe.checkout.sessions.create({
-      customer: customerId,
+      customer: customer.id,
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
@@ -74,23 +58,12 @@ export class BillingService {
     return { url: session.url };
   }
 
-  async createPortalSession(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { stripe_customer_id: true },
-    });
-    if (!tenant?.stripe_customer_id) throw new Error('No hay suscripción de Stripe para este tenant');
-
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-    const session = await this.stripe.billingPortal.sessions.create({
-      customer: tenant.stripe_customer_id,
-      return_url: `${frontendUrl}/settings/billing`,
-    });
-
-    return { url: session.url };
+  async createPortalSession(_tenantId: string) {
+    throw new Error('Stripe billing no está configurado');
   }
 
   async handleWebhook(rawBody: Buffer, signature: string) {
+    if (!this.stripe) throw new Error('Stripe no está configurado');
     const secret = process.env.STRIPE_WEBHOOK_SECRET ?? '';
     let event: any;
 
@@ -106,17 +79,10 @@ export class BillingService {
         const session: any = event.data.object;
         const tenantId: string | undefined = session.metadata?.tenant_id;
         const plan: string | undefined = session.metadata?.plan;
-        if (tenantId && plan && session.subscription) {
-          const sub: any = await this.stripe.subscriptions.retrieve(session.subscription as string);
+        if (tenantId && plan) {
           await this.prisma.tenant.update({
             where: { id: tenantId },
-            data: {
-              plan,
-              stripe_subscription_id: sub.id,
-              stripe_sub_status: sub.status,
-              current_period_end: new Date(sub.current_period_end * 1000),
-              status: 'active',
-            },
+            data: { plan, status: 'active' },
           });
         }
         break;
@@ -124,41 +90,26 @@ export class BillingService {
 
       case 'customer.subscription.updated': {
         const sub: any = event.data.object;
-        const tenantId: string | null =
-          sub.metadata?.tenant_id ||
-          (await this.findTenantByCustomer(sub.customer));
+        const tenantId: string | null = sub.metadata?.tenant_id ?? null;
         if (!tenantId) break;
         const priceId: string = sub.items.data[0]?.price.id;
         const plan = this.priceToPlan(priceId);
-        await this.prisma.tenant.update({
-          where: { id: tenantId },
-          data: {
-            ...(plan ? { plan } : {}),
-            stripe_sub_status: sub.status,
-            current_period_end: new Date(sub.current_period_end * 1000),
-          },
-        });
+        if (plan) {
+          await this.prisma.tenant.update({
+            where: { id: tenantId },
+            data: { plan },
+          });
+        }
         break;
       }
 
       case 'customer.subscription.deleted': {
         const sub: any = event.data.object;
-        const tenantId = await this.findTenantByCustomer(sub.customer);
+        const tenantId: string | null = sub.metadata?.tenant_id ?? null;
         if (!tenantId) break;
         await this.prisma.tenant.update({
           where: { id: tenantId },
-          data: { stripe_sub_status: 'canceled', status: 'suspended' },
-        });
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice: any = event.data.object;
-        const tenantId = await this.findTenantByCustomer(invoice.customer);
-        if (!tenantId) break;
-        await this.prisma.tenant.update({
-          where: { id: tenantId },
-          data: { stripe_sub_status: 'past_due' },
+          data: { status: 'suspended' },
         });
         break;
       }
@@ -170,17 +121,7 @@ export class BillingService {
   async adminOverview() {
     const tenants = await this.prisma.tenant.findMany({
       where: { tenant_type: { not: 'PLATFORM' } },
-      select: {
-        id: true,
-        name: true,
-        plan: true,
-        status: true,
-        stripe_sub_status: true,
-        current_period_end: true,
-        billing_email: true,
-        stripe_customer_id: true,
-        created_at: true,
-      },
+      select: { id: true, name: true, plan: true, status: true, created_at: true },
       orderBy: { created_at: 'desc' },
     });
 
@@ -190,17 +131,14 @@ export class BillingService {
       enterprise: 399,
     };
 
-    const active = tenants.filter(
-      t => t.stripe_sub_status === 'active' || t.stripe_sub_status === 'trialing',
-    );
+    const active = tenants.filter(t => t.status === 'active');
     const mrr = active.reduce((sum, t) => sum + (PLAN_PRICE[t.plan] ?? 0), 0);
-    const past_due = tenants.filter(t => t.stripe_sub_status === 'past_due').length;
     const plans_breakdown = { starter: 0, professional: 0, enterprise: 0 };
     for (const t of active) {
       if (t.plan in plans_breakdown) plans_breakdown[t.plan as keyof typeof plans_breakdown]++;
     }
 
-    return { mrr, total: tenants.length, active: active.length, past_due, plans_breakdown, tenants };
+    return { mrr, total: tenants.length, active: active.length, past_due: 0, plans_breakdown, tenants };
   }
 
   private planToPrice(plan: string): string | null {
@@ -218,13 +156,5 @@ export class BillingService {
     if (process.env.STRIPE_PRICE_PROFESSIONAL) map[process.env.STRIPE_PRICE_PROFESSIONAL] = 'professional';
     if (process.env.STRIPE_PRICE_ENTERPRISE) map[process.env.STRIPE_PRICE_ENTERPRISE] = 'enterprise';
     return map[priceId] ?? null;
-  }
-
-  private async findTenantByCustomer(customerId: string): Promise<string | null> {
-    const tenant = await this.prisma.tenant.findFirst({
-      where: { stripe_customer_id: customerId },
-      select: { id: true },
-    });
-    return tenant?.id ?? null;
   }
 }

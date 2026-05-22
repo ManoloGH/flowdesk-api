@@ -26,13 +26,13 @@ export class GoalAlignmentService {
     const slots = await this.prisma.teamSlot.findMany({
       where: { tenant_id: tenantId },
       include: {
-        ksf_factors: { where: { is_active: true } },
+        key_success_factors: { where: { is_active: true } },
         direct_reports: { select: { id: true } },
       },
     });
 
     for (const slot of slots) {
-      const ksfs = slot.ksf_factors;
+      const ksfs = slot.key_success_factors;
 
       // Verifica límites de cantidad
       if (ksfs.length < 3) {
