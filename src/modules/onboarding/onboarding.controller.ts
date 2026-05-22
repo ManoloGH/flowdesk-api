@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 import { OnboardingService } from './onboarding.service';
+import { OnboardingAgentService } from './onboarding-agent.service';
 import {
   OnboardingStartDto,
   OnboardingDepartmentsDto,
@@ -12,10 +14,24 @@ import { Public } from '../auth/decorators/public.decorator';
 import { TenantId } from '../../common/decorators/tenant.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 
+class OnboardingChatDto {
+  @ApiProperty({ required: false, description: 'ID de sesión para continuar una conversación existente' })
+  @IsOptional()
+  @IsString()
+  session_id?: string;
+
+  @ApiProperty({ description: 'Mensaje del usuario' })
+  @IsString()
+  message: string;
+}
+
 @ApiTags('Onboarding')
 @Controller('onboarding')
 export class OnboardingController {
-  constructor(private onboarding: OnboardingService) {}
+  constructor(
+    private onboarding: OnboardingService,
+    private onboardingAgent: OnboardingAgentService,
+  ) {}
 
   @Get('templates')
   @Public()
@@ -83,5 +99,20 @@ export class OnboardingController {
   @ApiOperation({ summary: '[Owner / Agente] PASO 6 — Activar empresa (¡lanzar FlowDesk!)' })
   launch(@TenantId() tenantId: string) {
     return this.onboarding.launch(tenantId);
+  }
+
+  @Get('chat')
+  @Public()
+  @ApiOperation({ summary: '[Público] Marco saluda y crea la sesión de onboarding' })
+  chatGreet() {
+    return this.onboardingAgent.greet();
+  }
+
+  @Post('chat')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Público] Marco guía el onboarding completo en modo conversacional' })
+  chat(@Body() dto: OnboardingChatDto) {
+    return this.onboardingAgent.chat(dto.session_id, dto.message);
   }
 }

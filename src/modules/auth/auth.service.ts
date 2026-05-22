@@ -107,7 +107,7 @@ export class AuthService {
       ipAddress,
     });
 
-    return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type);
+    return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined);
   }
 
   async refresh(token: string) {
@@ -123,7 +123,7 @@ export class AuthService {
 
       if (!slot) throw new UnauthorizedException('Sesión inválida');
 
-      return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type);
+      return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined);
     } catch {
       throw new UnauthorizedException('Refresh token inválido o expirado');
     }

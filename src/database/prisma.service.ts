@@ -41,7 +41,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   // ── Productividad personal ────────────────────────────────────────────────
   get task() { return this.prisma.task; }
-  get goal() { return this.prisma.goal; }
+  get goal() { return this.prisma.goal; } // quick goals del CEO Agent (diferente de KSFs AUP)
   get calendarEvent() { return this.prisma.calendarEvent; }
   get dashboardConfig() { return this.prisma.dashboardConfig; }
   get dashboardWidget() { return this.prisma.dashboardWidget; }
@@ -63,7 +63,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get courseProgress() { return this.prisma.courseProgress; }
   get certification() { return this.prisma.certification; }
 
-  // ── Reuniones grabadas ────────────────────────────────────────────────────
+  // ── War Room ──────────────────────────────────────────────────────────────
   get meeting() { return this.prisma.meeting; }
 
   // ── Reportes ──────────────────────────────────────────────────────────────
@@ -71,6 +71,35 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   // ── Campus ────────────────────────────────────────────────────────────────
   get mapProp() { return this.prisma.mapProp; }
+
+  // ── Spaces & Cameras ──────────────────────────────────────────────────────
+  get space() { return this.prisma.space; }
+  get camera() { return this.prisma.camera; }
+
+  // ── Culture Module ────────────────────────────────────────────────────────
+  get cultureConfig() { return this.prisma.cultureConfig; }
+  get culturePrinciple() { return this.prisma.culturePrinciple; }
+  get cultureRitual() { return this.prisma.cultureRitual; }
+
+  // ── Culture Engine ────────────────────────────────────────────────────────
+  get founderProfile() { return this.prisma.founderProfile; }
+  get communicationProfile() { return this.prisma.communicationProfile; }
+  get cultureBlueprint() { return this.prisma.cultureBlueprint; }
+  get operatingMap() { return this.prisma.operatingMap; }
+
+  // ── AUP Goals Module ──────────────────────────────────────────────────────
+  get strategicPurpose() { return this.prisma.strategicPurpose; }
+  get ksfRelationship() { return this.prisma.ksfRelationship; }
+  get successArea() { return this.prisma.successArea; }
+  get keySuccessFactor() { return this.prisma.keySuccessFactor; }
+  get ksfMilestone() { return this.prisma.ksfMilestone; }
+  get escalationConfig() { return this.prisma.escalationConfig; }
+  get goalMeasurement() { return this.prisma.goalMeasurement; }
+  get focusReport() { return this.prisma.focusReport; }
+  get feedbackReport() { return this.prisma.feedbackReport; }
+  get managementReport() { return this.prisma.managementReport; }
+  get recognitionEvent() { return this.prisma.recognitionEvent; }
+  get goalSetupStatus() { return this.prisma.goalSetupStatus; }
 
   // Transacción estándar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -11,8 +11,6 @@ class ProvisionTenantDto {
   tenant_type: 'NETWORK' | 'BRANCH';
   network_id?: string;
   external_ref?: string;
-  airtable_project_id?: string;
-  employee_desks_enabled?: boolean;
   plan?: string;
   owner_email: string;
   owner_name: string;

@@ -42,6 +42,26 @@ export class OnboardingStartDto {
   @IsOptional()
   @IsBoolean()
   campus_enabled?: boolean;
+
+  @ApiProperty({ required: false, example: 'Tu clínica, más organizada' })
+  @IsOptional()
+  @IsString()
+  tagline?: string;
+
+  @ApiProperty({ required: false, example: 'salud' })
+  @IsOptional()
+  @IsString()
+  industry?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  mission?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  vision?: string;
 }
 
 export class OnboardingDepartmentsDto {

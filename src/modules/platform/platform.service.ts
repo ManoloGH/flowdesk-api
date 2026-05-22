@@ -31,7 +31,7 @@ export class PlatformService {
       where: { tenant_type: { in: ['NETWORK', 'BRANCH'] } },
       select: {
         id: true, name: true, slug: true, tenant_type: true, status: true,
-        network_id: true, external_ref: true, employee_desks_enabled: true,
+        network_id: true, external_ref: true,
         plan: true, created_at: true,
         _count: { select: { team_slots: true } },
       },
@@ -50,8 +50,8 @@ export class PlatformService {
       where: { id: targetTenantId },
       include: {
         branches: { select: { id: true, name: true, status: true, external_ref: true } },
-        network: { select: { id: true, name: true } },
-        _count: { select: { team_slots: true, tasks: true, agent_conversations: true } },
+        network:  { select: { id: true, name: true } },
+        _count:   { select: { team_slots: true, tasks: true, agent_conversations: true } },
       },
     });
     if (!tenant) throw new NotFoundException('Tenant no encontrado');
@@ -68,8 +68,6 @@ export class PlatformService {
     tenant_type: 'NETWORK' | 'BRANCH';
     network_id?: string;
     external_ref?: string;
-    airtable_project_id?: string;
-    employee_desks_enabled?: boolean;
     plan?: string;
     owner_email: string;
     owner_name: string;
@@ -84,8 +82,6 @@ export class PlatformService {
           tenant_type: dto.tenant_type,
           network_id: dto.network_id ?? null,
           external_ref: dto.external_ref ?? null,
-          airtable_project_id: dto.airtable_project_id ?? null,
-          employee_desks_enabled: dto.employee_desks_enabled ?? true,
           plan: dto.plan ?? 'starter',
           status: 'active',
         },
@@ -117,7 +113,7 @@ export class PlatformService {
           owner_slot_id: ownerSlot.id,
           agent_config: {
             model: 'claude-sonnet-4-6',
-            instructions: `Soy Atlas, CEO Agent personal de ${dto.owner_name} en ${dto.name}. Coordino tareas, agentes y objetivos para maximizar la productividad del equipo.`,
+            instructions: `Soy CEO Digital, el agente ejecutivo de ${dto.owner_name} en ${dto.name}. Coordino tareas, agentes y objetivos para maximizar la productividad del equipo.`,
             tools: [],
           },
         },
@@ -144,8 +140,8 @@ export class PlatformService {
     const branches = await this.prisma.tenant.findMany({
       where,
       select: {
-        id: true, name: true, slug: true, status: true, external_ref: true,
-        employee_desks_enabled: true, created_at: true,
+        id: true, name: true, slug: true, status: true,
+        external_ref: true, plan: true, created_at: true,
         _count: { select: { team_slots: true } },
       },
       orderBy: { name: 'asc' },

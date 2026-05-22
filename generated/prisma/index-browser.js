@@ -126,6 +126,14 @@ exports.Prisma.TenantScalarFieldEnum = {
   slug: 'slug',
   logo_url: 'logo_url',
   primary_color: 'primary_color',
+  secondary_color: 'secondary_color',
+  tagline: 'tagline',
+  industry: 'industry',
+  mission: 'mission',
+  vision: 'vision',
+  website: 'website',
+  tenant_type: 'tenant_type',
+  network_id: 'network_id',
   plan: 'plan',
   tier: 'tier',
   max_humans: 'max_humans',
@@ -151,6 +159,7 @@ exports.Prisma.TeamSlotScalarFieldEnum = {
   id: 'id',
   tenant_id: 'tenant_id',
   department_id: 'department_id',
+  reports_to_id: 'reports_to_id',
   name: 'name',
   type: 'type',
   role: 'role',
@@ -161,8 +170,10 @@ exports.Prisma.TeamSlotScalarFieldEnum = {
   position_y: 'position_y',
   email: 'email',
   password_hash: 'password_hash',
+  access_token: 'access_token',
   schedule_id: 'schedule_id',
   desk_config: 'desk_config',
+  desk_access: 'desk_access',
   agent_config: 'agent_config',
   agent_scope: 'agent_scope',
   agent_role: 'agent_role',
@@ -222,6 +233,32 @@ exports.Prisma.RoomScalarFieldEnum = {
   color: 'color',
   is_active: 'is_active',
   created_at: 'created_at'
+};
+
+exports.Prisma.SpaceScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  name: 'name',
+  type: 'type',
+  floor: 'floor',
+  created_at: 'created_at',
+  updated_at: 'updated_at'
+};
+
+exports.Prisma.CameraScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  space_id: 'space_id',
+  name: 'name',
+  type: 'type',
+  status: 'status',
+  stream_url_enc: 'stream_url_enc',
+  snapshot_url_enc: 'snapshot_url_enc',
+  rtsp_url_enc: 'rtsp_url_enc',
+  cloud_embed_url: 'cloud_embed_url',
+  refresh_interval_secs: 'refresh_interval_secs',
+  created_at: 'created_at',
+  updated_at: 'updated_at'
 };
 
 exports.Prisma.FileScalarFieldEnum = {
@@ -601,6 +638,160 @@ exports.Prisma.ReportScalarFieldEnum = {
   created_at: 'created_at'
 };
 
+exports.Prisma.StrategicPurposeScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  vision: 'vision',
+  mission: 'mission',
+  values: 'values',
+  created_at: 'created_at',
+  updated_at: 'updated_at'
+};
+
+exports.Prisma.KsfRelationshipScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  team_slot_id: 'team_slot_id',
+  type: 'type',
+  customer_type: 'customer_type',
+  name: 'name',
+  internal_slot_id: 'internal_slot_id',
+  expectation: 'expectation',
+  discovery_method: 'discovery_method',
+  created_at: 'created_at'
+};
+
+exports.Prisma.SuccessAreaScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  team_slot_id: 'team_slot_id',
+  relationship_id: 'relationship_id',
+  name: 'name',
+  created_at: 'created_at'
+};
+
+exports.Prisma.KeySuccessFactorScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  name: 'name',
+  description: 'description',
+  unit: 'unit',
+  level: 'level',
+  purpose_id: 'purpose_id',
+  parent_ksf_id: 'parent_ksf_id',
+  dept_id: 'dept_id',
+  team_slot_id: 'team_slot_id',
+  origin: 'origin',
+  category: 'category',
+  success_area_id: 'success_area_id',
+  measurement_source: 'measurement_source',
+  measurement_config: 'measurement_config',
+  measurement_freq: 'measurement_freq',
+  minimum_level: 'minimum_level',
+  satisfactory_level: 'satisfactory_level',
+  outstanding_level: 'outstanding_level',
+  is_active: 'is_active',
+  created_at: 'created_at',
+  updated_at: 'updated_at'
+};
+
+exports.Prisma.KsfMilestoneScalarFieldEnum = {
+  id: 'id',
+  ksf_id: 'ksf_id',
+  name: 'name',
+  target_date: 'target_date',
+  completed_at: 'completed_at',
+  notes: 'notes',
+  created_at: 'created_at'
+};
+
+exports.Prisma.EscalationConfigScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  manager_slot_id: 'manager_slot_id',
+  threshold1_periods: 'threshold1_periods',
+  threshold1_levels: 'threshold1_levels',
+  threshold2_periods: 'threshold2_periods',
+  threshold2_levels: 'threshold2_levels',
+  rationale: 'rationale',
+  updated_at: 'updated_at'
+};
+
+exports.Prisma.GoalMeasurementScalarFieldEnum = {
+  id: 'id',
+  ksf_id: 'ksf_id',
+  team_slot_id: 'team_slot_id',
+  period: 'period',
+  actual_value: 'actual_value',
+  status: 'status',
+  trend: 'trend',
+  consecutive_above_satisfactory: 'consecutive_above_satisfactory',
+  consecutive_below_minimum: 'consecutive_below_minimum',
+  snapshot: 'snapshot',
+  created_at: 'created_at'
+};
+
+exports.Prisma.FocusReportScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  target_level: 'target_level',
+  target_id: 'target_id',
+  team_slot_id: 'team_slot_id',
+  period: 'period',
+  ksf_snapshots: 'ksf_snapshots',
+  generated_at: 'generated_at'
+};
+
+exports.Prisma.FeedbackReportScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  team_slot_id: 'team_slot_id',
+  week_start: 'week_start',
+  positive_results: 'positive_results',
+  negative_results: 'negative_results',
+  generated_at: 'generated_at'
+};
+
+exports.Prisma.ManagementReportScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  manager_slot_id: 'manager_slot_id',
+  week_start: 'week_start',
+  zone1_outstanding: 'zone1_outstanding',
+  zone2_positives: 'zone2_positives',
+  zone3_chronic: 'zone3_chronic',
+  zone4_negatives: 'zone4_negatives',
+  generated_at: 'generated_at'
+};
+
+exports.Prisma.RecognitionEventScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  recognizer_id: 'recognizer_id',
+  recognized_id: 'recognized_id',
+  ksf_id: 'ksf_id',
+  ksf_name: 'ksf_name',
+  consecutive_periods: 'consecutive_periods',
+  week_start: 'week_start',
+  message: 'message',
+  channel: 'channel',
+  sent_at: 'sent_at',
+  created_at: 'created_at'
+};
+
+exports.Prisma.GoalSetupStatusScalarFieldEnum = {
+  id: 'id',
+  tenant_id: 'tenant_id',
+  target_level: 'target_level',
+  target_id: 'target_id',
+  team_slot_id: 'team_slot_id',
+  is_complete: 'is_complete',
+  missing_categories: 'missing_categories',
+  unset_goal_levels: 'unset_goal_levels',
+  has_unique_ksfs: 'has_unique_ksfs',
+  last_checked_at: 'last_checked_at'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -650,6 +841,117 @@ exports.MessageType = exports.$Enums.MessageType = {
   AGENT_RESPONSE: 'AGENT_RESPONSE'
 };
 
+exports.SpaceType = exports.$Enums.SpaceType = {
+  OFFICE: 'OFFICE',
+  MEETING_ROOM: 'MEETING_ROOM',
+  RECEPTION: 'RECEPTION',
+  WAREHOUSE: 'WAREHOUSE',
+  EXTERIOR: 'EXTERIOR',
+  OTHER: 'OTHER'
+};
+
+exports.CameraType = exports.$Enums.CameraType = {
+  MJPEG: 'MJPEG',
+  SNAPSHOT: 'SNAPSHOT',
+  RTSP: 'RTSP',
+  CLOUD: 'CLOUD'
+};
+
+exports.CameraStatus = exports.$Enums.CameraStatus = {
+  ONLINE: 'ONLINE',
+  OFFLINE: 'OFFLINE',
+  ERROR: 'ERROR',
+  UNKNOWN: 'UNKNOWN'
+};
+
+exports.RelationshipType = exports.$Enums.RelationshipType = {
+  EMPLOYER: 'EMPLOYER',
+  BOSS: 'BOSS',
+  SUPPLIER: 'SUPPLIER',
+  CUSTOMER: 'CUSTOMER'
+};
+
+exports.CustomerType = exports.$Enums.CustomerType = {
+  INTERNAL: 'INTERNAL',
+  EXTERNAL: 'EXTERNAL'
+};
+
+exports.KsfLevel = exports.$Enums.KsfLevel = {
+  COMPANY: 'COMPANY',
+  DEPARTMENT: 'DEPARTMENT',
+  EMPLOYEE: 'EMPLOYEE'
+};
+
+exports.KsfOrigin = exports.$Enums.KsfOrigin = {
+  TOP_DOWN: 'TOP_DOWN',
+  BOTTOM_UP: 'BOTTOM_UP'
+};
+
+exports.KsfCategory = exports.$Enums.KsfCategory = {
+  OPERATIONAL: 'OPERATIONAL',
+  COORDINATION: 'COORDINATION',
+  STRATEGIC: 'STRATEGIC'
+};
+
+exports.MeasurementSource = exports.$Enums.MeasurementSource = {
+  TASKS_COMPLETION_RATE: 'TASKS_COMPLETION_RATE',
+  TASKS_ON_TIME_RATE: 'TASKS_ON_TIME_RATE',
+  TASKS_COMPLETED_COUNT: 'TASKS_COMPLETED_COUNT',
+  MESSAGE_RESPONSE_TIME_AVG: 'MESSAGE_RESPONSE_TIME_AVG',
+  MESSAGE_VOLUME: 'MESSAGE_VOLUME',
+  PRESENCE_HOURS: 'PRESENCE_HOURS',
+  PRESENCE_ATTENDANCE_RATE: 'PRESENCE_ATTENDANCE_RATE',
+  PRESENCE_PUNCTUALITY_RATE: 'PRESENCE_PUNCTUALITY_RATE',
+  AGENT_RESOLUTION_RATE: 'AGENT_RESOLUTION_RATE',
+  AGENT_CONVERSATION_COUNT: 'AGENT_CONVERSATION_COUNT',
+  CRM_CONTACTS_MANAGED: 'CRM_CONTACTS_MANAGED',
+  CRM_DEALS_CLOSED: 'CRM_DEALS_CLOSED',
+  CRM_DEALS_VALUE: 'CRM_DEALS_VALUE',
+  TEAM_TASK_COMPLETION_RATE: 'TEAM_TASK_COMPLETION_RATE',
+  TEAM_RESPONSE_TIME_AVG: 'TEAM_RESPONSE_TIME_AVG',
+  TEAM_PRESENCE_RATE: 'TEAM_PRESENCE_RATE',
+  DEPT_KPIS_IN_GREEN: 'DEPT_KPIS_IN_GREEN',
+  PIPELINE_CONVERSION_RATE: 'PIPELINE_CONVERSION_RATE',
+  PIPELINE_TOTAL_VALUE: 'PIPELINE_TOTAL_VALUE',
+  PROJECT_MILESTONE_PCT: 'PROJECT_MILESTONE_PCT',
+  REVENUE_GROWTH_RATE: 'REVENUE_GROWTH_RATE',
+  CUSTOMER_RETENTION_RATE: 'CUSTOMER_RETENTION_RATE',
+  COST_REDUCTION_PCT: 'COST_REDUCTION_PCT',
+  INVENTORY_TURNOVER: 'INVENTORY_TURNOVER',
+  UNIT_COST_VS_COMPETITOR: 'UNIT_COST_VS_COMPETITOR',
+  MANUAL: 'MANUAL'
+};
+
+exports.MeasurementFrequency = exports.$Enums.MeasurementFrequency = {
+  DAILY: 'DAILY',
+  WEEKLY: 'WEEKLY',
+  MONTHLY: 'MONTHLY',
+  QUARTERLY: 'QUARTERLY'
+};
+
+exports.KsfStatus = exports.$Enums.KsfStatus = {
+  NO_DATA: 'NO_DATA',
+  BELOW_MINIMUM: 'BELOW_MINIMUM',
+  AT_MINIMUM: 'AT_MINIMUM',
+  IN_PROGRESS: 'IN_PROGRESS',
+  SATISFACTORY: 'SATISFACTORY',
+  OUTSTANDING: 'OUTSTANDING'
+};
+
+exports.Trend = exports.$Enums.Trend = {
+  UP: 'UP',
+  DOWN: 'DOWN',
+  STABLE: 'STABLE'
+};
+
+exports.RecognitionChannel = exports.$Enums.RecognitionChannel = {
+  CAMPUS_PUBLIC_MESSAGE: 'CAMPUS_PUBLIC_MESSAGE',
+  CAMPUS_DIRECT_MESSAGE: 'CAMPUS_DIRECT_MESSAGE',
+  EMAIL: 'EMAIL',
+  TELEGRAM: 'TELEGRAM',
+  IN_PERSON: 'IN_PERSON'
+};
+
 exports.Prisma.ModelName = {
   Tenant: 'Tenant',
   Department: 'Department',
@@ -658,6 +960,8 @@ exports.Prisma.ModelName = {
   TimeLog: 'TimeLog',
   Message: 'Message',
   Room: 'Room',
+  Space: 'Space',
+  Camera: 'Camera',
   File: 'File',
   Notification: 'Notification',
   Integration: 'Integration',
@@ -684,7 +988,19 @@ exports.Prisma.ModelName = {
   CourseProgress: 'CourseProgress',
   Certification: 'Certification',
   MapProp: 'MapProp',
-  Report: 'Report'
+  Report: 'Report',
+  StrategicPurpose: 'StrategicPurpose',
+  KsfRelationship: 'KsfRelationship',
+  SuccessArea: 'SuccessArea',
+  KeySuccessFactor: 'KeySuccessFactor',
+  KsfMilestone: 'KsfMilestone',
+  EscalationConfig: 'EscalationConfig',
+  GoalMeasurement: 'GoalMeasurement',
+  FocusReport: 'FocusReport',
+  FeedbackReport: 'FeedbackReport',
+  ManagementReport: 'ManagementReport',
+  RecognitionEvent: 'RecognitionEvent',
+  GoalSetupStatus: 'GoalSetupStatus'
 };
 
 /**

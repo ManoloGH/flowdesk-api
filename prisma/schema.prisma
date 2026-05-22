@@ -7,96 +7,94 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────
-// TENANT HIERARCHY ENUMS
-// ─────────────────────────────────────────────
-enum TenantType {
-  PLATFORM  // MentorIA HQ — ve y gestiona toda la red
-  NETWORK   // Empresa cliente con sucursales — desk central del cliente
-  BRANCH    // Sucursal individual — desk operativo
-}
-
-enum DeskAccess {
-  FULL   // PersonalDeskScreen completo + CEO Agent
-  LIGHT  // Link/form de registro de trabajo (sin login complejo)
-  NONE   // Solo existe como registro interno
-}
-
-// ─────────────────────────────────────────────
 // TENANTS (empresas clientes)
 // ─────────────────────────────────────────────
 model Tenant {
-  id            String   @id @default(cuid())
-  name          String
-  slug          String   @unique
-  logo_url      String?
-  primary_color String   @default("#4F46E5")
-  plan          String   @default("starter")    // starter | professional | enterprise
-  tier          String   @default("company")    // employee | entrepreneur | company
-  max_humans    Int      @default(10)
-  max_agents    Int      @default(20)
-  status        String   @default("active")
-  campus_config Json?    // { map_source, map_template, map_json_url, tileset_url, background_color, grid_size }
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  id              String  @id @default(cuid())
+  name            String
+  slug            String  @unique
+  logo_url        String?
+  primary_color   String  @default("#4F46E5")
+  secondary_color String? // second brand color (gradient end)
+  tagline         String? // short brand phrase
+  industry        String? // sector / vertical
+  mission         String?
+  vision          String?
+  website         String?
+  tenant_type     String? @default("company") // company | PLATFORM | NETWORK | BRANCH
+  network_id      String? // parent tenant id for branch/franchise
+  external_ref    String? // ID de referencia externa (ej: ID proyecto Airtable)
 
-  // ── Jerarquía de red ──────────────────────────
-  tenant_type            TenantType @default(BRANCH)
-  network_id             String?    // BRANCH apunta al NETWORK que lo administra
-  network                Tenant?    @relation("NetworkBranches", fields: [network_id], references: [id])
-  branches               Tenant[]   @relation("NetworkBranches")
-  employee_desks_enabled Boolean    @default(true) // false = solo desk de sucursal, sin desks por empleado
+  plan       String @default("starter") // starter | professional | enterprise
+  tier       String @default("company") // employee | entrepreneur | company | platform
+  max_humans Int    @default(10)
+  max_agents Int    @default(20)
+  status     String @default("active")
 
-  // ── Stripe Billing ────────────────────────────
-  stripe_customer_id     String?
-  stripe_subscription_id String?
-  stripe_sub_status      String?   // active | trialing | past_due | canceled | unpaid
-  current_period_end     DateTime?
-  billing_email          String?
+  campus_config Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
 
-  // ── Integración con ERP externo ───────────────
-  airtable_project_id    String?    // ID del registro en Proyectos de Airtable
-  external_ref           String?    // código de proyecto: "2026-HOTEL-SEV"
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
-  meetings            Meeting[]
-  departments         Department[]
-  team_slots          TeamSlot[]
-  rooms               Room[]
-  schedules           Schedule[]
-  messages            Message[]
-  files               File[]
-  audit_logs          AuditLog[]
-  notifications       Notification[]
-  integrations        Integration[]
-  onboarding_progress OnboardingProgress?
-  contacts            Contact[]
-  pipelines           Pipeline[]
-  knowledge_bases     KnowledgeBase[]
-  courses             Course[]
-  reports             Report[]
-  calendar_events     CalendarEvent[]
-  tasks               Task[]
-  goals               Goal[]
-  agent_conversations AgentConversation[]
-  agent_memories      AgentMemory[]
-  dashboard_configs   DashboardConfig[]
-  map_props           MapProp[]
+  departments          Department[]
+  team_slots           TeamSlot[]
+  rooms                Room[]
+  spaces               Space[]
+  schedules            Schedule[]
+  messages             Message[]
+  files                File[]
+  audit_logs           AuditLog[]
+  notifications        Notification[]
+  integrations         Integration[]
+  onboarding_progress  OnboardingProgress?
+  contacts             Contact[]
+  pipelines            Pipeline[]
+  knowledge_bases      KnowledgeBase[]
+  courses              Course[]
+  reports              Report[]
+  calendar_events      CalendarEvent[]
+  tasks                Task[]
+  goals                Goal[]
+  agent_conversations  AgentConversation[]
+  agent_memories       AgentMemory[]
+  dashboard_configs    DashboardConfig[]
+  map_props            MapProp[]
+  strategic_purpose    StrategicPurpose?
+  key_success_factors  KeySuccessFactor[]
+  focus_reports        FocusReport[]
+  feedback_reports     FeedbackReport[]
+  management_reports   ManagementReport[]
+  recognition_events   RecognitionEvent[]
+  goal_setup_statuses  GoalSetupStatus[]
+  culture_config         CultureConfig?
+  culture_principles     CulturePrinciple[]
+  culture_rituals        CultureRitual[]
+  founder_profile        FounderProfile?
+  communication_profile  CommunicationProfile?
+  culture_blueprint      CultureBlueprint?
+  operating_map          OperatingMap?
+  meetings               Meeting[]
+
+  // Relaciones de red (PLATFORM → NETWORK → BRANCH)
+  network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
+  branches  Tenant[] @relation("NetworkBranches")
 }
 
 // ─────────────────────────────────────────────
 // DEPARTMENTS
 // ─────────────────────────────────────────────
 model Department {
-  id        String  @id @default(cuid())
-  tenant_id String
-  tenant    Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  name      String
-  dept_type String? // sales | support | hr | training | ops | delivery | admin | accounting | marketing | bi | management
-  color     String  @default("#6366F1")
-  icon      String?
-  parent_id String?
-  parent    Department?  @relation("DeptHierarchy", fields: [parent_id], references: [id])
-  children  Department[] @relation("DeptHierarchy")
-  created_at DateTime @default(now())
+  id         String       @id @default(cuid())
+  tenant_id  String
+  tenant     Tenant       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name       String
+  dept_type  String? // sales | support | hr | training | ops | delivery | admin | accounting | marketing | bi | management
+  color      String       @default("#6366F1")
+  icon       String?
+  parent_id  String?
+  parent     Department?  @relation("DeptHierarchy", fields: [parent_id], references: [id])
+  children   Department[] @relation("DeptHierarchy")
+  created_at DateTime     @default(now())
 
   team_slots        TeamSlot[]
   pipelines         Pipeline[]
@@ -104,6 +102,7 @@ model Department {
   integrations      Integration[]
   dashboard_configs DashboardConfig[]
   tasks             Task[]
+  key_success_factors KeySuccessFactor[]
 
   @@index([tenant_id])
 }
@@ -117,6 +116,9 @@ model TeamSlot {
   tenant        Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   department_id String?
   department    Department? @relation(fields: [department_id], references: [id])
+  reports_to_id String?
+  reports_to    TeamSlot?   @relation("TeamHierarchy", fields: [reports_to_id], references: [id])
+  direct_reports TeamSlot[] @relation("TeamHierarchy")
 
   name          String
   type          SlotType   @default(HUMAN)
@@ -128,21 +130,19 @@ model TeamSlot {
   position_y    Int?
 
   // Solo humanos
-  email         String?    @unique
+  email         String?   @unique
   password_hash String?
+  access_token  String?   @unique
   schedule_id   String?
-  schedule      Schedule?  @relation(fields: [schedule_id], references: [id])
-  desk_config   Json?      // widget layout / personal desk configuration
-
-  // Nivel de acceso al desk personal
-  desk_access   DeskAccess @default(FULL)
-  access_token  String?    @unique // token para acceso LIGHT (link sin login)
+  schedule      Schedule? @relation(fields: [schedule_id], references: [id])
+  desk_config   Json?   // widget layout / personal desk configuration
+  desk_access   String? @default("FULL") // FULL | LIGHT | NONE
 
   // Solo agentes IA
-  agent_config  Json?    // { model, instructions, tools[], limits, personality }
-  agent_scope   String?  // personal | department | company
-  agent_role    String?  // focus_agent | daily_assistant | department_agent | company_agent
-  owner_slot_id String?  // for personal agents: their human owner's slot id
+  agent_config  Json? // { model, instructions, tools[], limits, personality }
+  agent_scope   String? // personal | department | company
+  agent_role    String? // focus_agent | daily_assistant | department_agent | company_agent | ceo
+  owner_slot_id String? // for personal agents: their human owner's slot id
   owner_slot    TeamSlot?  @relation("AgentOwner", fields: [owner_slot_id], references: [id])
   owned_agents  TeamSlot[] @relation("AgentOwner")
 
@@ -150,25 +150,35 @@ model TeamSlot {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  sent_messages              Message[]           @relation("SentMessages")
-  received_messages          Message[]           @relation("ReceivedMessages")
-  time_logs                  TimeLog[]
-  audit_logs                 AuditLog[]
-  notifications              Notification[]
-  tasks_owned                Task[]              @relation("TaskOwner")
-  tasks_assigned             Task[]              @relation("TaskAssignee")
-  goals                      Goal[]
-  calendar_events            CalendarEvent[]
-  contacts_owned             Contact[]
-  deals_owned                Deal[]
-  agent_memories             AgentMemory[]       @relation("AgentMemories")
-  human_memories             AgentMemory[]       @relation("HumanMemories")
-  conversations_as_agent     AgentConversation[] @relation("AgentConversations")
-  conversations_as_human     AgentConversation[] @relation("HumanConversations")
-  dashboard_configs          DashboardConfig[]
-  course_progress            CourseProgress[]
-  certifications             Certification[]
-  personal_integrations      Integration[]
+  sent_messages          Message[]           @relation("SentMessages")
+  received_messages      Message[]           @relation("ReceivedMessages")
+  time_logs              TimeLog[]
+  audit_logs             AuditLog[]
+  notifications          Notification[]
+  tasks_owned            Task[]              @relation("TaskOwner")
+  tasks_assigned         Task[]              @relation("TaskAssignee")
+  goals                  Goal[]
+  calendar_events        CalendarEvent[]
+  contacts_owned         Contact[]
+  deals_owned            Deal[]
+  agent_memories         AgentMemory[]       @relation("AgentMemories")
+  human_memories         AgentMemory[]       @relation("HumanMemories")
+  conversations_as_agent AgentConversation[] @relation("AgentConversations")
+  conversations_as_human AgentConversation[] @relation("HumanConversations")
+  dashboard_configs      DashboardConfig[]
+  course_progress        CourseProgress[]
+  certifications         Certification[]
+  personal_integrations  Integration[]
+  ksf_relationships      KsfRelationship[]
+  key_success_factors    KeySuccessFactor[]
+  escalation_config      EscalationConfig?
+  goal_measurements      GoalMeasurement[]
+  focus_reports          FocusReport[]
+  feedback_reports       FeedbackReport[]
+  management_reports     ManagementReport[]
+  recognitions_given     RecognitionEvent[]  @relation("RecognizerSlot")
+  recognitions_received  RecognitionEvent[]  @relation("RecognizedSlot")
+  goal_setup_status      GoalSetupStatus?
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -199,7 +209,7 @@ model Schedule {
   check_in_time     String
   check_out_time    String
   tolerance_minutes Int      @default(15)
-  work_days         Json     // ["MON","TUE","WED","THU","FRI"]
+  work_days         Json // ["MON","TUE","WED","THU","FRI"]
   created_at        DateTime @default(now())
 
   team_slots TeamSlot[]
@@ -227,16 +237,16 @@ model TimeLog {
 }
 
 // ─────────────────────────────────────────────
-// MESSAGES (chat / correo interno / post-its)
+// MESSAGES
 // ─────────────────────────────────────────────
 model Message {
-  id          String      @id @default(cuid())
+  id          String    @id @default(cuid())
   tenant_id   String
-  tenant      Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   sender_id   String
-  sender      TeamSlot    @relation("SentMessages", fields: [sender_id], references: [id])
+  sender      TeamSlot  @relation("SentMessages", fields: [sender_id], references: [id])
   receiver_id String?
-  receiver    TeamSlot?   @relation("ReceivedMessages", fields: [receiver_id], references: [id])
+  receiver    TeamSlot? @relation("ReceivedMessages", fields: [receiver_id], references: [id])
   channel_id  String?
 
   content    String
@@ -260,28 +270,89 @@ enum MessageType {
 }
 
 // ─────────────────────────────────────────────
-// ROOMS (mapa de la oficina)
+// ROOMS (mapa de la oficina virtual)
 // ─────────────────────────────────────────────
 model Room {
-  id        String  @id @default(cuid())
-  tenant_id String
-  tenant    Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  name      String
-  room_type String  // desk | department | meeting | library | break | custom
-  x         Int
-  y         Int
-  width     Int
-  height    Int
-  floor     Int     @default(1)
-  color     String  @default("#E0E7FF")
-  is_active Boolean @default(true)
+  id         String   @id @default(cuid())
+  tenant_id  String
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name       String
+  room_type  String // desk | department | meeting | library | break | network | custom
+  x          Int
+  y          Int
+  width      Int
+  height     Int
+  floor      Int      @default(1)
+  color      String   @default("#E0E7FF")
+  is_active  Boolean  @default(true)
   created_at DateTime @default(now())
 
   @@index([tenant_id])
 }
 
 // ─────────────────────────────────────────────
-// FILES (archivos compartidos)
+// SPACES & CAMERAS (espacios físicos con CCTV)
+// ─────────────────────────────────────────────
+model Space {
+  id         String    @id @default(cuid())
+  tenant_id  String
+  tenant     Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name       String
+  type       SpaceType @default(OFFICE)
+  floor      Int       @default(1)
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  cameras Camera[]
+
+  @@index([tenant_id])
+}
+
+model Camera {
+  id                    String       @id @default(cuid())
+  tenant_id             String
+  space_id              String
+  space                 Space        @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  name                  String
+  type                  CameraType   @default(MJPEG)
+  status                CameraStatus @default(UNKNOWN)
+  stream_url_enc        String? // AES-256-GCM encrypted
+  snapshot_url_enc      String?
+  rtsp_url_enc          String?
+  cloud_embed_url       String?
+  refresh_interval_secs Int          @default(5)
+  created_at            DateTime     @default(now())
+  updated_at            DateTime     @updatedAt
+
+  @@index([tenant_id])
+  @@index([space_id])
+}
+
+enum SpaceType {
+  OFFICE
+  MEETING_ROOM
+  RECEPTION
+  WAREHOUSE
+  EXTERIOR
+  OTHER
+}
+
+enum CameraType {
+  MJPEG
+  SNAPSHOT
+  RTSP
+  CLOUD
+}
+
+enum CameraStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  UNKNOWN
+}
+
+// ─────────────────────────────────────────────
+// FILES
 // ─────────────────────────────────────────────
 model File {
   id          String   @id @default(cuid())
@@ -321,26 +392,26 @@ model Notification {
 }
 
 // ─────────────────────────────────────────────
-// INTEGRATIONS (M365, Google, GHL, etc.)
+// INTEGRATIONS
 // ─────────────────────────────────────────────
 model Integration {
-  id                String    @id @default(cuid())
+  id                String      @id @default(cuid())
   tenant_id         String
-  tenant            Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  owner_slot_id     String?   // null = tenant-level | set = personal integration
-  owner_slot        TeamSlot? @relation(fields: [owner_slot_id], references: [id])
+  tenant            Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  owner_slot_id     String?
+  owner_slot        TeamSlot?   @relation(fields: [owner_slot_id], references: [id])
   dept_id           String?
   dept              Department? @relation(fields: [dept_id], references: [id])
-  integration_scope String    @default("tenant") // tenant | department | personal
-  provider          String    // microsoft365 | google | gohighlevel | claude | n8n | whatsapp | stripe | chatwoot | meta
-  status            String    @default("disconnected")
+  integration_scope String      @default("tenant") // tenant | department | personal
+  provider          String // microsoft365 | google | gohighlevel | claude | n8n | whatsapp | stripe | chatwoot | meta
+  status            String      @default("disconnected")
   credentials_enc   String?
   scope             Json?
   config            Json?
   last_sync_at      DateTime?
   connected_at      DateTime?
-  created_at        DateTime  @default(now())
-  updated_at        DateTime  @updatedAt
+  created_at        DateTime    @default(now())
+  updated_at        DateTime    @updatedAt
 
   @@index([tenant_id, provider])
   @@index([owner_slot_id])
@@ -351,20 +422,19 @@ model Integration {
 // AUDIT LOGS
 // ─────────────────────────────────────────────
 model AuditLog {
-  id            String    @id @default(cuid())
-  tenant_id     String
-  tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  actor_id      String?
-  actor         TeamSlot? @relation(fields: [actor_id], references: [id])
+  id        String    @id @default(cuid())
+  tenant_id String
+  tenant    Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  actor_id  String?
+  actor     TeamSlot? @relation(fields: [actor_id], references: [id])
 
   action        String
   resource_type String
   resource_id   String?
-
-  payload     Json?
-  ip_address  String?
-  device_info String?
-  timestamp   DateTime @default(now())
+  payload       Json?
+  ip_address    String?
+  device_info   String?
+  timestamp     DateTime @default(now())
 
   @@index([tenant_id, timestamp])
   @@index([actor_id])
@@ -388,7 +458,7 @@ model OnboardingProgress {
 }
 
 // ─────────────────────────────────────────────
-// INDUSTRY TEMPLATES
+// INDUSTRY TEMPLATES (catálogo en BD)
 // ─────────────────────────────────────────────
 model IndustryTemplate {
   id           String   @id @default(cuid())
@@ -404,28 +474,25 @@ model IndustryTemplate {
 // SEGUNDO CEREBRO — MEMORIA DE AGENTES
 // ═════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// AGENT MEMORY (Segundo Cerebro)
-// ─────────────────────────────────────────────
 model AgentMemory {
   id            String    @id @default(cuid())
   tenant_id     String
   tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   agent_id      String
   agent         TeamSlot  @relation("AgentMemories", fields: [agent_id], references: [id], onDelete: Cascade)
-  owner_slot_id String?   // the human this memory is about (for personal agents)
+  owner_slot_id String?
   owner_slot    TeamSlot? @relation("HumanMemories", fields: [owner_slot_id], references: [id])
 
-  memory_type  String   // factual | episodic | preference | goal | relationship | skill | context
-  content      String
-  source_type  String?  // message | task | calendar | file | conversation | manual | email | agent_response
-  source_id    String?
-  importance   Int      @default(5) // 1-10
+  memory_type   String // factual | episodic | preference | goal | relationship | skill | context
+  content       String
+  source_type   String?
+  source_id     String?
+  importance    Int       @default(5)
   last_accessed DateTime?
-  access_count  Int      @default(0)
+  access_count  Int       @default(0)
   expires_at    DateTime?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
 
   @@index([agent_id])
   @@index([owner_slot_id])
@@ -433,9 +500,6 @@ model AgentMemory {
   @@index([importance])
 }
 
-// ─────────────────────────────────────────────
-// AGENT CONVERSATIONS
-// ─────────────────────────────────────────────
 model AgentConversation {
   id         String    @id @default(cuid())
   tenant_id  String
@@ -446,7 +510,7 @@ model AgentConversation {
   human      TeamSlot  @relation("HumanConversations", fields: [human_id], references: [id])
   session_id String    @default(cuid())
   context    Json?
-  summary    String?   // AI-generated summary persisted to memory
+  summary    String?
   started_at DateTime  @default(now())
   ended_at   DateTime?
   created_at DateTime  @default(now())
@@ -459,14 +523,11 @@ model AgentConversation {
   @@index([session_id])
 }
 
-// ─────────────────────────────────────────────
-// AGENT MESSAGES
-// ─────────────────────────────────────────────
 model AgentMessage {
   id              String            @id @default(cuid())
   conversation_id String
   conversation    AgentConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
-  role            String            // user | assistant | system | tool
+  role            String // user | assistant | system | tool
   content         String
   tool_calls      Json?
   tool_results    Json?
@@ -478,12 +539,9 @@ model AgentMessage {
 }
 
 // ═════════════════════════════════════════════
-// PRODUCTIVIDAD PERSONAL — ESCRITORIO DEL EMPLEADO
+// PRODUCTIVIDAD — TAREAS, METAS, CALENDARIO
 // ═════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// TASKS
-// ─────────────────────────────────────────────
 model Task {
   id            String      @id @default(cuid())
   tenant_id     String
@@ -497,13 +555,13 @@ model Task {
 
   title        String
   description  String?
-  status       String   @default("pending")  // pending | in_progress | completed | cancelled
-  priority     String   @default("medium")   // low | medium | high | urgent
+  status       String    @default("pending") // pending | in_progress | completed | cancelled
+  priority     String    @default("medium") // low | medium | high | urgent
   due_date     DateTime?
   completed_at DateTime?
   tags         Json?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   @@index([tenant_id, status])
   @@index([owner_id])
@@ -511,37 +569,30 @@ model Task {
   @@index([department_id])
 }
 
-// ─────────────────────────────────────────────
-// GOALS (objetivos / KPIs personales y de equipo)
-// ─────────────────────────────────────────────
 model Goal {
-  id          String   @id @default(cuid())
-  tenant_id   String
-  tenant      Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  slot_id     String
-  slot        TeamSlot @relation(fields: [slot_id], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  tenant_id String
+  tenant    Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  slot_id   String
+  slot      TeamSlot @relation(fields: [slot_id], references: [id], onDelete: Cascade)
 
   title         String
   description   String?
-  goal_type     String  @default("personal") // personal | department | company
+  goal_type     String    @default("personal") // personal | department | company
   target_value  Float?
   current_value Float?
-  unit          String? // %, calls, MXN, tasks, etc.
-  period        String  @default("monthly")  // daily | weekly | monthly | quarterly | yearly
+  unit          String?
+  period        String    @default("monthly") // daily | weekly | monthly | quarterly | yearly
   start_date    DateTime?
   end_date      DateTime?
-  status        String  @default("active")   // active | completed | paused | cancelled
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  status        String    @default("active") // active | completed | paused | cancelled
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
 
   @@index([slot_id])
   @@index([tenant_id, status])
-  @@index([tenant_id, goal_type])
 }
 
-// ─────────────────────────────────────────────
-// CALENDAR EVENTS
-// ─────────────────────────────────────────────
 model CalendarEvent {
   id           String   @id @default(cuid())
   tenant_id    String
@@ -555,10 +606,10 @@ model CalendarEvent {
   end_at      DateTime
   all_day     Boolean  @default(false)
   location    String?
-  attendees   Json?    // [{ slot_id, status: accepted|declined|pending }]
-  external_id String?  // Google / M365 event id
-  provider    String?  // google | microsoft | internal
-  recurrence  Json?    // RRULE config
+  attendees   Json?
+  external_id String?
+  provider    String? // google | microsoft | internal
+  recurrence  Json?
   status      String   @default("confirmed") // confirmed | tentative | cancelled
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
@@ -569,7 +620,7 @@ model CalendarEvent {
 }
 
 // ─────────────────────────────────────────────
-// DASHBOARD CONFIGS
+// DASHBOARD
 // ─────────────────────────────────────────────
 model DashboardConfig {
   id        String      @id @default(cuid())
@@ -581,7 +632,7 @@ model DashboardConfig {
   dept      Department? @relation(fields: [dept_id], references: [id])
 
   name       String
-  layout     Json?    // widget grid layout (react-grid-layout config)
+  layout     Json?
   is_default Boolean  @default(false)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -593,19 +644,16 @@ model DashboardConfig {
   @@index([tenant_id])
 }
 
-// ─────────────────────────────────────────────
-// DASHBOARD WIDGETS
-// ─────────────────────────────────────────────
 model DashboardWidget {
   id           String          @id @default(cuid())
   dashboard_id String
   dashboard    DashboardConfig @relation(fields: [dashboard_id], references: [id], onDelete: Cascade)
   tenant_id    String
 
-  widget_type String   // metric | chart | list | clock | calendar | tasks | pipeline | map | contacts | kpi
+  widget_type String // metric | chart | list | clock | calendar | tasks | pipeline | map | contacts | kpi | agent_chat | team_status | goals
   title       String
-  config      Json     // data source, filters, display options
-  position    Json     // { x, y, w, h }
+  config      Json // data source, filters, display options
+  position    Json // { x, y, w, h }
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -613,12 +661,9 @@ model DashboardWidget {
 }
 
 // ═════════════════════════════════════════════
-// CRM — CONTACTOS Y PIPELINES
+// CRM
 // ═════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// CONTACTS (Registro Unificado de Contactos)
-// ─────────────────────────────────────────────
 model Contact {
   id            String    @id @default(cuid())
   tenant_id     String
@@ -626,21 +671,20 @@ model Contact {
   owner_slot_id String?
   owner_slot    TeamSlot? @relation(fields: [owner_slot_id], references: [id])
 
-  first_name String
-  last_name  String?
-  email      String?
-  phone      String?
-  company    String?
-  position   String?
-  status     String  @default("lead") // lead | prospect | customer | churned | partner
-  tags       Json?
+  first_name    String
+  last_name     String?
+  email         String?
+  phone         String?
+  company       String?
+  position      String?
+  status        String  @default("lead") // lead | prospect | customer | churned | partner
+  tags          Json?
   custom_fields Json?
 
-  // IDs externos para sincronización con integraciones
   ghl_id             String?
   chatwoot_id        String?
   stripe_customer_id String?
-  meta_psid          String? // Meta Platform-Scoped ID (WhatsApp / Instagram)
+  meta_psid          String?
 
   last_contact_at DateTime?
   created_at      DateTime  @default(now())
@@ -656,17 +700,14 @@ model Contact {
   @@index([tenant_id, status])
 }
 
-// ─────────────────────────────────────────────
-// CONTACT ACTIVITIES (feed de actividad)
-// ─────────────────────────────────────────────
 model ContactActivity {
   id         String  @id @default(cuid())
   contact_id String
   contact    Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
   tenant_id  String
-  actor_id   String? // slot_id quien realizó la acción
+  actor_id   String?
 
-  activity_type String   // note | call | email | message | meeting | task | deal_update | payment
+  activity_type String // note | call | email | message | meeting | task | deal_update | payment
   content       String
   metadata      Json?
   created_at    DateTime @default(now())
@@ -675,9 +716,6 @@ model ContactActivity {
   @@index([tenant_id, activity_type])
 }
 
-// ─────────────────────────────────────────────
-// PIPELINES
-// ─────────────────────────────────────────────
 model Pipeline {
   id            String      @id @default(cuid())
   tenant_id     String
@@ -687,8 +725,8 @@ model Pipeline {
 
   name          String
   description   String?
-  pipeline_type String  @default("sales") // sales | support | hr | custom
-  is_active     Boolean @default(true)
+  pipeline_type String   @default("sales") // sales | support | hr | custom
+  is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 
@@ -698,9 +736,6 @@ model Pipeline {
   @@index([tenant_id])
 }
 
-// ─────────────────────────────────────────────
-// PIPELINE STAGES
-// ─────────────────────────────────────────────
 model PipelineStage {
   id          String   @id @default(cuid())
   pipeline_id String
@@ -708,9 +743,9 @@ model PipelineStage {
   tenant_id   String
 
   name        String
-  color       String  @default("#6366F1")
+  color       String   @default("#6366F1")
   order_index Int
-  automations Json?   // { on_enter: [...actions], on_exit: [...actions] }
+  automations Json?
   created_at  DateTime @default(now())
 
   deals Deal[]
@@ -718,30 +753,27 @@ model PipelineStage {
   @@index([pipeline_id])
 }
 
-// ─────────────────────────────────────────────
-// DEALS
-// ─────────────────────────────────────────────
 model Deal {
-  id         String        @id @default(cuid())
-  tenant_id  String
+  id          String        @id @default(cuid())
+  tenant_id   String
   pipeline_id String
-  pipeline   Pipeline      @relation(fields: [pipeline_id], references: [id])
-  stage_id   String
-  stage      PipelineStage @relation(fields: [stage_id], references: [id])
-  contact_id String
-  contact    Contact       @relation(fields: [contact_id], references: [id])
-  owner_id   String
-  owner      TeamSlot      @relation(fields: [owner_id], references: [id])
+  pipeline    Pipeline      @relation(fields: [pipeline_id], references: [id])
+  stage_id    String
+  stage       PipelineStage @relation(fields: [stage_id], references: [id])
+  contact_id  String
+  contact     Contact       @relation(fields: [contact_id], references: [id])
+  owner_id    String
+  owner       TeamSlot      @relation(fields: [owner_id], references: [id])
 
   title          String
   value          Float?
-  currency       String  @default("MXN")
-  status         String  @default("open")  // open | won | lost
+  currency       String    @default("MXN")
+  status         String    @default("open") // open | won | lost
   expected_close DateTime?
   closed_at      DateTime?
   notes          String?
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
 
   @@index([tenant_id, status])
   @@index([stage_id])
@@ -750,25 +782,22 @@ model Deal {
 }
 
 // ═════════════════════════════════════════════
-// BASE DE CONOCIMIENTO (RAG)
+// BASE DE CONOCIMIENTO
 // ═════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// KNOWLEDGE BASE
-// ─────────────────────────────────────────────
 model KnowledgeBase {
   id            String      @id @default(cuid())
   tenant_id     String
   tenant        Tenant      @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   dept_id       String?
   dept          Department? @relation(fields: [dept_id], references: [id])
-  owner_slot_id String?     // null = company | set = agent-specific KB
+  owner_slot_id String?
 
-  name          String
-  description   String?
-  kb_scope      String  @default("company") // personal | department | company
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  name        String
+  description String?
+  kb_scope    String   @default("company") // personal | department | company
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   chunks KnowledgeChunk[]
 
@@ -776,9 +805,6 @@ model KnowledgeBase {
   @@index([dept_id])
 }
 
-// ─────────────────────────────────────────────
-// KNOWLEDGE CHUNKS (fragmentos indexados para RAG)
-// ─────────────────────────────────────────────
 model KnowledgeChunk {
   id        String        @id @default(cuid())
   kb_id     String
@@ -787,7 +813,7 @@ model KnowledgeChunk {
   file_id   String?
 
   title      String?
-  content    String  // texto fragmentado para embedding
+  content    String
   source_url String?
   metadata   Json?
   created_at DateTime @default(now())
@@ -797,22 +823,19 @@ model KnowledgeChunk {
 }
 
 // ═════════════════════════════════════════════
-// CAPACITACIÓN (Training)
+// CAPACITACIÓN
 // ═════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// COURSES
-// ─────────────────────────────────────────────
 model Course {
   id         String @id @default(cuid())
   tenant_id  String
   tenant     Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  created_by String // slot_id
+  created_by String
 
   title       String
   description String?
   cover_url   String?
-  status      String  @default("draft") // draft | published | archived
+  status      String   @default("draft") // draft | published | archived
   tags        Json?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
@@ -825,9 +848,6 @@ model Course {
   @@index([tenant_id, status])
 }
 
-// ─────────────────────────────────────────────
-// COURSE MODULES
-// ─────────────────────────────────────────────
 model CourseModule {
   id        String @id @default(cuid())
   course_id String
@@ -835,19 +855,16 @@ model CourseModule {
   tenant_id String
 
   title            String
-  content          String  // markdown / rich text
+  content          String
   order_index      Int
   duration_minutes Int?
-  resources        Json?   // [{ type: link|file, url, label }]
-  quiz             Json?   // { questions: [{ q, options[], correct_index }] }
+  resources        Json?
+  quiz             Json?
   created_at       DateTime @default(now())
 
   @@index([course_id])
 }
 
-// ─────────────────────────────────────────────
-// COURSE PROGRESS
-// ─────────────────────────────────────────────
 model CourseProgress {
   id        String   @id @default(cuid())
   course_id String
@@ -856,20 +873,17 @@ model CourseProgress {
   slot      TeamSlot @relation(fields: [slot_id], references: [id], onDelete: Cascade)
   tenant_id String
 
-  modules_completed Json     @default("[]") // [module_id, ...]
+  modules_completed Json      @default("[]")
   score             Float?
-  started_at        DateTime @default(now())
+  started_at        DateTime  @default(now())
   completed_at      DateTime?
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
 
   @@unique([course_id, slot_id])
   @@index([slot_id])
 }
 
-// ─────────────────────────────────────────────
-// CERTIFICATIONS
-// ─────────────────────────────────────────────
 model Certification {
   id        String   @id @default(cuid())
   slot_id   String
@@ -878,36 +892,37 @@ model Certification {
   course_id String
   course    Course   @relation(fields: [course_id], references: [id])
 
-  issued_at       DateTime @default(now())
+  issued_at       DateTime  @default(now())
   expires_at      DateTime?
   certificate_url String?
-  created_at      DateTime @default(now())
+  created_at      DateTime  @default(now())
 
   @@index([slot_id])
   @@index([course_id])
 }
 
 // ═════════════════════════════════════════════
-// CAMPUS — MAPA Y ACCESORIOS INTERACTIVOS
+// CAMPUS — MAPA INTERACTIVO
 // ═════════════════════════════════════════════
-model MapProp {
-  id            String  @id @default(cuid())
-  tenant_id     String
-  tenant        Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  room_id       String? // sala donde vive (null = mapa global)
 
-  name          String  // "Estante de Archivos"
-  prop_type     String  // desk | door | shelf | board | coffee | plant | locker | screen | custom
+model MapProp {
+  id        String  @id @default(cuid())
+  tenant_id String
+  tenant    Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  room_id   String?
+
+  name          String
+  prop_type     String // desk | door | shelf | board | coffee | plant | locker | screen | custom
   x             Int
   y             Int
-  width         Int     @default(32)
-  height        Int     @default(32)
-  icon_url      String? // imagen PNG subida por el cliente
-  icon_default  String? // nombre del ícono prediseñado de FlowDesk
-  action_type   String  // navigate_to | open_tool | start_meeting | open_url | trigger_event
-  action_target String  // room_id | tool_name | url | event_name
-  tooltip       String? // texto al hacer hover
-  is_active     Boolean @default(true)
+  width         Int      @default(32)
+  height        Int      @default(32)
+  icon_url      String?
+  icon_default  String?
+  action_type   String // navigate_to | open_tool | start_meeting | open_url | trigger_event
+  action_target String
+  tooltip       String?
+  is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 
@@ -916,33 +931,9 @@ model MapProp {
 }
 
 // ═════════════════════════════════════════════
-// MEETINGS (grabaciones de reuniones externas)
-// ═════════════════════════════════════════════
-model Meeting {
-  id           String    @id @default(cuid())
-  tenant_id    String
-  tenant       Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  created_by   String    // slot_id
-  title        String?
-  platform     String?   // zoom | meet | teams | otro
-  started_at   DateTime
-  ended_at     DateTime?
-  duration_secs Int?
-  transcript   Json      // TranscriptSegment[] { speaker, text, start, end }
-  speaker_map  Json?     // { "0": "Carolina", "1": "Cliente X" }
-  summary      String?
-  action_items Json?     // string[]
-  doc_url      String?   // Google Doc / Drive link generado automáticamente
-  created_at   DateTime  @default(now())
-
-  @@index([tenant_id])
-  @@index([tenant_id, created_at])
-  @@map("meetings")
-}
-
-// ═════════════════════════════════════════════
 // REPORTES
 // ═════════════════════════════════════════════
+
 model Report {
   id        String @id @default(cuid())
   tenant_id String
@@ -950,12 +941,560 @@ model Report {
 
   name         String
   description  String?
-  report_type  String  // attendance | productivity | sales | support | finance | custom
-  config       Json    // filters, columns, date_range, aggregations
+  report_type  String // attendance | productivity | sales | support | finance | custom
+  config       Json
   generated_at DateTime?
-  generated_by String? // slot_id
+  generated_by String?
   result_url   String?
-  created_at   DateTime @default(now())
+  created_at   DateTime  @default(now())
 
   @@index([tenant_id, report_type])
+}
+
+// ═════════════════════════════════════════════
+// AUP — ADMINISTRACIÓN EN UNA PÁGINA
+// ═════════════════════════════════════════════
+
+model StrategicPurpose {
+  id        String  @id @default(cuid())
+  tenant_id String  @unique
+  tenant    Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  vision    String
+  mission   String?
+  values    String[]
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  key_success_factors KeySuccessFactor[]
+}
+
+model KsfRelationship {
+  id               String           @id @default(cuid())
+  tenant_id        String
+  team_slot_id     String
+  team_slot        TeamSlot         @relation(fields: [team_slot_id], references: [id], onDelete: Cascade)
+  type             RelationshipType
+  customer_type    CustomerType?
+  name             String
+  internal_slot_id String?
+  expectation      String
+  discovery_method String?
+  created_at       DateTime         @default(now())
+
+  success_areas SuccessArea[]
+
+  @@index([team_slot_id])
+  @@index([tenant_id])
+}
+
+model SuccessArea {
+  id              String          @id @default(cuid())
+  tenant_id       String
+  team_slot_id    String
+  relationship_id String
+  relationship    KsfRelationship @relation(fields: [relationship_id], references: [id], onDelete: Cascade)
+  name            String
+  created_at      DateTime        @default(now())
+
+  key_success_factors KeySuccessFactor[]
+
+  @@index([team_slot_id])
+  @@index([relationship_id])
+}
+
+model KeySuccessFactor {
+  id                 String               @id @default(cuid())
+  tenant_id          String
+  tenant             Tenant               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  unit               String
+  level              KsfLevel
+  purpose_id         String?
+  purpose            StrategicPurpose?    @relation(fields: [purpose_id], references: [id])
+  parent_ksf_id      String?
+  parent_ksf         KeySuccessFactor?    @relation("KsfHierarchy", fields: [parent_ksf_id], references: [id])
+  child_ksfs         KeySuccessFactor[]   @relation("KsfHierarchy")
+  dept_id            String?
+  dept               Department?          @relation(fields: [dept_id], references: [id])
+  team_slot_id       String?
+  team_slot          TeamSlot?            @relation(fields: [team_slot_id], references: [id])
+  origin             KsfOrigin
+  category           KsfCategory
+  success_area_id    String?
+  success_area       SuccessArea?         @relation(fields: [success_area_id], references: [id])
+  measurement_source MeasurementSource
+  measurement_config Json
+  measurement_freq   MeasurementFrequency
+  minimum_level      Float
+  satisfactory_level Float
+  outstanding_level  Float
+  is_active          Boolean              @default(true)
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+
+  milestones    KsfMilestone[]
+  measurements  GoalMeasurement[]
+
+  @@index([tenant_id, level])
+  @@index([team_slot_id])
+  @@index([dept_id])
+  @@index([parent_ksf_id])
+}
+
+model KsfMilestone {
+  id           String           @id @default(cuid())
+  ksf_id       String
+  ksf          KeySuccessFactor @relation(fields: [ksf_id], references: [id], onDelete: Cascade)
+  name         String
+  target_date  DateTime
+  completed_at DateTime?
+  notes        String?
+  created_at   DateTime         @default(now())
+
+  @@index([ksf_id])
+}
+
+model EscalationConfig {
+  id                 String   @id @default(cuid())
+  tenant_id          String
+  manager_slot_id    String   @unique
+  manager_slot       TeamSlot @relation(fields: [manager_slot_id], references: [id], onDelete: Cascade)
+  threshold1_periods Int      @default(4)
+  threshold1_levels  Int      @default(2)
+  threshold2_periods Int      @default(8)
+  threshold2_levels  Int      @default(3)
+  rationale          String?
+  updated_at         DateTime @updatedAt
+
+  @@index([tenant_id])
+}
+
+model GoalMeasurement {
+  id                             String           @id @default(cuid())
+  ksf_id                         String
+  ksf                            KeySuccessFactor @relation(fields: [ksf_id], references: [id], onDelete: Cascade)
+  team_slot_id                   String?
+  team_slot                      TeamSlot?        @relation(fields: [team_slot_id], references: [id])
+  period                         DateTime
+  actual_value                   Float
+  status                         KsfStatus
+  trend                          Trend
+  consecutive_above_satisfactory Int              @default(0)
+  consecutive_below_minimum      Int              @default(0)
+  snapshot                       Json?
+  created_at                     DateTime         @default(now())
+
+  @@unique([ksf_id, period])
+  @@index([ksf_id])
+  @@index([team_slot_id])
+  @@index([ksf_id, period])
+}
+
+model FocusReport {
+  id           String   @id @default(cuid())
+  tenant_id    String
+  tenant       Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  target_level KsfLevel
+  target_id    String
+  team_slot_id String?
+  team_slot    TeamSlot? @relation(fields: [team_slot_id], references: [id])
+  period       DateTime
+  ksf_snapshots Json
+  generated_at DateTime @default(now())
+
+  @@unique([target_id, period])
+  @@index([tenant_id, target_level])
+  @@index([team_slot_id])
+}
+
+model FeedbackReport {
+  id               String   @id @default(cuid())
+  tenant_id        String
+  tenant           Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  team_slot_id     String
+  team_slot        TeamSlot @relation(fields: [team_slot_id], references: [id], onDelete: Cascade)
+  week_start       DateTime
+  positive_results Json
+  negative_results Json
+  generated_at     DateTime @default(now())
+
+  @@unique([team_slot_id, week_start])
+  @@index([tenant_id])
+  @@index([team_slot_id])
+}
+
+model ManagementReport {
+  id                String   @id @default(cuid())
+  tenant_id         String
+  tenant            Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  manager_slot_id   String
+  manager_slot      TeamSlot @relation(fields: [manager_slot_id], references: [id], onDelete: Cascade)
+  week_start        DateTime
+  zone1_outstanding Json
+  zone2_positives   Json
+  zone3_chronic     Json
+  zone4_negatives   Json
+  generated_at      DateTime @default(now())
+
+  @@unique([manager_slot_id, week_start])
+  @@index([tenant_id])
+  @@index([manager_slot_id])
+}
+
+model RecognitionEvent {
+  id                  String             @id @default(cuid())
+  tenant_id           String
+  tenant              Tenant             @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  recognizer_id       String
+  recognizer          TeamSlot           @relation("RecognizerSlot", fields: [recognizer_id], references: [id])
+  recognized_id       String
+  recognized          TeamSlot           @relation("RecognizedSlot", fields: [recognized_id], references: [id])
+  ksf_id              String
+  ksf_name            String
+  consecutive_periods Int
+  week_start          DateTime
+  message             String?
+  channel             RecognitionChannel
+  sent_at             DateTime?
+  created_at          DateTime           @default(now())
+
+  @@index([tenant_id])
+  @@index([recognizer_id])
+  @@index([recognized_id])
+}
+
+model GoalSetupStatus {
+  id               String    @id @default(cuid())
+  tenant_id        String
+  tenant           Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  target_level     KsfLevel
+  target_id        String    @unique
+  team_slot_id     String?   @unique
+  team_slot        TeamSlot? @relation(fields: [team_slot_id], references: [id])
+  is_complete      Boolean   @default(false)
+  missing_categories  String[]
+  unset_goal_levels   String[]
+  has_unique_ksfs     Boolean  @default(false)
+  last_checked_at     DateTime
+
+  @@index([tenant_id, target_level])
+}
+
+// ── AUP Enums ──────────────────────────────────────────────────────────────
+
+enum KsfLevel {
+  COMPANY
+  DEPARTMENT
+  EMPLOYEE
+}
+
+enum KsfCategory {
+  OPERATIONAL
+  COORDINATION
+  STRATEGIC
+}
+
+enum KsfStatus {
+  NO_DATA
+  BELOW_MINIMUM
+  AT_MINIMUM
+  IN_PROGRESS
+  SATISFACTORY
+  OUTSTANDING
+}
+
+enum KsfOrigin {
+  TOP_DOWN
+  BOTTOM_UP
+}
+
+enum MeasurementFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+}
+
+enum MeasurementSource {
+  TASKS_COMPLETION_RATE
+  TASKS_ON_TIME_RATE
+  TASKS_COMPLETED_COUNT
+  MESSAGE_RESPONSE_TIME_AVG
+  MESSAGE_VOLUME
+  PRESENCE_HOURS
+  PRESENCE_ATTENDANCE_RATE
+  PRESENCE_PUNCTUALITY_RATE
+  AGENT_RESOLUTION_RATE
+  AGENT_CONVERSATION_COUNT
+  CRM_CONTACTS_MANAGED
+  CRM_DEALS_CLOSED
+  CRM_DEALS_VALUE
+  TEAM_TASK_COMPLETION_RATE
+  TEAM_RESPONSE_TIME_AVG
+  TEAM_PRESENCE_RATE
+  DEPT_KPIS_IN_GREEN
+  PIPELINE_CONVERSION_RATE
+  PIPELINE_TOTAL_VALUE
+  PROJECT_MILESTONE_PCT
+  REVENUE_GROWTH_RATE
+  CUSTOMER_RETENTION_RATE
+  COST_REDUCTION_PCT
+  INVENTORY_TURNOVER
+  UNIT_COST_VS_COMPETITOR
+  MANUAL
+}
+
+enum RelationshipType {
+  EMPLOYER
+  BOSS
+  SUPPLIER
+  CUSTOMER
+}
+
+enum CustomerType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum Trend {
+  UP
+  DOWN
+  STABLE
+}
+
+enum RecognitionChannel {
+  CAMPUS_PUBLIC_MESSAGE
+  CAMPUS_DIRECT_MESSAGE
+  EMAIL
+  TELEGRAM
+  IN_PERSON
+}
+
+// ─────────────────────────────────────────────
+// CULTURE MODULE (Módulo 4)
+// ─────────────────────────────────────────────
+
+model CultureConfig {
+  id        String @id @default(cuid())
+  tenant_id String @unique
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  // Etapa 1 — Identidad fundadora
+  purpose           String? // Por qué existe (más allá del negocio)
+  problem_statement String? // Qué injusticia o ineficiencia combate
+  desired_impact    String? // Qué tipo de impacto quiere dejar
+
+  // Etapa 2 — Filosofía operativa (cómo creemos que debe trabajarse)
+  operative_philosophy Json? // String[]
+
+  // Etapa 3 — No negociable
+  anti_values Json? // {behavior: string, reason: string}[]
+
+  // Etapa 4 — Reconocimiento y feedback
+  recognition_behaviors Json? // String[] — comportamientos que se premian
+  recognition_awards    Json? // {name: string, description: string, frequency: string}[]
+  feedback_framework    Json? // {stages: string[]} — ej: [situación, comportamiento, impacto, mejora]
+
+  // Etapa 5 — Lenguaje interno (glosario corporativo)
+  internal_language Json? // {term: string, definition: string}[]
+
+  // Etapa 8 — IA-first
+  ai_human_division Json? // {human_tasks: string[], ai_tasks: string[]}
+  ai_principles     Json? // String[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  principles CulturePrinciple[]
+  rituals    CultureRitual[]
+}
+
+model CulturePrinciple {
+  id                  String        @id @default(cuid())
+  tenant_id           String
+  culture_id          String
+  tenant              Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  culture             CultureConfig @relation(fields: [culture_id], references: [id], onDelete: Cascade)
+  name                String        // ej: "Ownership"
+  observable_behavior String        // ej: "Resuelve sin esperar permiso"
+  is_active           Boolean       @default(true)
+  sort_order          Int           @default(0)
+  created_at          DateTime      @default(now())
+}
+
+model CultureRitual {
+  id               String        @id @default(cuid())
+  tenant_id        String
+  culture_id       String
+  tenant           Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  culture          CultureConfig @relation(fields: [culture_id], references: [id], onDelete: Cascade)
+  name             String
+  ritual_type      RitualType
+  duration_minutes Int?
+  description      String?
+  agenda           Json?         // {items: {topic: string, minutes?: number}[]}
+  is_active        Boolean       @default(true)
+  sort_order       Int           @default(0)
+  created_at       DateTime      @default(now())
+}
+
+enum RitualType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  SPECIAL
+}
+
+// ─────────────────────────────────────────────
+// CULTURE ENGINE — Layers 1-8
+// ─────────────────────────────────────────────
+
+// Layer 1 — Founder DNA
+model FounderProfile {
+  id        String   @id @default(cuid())
+  tenant_id String   @unique
+  tenant    Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  slot_id   String   // ID del owner
+
+  // Visión
+  industry_change String? // ¿Qué quieres cambiar en tu industria?
+  differentiator  String? // ¿Qué hace diferente a tu empresa?
+
+  // Filosofía
+  loved_behaviors      Json? // String[] — comportamientos que ama en un colaborador
+  zero_tolerance       Json? // String[] — lo que jamás toleraría
+  hated_inefficiencies Json? // String[] — lo que le desespera del trabajo tradicional
+  doing_well_means     String? // ¿Qué significa "hacerlo bien"?
+
+  // Cultura y energía
+  team_feeling   String? // ¿Cómo quieres que la gente se sienta aquí?
+  client_energy  String? // ¿Qué energía quieres transmitir al cliente?
+
+  // Postura IA
+  ai_tasks         Json? // String[] — qué quiere que haga la IA
+  ai_never_replace Json? // String[] — qué jamás debe reemplazar la IA
+
+  // Perfil generado (post-análisis con Claude)
+  tone_description    String? // Descripción del tono del fundador
+  leadership_style    String? // Estilo de liderazgo detectado
+  operating_style     String? // Cómo opera el fundador
+  key_obsessions      Json?   // String[] — en qué se enfoca obsesivamente
+  decision_principles Json?   // {situation: string, principle: string}[]
+
+  // Instrucciones generadas para Atlas
+  atlas_instructions  String? // @db.Text — system prompt personalizado para Atlas
+  atlas_calibrated_at DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+// Layer 4 — Communication Mirroring
+model CommunicationProfile {
+  id        String @id @default(cuid())
+  tenant_id String @unique
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  // Características detectadas
+  tone      String? // formal | semiformal | casual | cálido | directo
+  energy    String? // alto | medio | bajo
+  formality String? // alta | media | baja
+  structure String? // bullets | párrafos | conversacional | mixto
+  avg_length String? // breve | medio | extenso
+
+  // Vocabulario
+  key_phrases   Json? // String[] — frases que usa la empresa
+  avoid_phrases Json? // String[] — frases que nunca usan
+  custom_vocab  Json? // {original: string, preferred: string}[]
+
+  // Muestras de comunicación (raw — fuente de entrenamiento)
+  samples Json? // {type: 'whatsapp'|'email'|'proposal'|'internal'|'call', content: string, label?: string}[]
+
+  // Análisis extraído por Claude
+  extracted_patterns Json?  // análisis estructurado completo
+  voice_summary      String? // resumen en lenguaje natural (se inyecta en prompts de agentes)
+
+  // Estado de calibración
+  samples_count       Int      @default(0)
+  calibration_quality String?  // none | low | medium | high
+  last_calibrated_at  DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+// Layer 3 — Culture Translation Blueprint
+model CultureBlueprint {
+  id        String @id @default(cuid())
+  tenant_id String @unique
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  // Declaraciones de filosofía (raw — lo que dijo el fundador)
+  philosophy_statements Json? // String[]
+
+  // Reglas operativas derivadas (filosofía → comportamiento concreto)
+  operational_rules Json? // {trigger: string, expected_behavior: string, metric?: string, owner?: string}[]
+
+  // Estándares de respuesta por canal
+  response_standards Json? // {channel: string, max_hours: number, note?: string}[]
+
+  // Marcos de decisión
+  decision_frameworks Json? // {situation: string, principle: string, action: string}[]
+
+  // Vocabulario / glosario corporativo específico de esta empresa
+  company_language Json? // {term: string, meaning: string, context?: string}[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+// Layer 2 — Company Operating Map
+model OperatingMap {
+  id        String @id @default(cuid())
+  tenant_id String @unique
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  // Inventario de sistemas actuales en uso
+  current_systems Json? // {name: string, category: string, used_for: string, status?: 'active'|'migrating'|'replacing'}[]
+
+  // Procesos clave del negocio
+  key_processes Json? // {name: string, owner_name: string, steps: string[], friction: string[], ai_potential?: string}[]
+
+  // Puntos de dolor identificados
+  pain_points Json? // {area: string, description: string, impact: 'high'|'medium'|'low'}[]
+
+  // Health Score del Culture Engine (0-100, calculado)
+  health_score     Int?
+  health_breakdown Json? // {layer: int, label: string, score: int, max: int, status: string, missing: string[]}[]
+  last_health_check DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+// ── War Room — Reuniones grabadas ─────────────────────────────────────────────
+model Meeting {
+  id            String    @id @default(cuid())
+  tenant_id     String
+  tenant        Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  created_by    String    // TeamSlot.id
+
+  title         String    @default("Reunión")
+  platform      String    @default("otro") // zoom | meet | teams | otro
+  started_at    DateTime
+  ended_at      DateTime?
+  duration_secs Int?
+
+  transcript    Json      @default("[]")  // TranscriptSegment[]
+  speaker_map   Json      @default("{}")  // {speakerIndex: name}
+  summary       String?
+  action_items  Json      @default("[]")  // string[]
+  doc_url       String?                   // Google Drive doc URL
+
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([tenant_id])
 }

@@ -28,6 +28,9 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BranchesModule } from './modules/branches/branches.module';
+import { GoalsModule } from './modules/goals/goals.module';
+import { SpacesModule } from './modules/spaces/spaces.module';
+import { CultureModule } from './modules/culture/culture.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -73,6 +76,12 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     BillingModule,
     NotificationsModule,
     BranchesModule,
+    // AUP Goals
+    GoalsModule,
+    // Spaces & Cameras
+    SpacesModule,
+    // Cultura operativa
+    CultureModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

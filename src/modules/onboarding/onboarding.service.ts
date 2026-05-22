@@ -1,7 +1,11 @@
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
-import { INDUSTRY_TEMPLATES, UNIVERSAL_CAMPUS } from './onboarding.templates';
+import { AirtableService } from '../airtable/airtable.service';
+import { KsfService } from '../goals/services/ksf.service';
+import { CultureService } from '../culture/culture.service';
+import { IntegrationsService } from '../integrations/integrations.service';
+import { INDUSTRY_TEMPLATES, UNIVERSAL_CAMPUS, DEFAULT_OWNER_DESK, MENTORIA_OWNER_DESK } from './onboarding.templates';
 import {
   OnboardingStartDto,
   OnboardingDepartmentsDto,
@@ -9,13 +13,20 @@ import {
   OnboardingScheduleDto,
   OnboardingRoomsDto,
 } from './dto/onboarding.dto';
+import { KsfLevel, KsfCategory, KsfOrigin, MeasurementSource, MeasurementFrequency } from '@prisma/client';
 
 const SALT_ROUNDS = 12;
 const STEPS = ['company_created', 'departments_set', 'team_configured', 'schedule_set', 'rooms_set', 'launched'];
 
 @Injectable()
 export class OnboardingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private airtable: AirtableService,
+    private ksf: KsfService,
+    private culture: CultureService,
+    private integrations: IntegrationsService,
+  ) {}
 
   // Listar templates disponibles
   getTemplates() {
@@ -61,13 +72,19 @@ export class OnboardingService {
 
     const result = await this.prisma.$transaction(async (tx: any) => {
       const campusEnabled = dto.campus_enabled !== false; // default true
+      const adn = (template as any).adn ?? {};
       const tenant = await tx.tenant.create({
         data: {
-          name: dto.company_name,
-          slug: dto.slug,
-          primary_color: dto.primary_color ?? '#4F46E5',
-          plan: 'starter',
-          campus_config: { campus_enabled: campusEnabled },
+          name:            dto.company_name,
+          slug:            dto.slug,
+          primary_color:   dto.primary_color ?? adn.primary_color ?? '#4F46E5',
+          secondary_color: adn.secondary_color ?? null,
+          tagline:         dto.tagline ?? adn.tagline ?? null,
+          industry:        dto.industry ?? adn.industry ?? null,
+          mission:         dto.mission ?? adn.mission ?? null,
+          vision:          dto.vision ?? adn.vision ?? null,
+          plan:            'starter',
+          campus_config:   { campus_enabled: campusEnabled },
         },
       });
 
@@ -94,17 +111,23 @@ export class OnboardingService {
 
       // CEO Agent del owner con nombre por defecto — puede renombrarlo desde el Desk
       const ownerFirstName = dto.owner_name.split(' ')[0];
+      const missionLine = adn.mission
+        ? `\n\nMISIÓN DE LA EMPRESA: ${adn.mission}`
+        : '';
+      const taglineLine = adn.tagline
+        ? `\n\nTAGLINE: "${adn.tagline}"`
+        : '';
       const ceoInstructions =
-        `Eres Atlas, el CEO Agent de ${dto.owner_name} en FlowDesk. ` +
-        `Tu misión: garantizar que ${dto.owner_name} cumpla todos sus objetivos personales y empresariales. ` +
-        `Eres su socio estratégico — proactivo, directo y orientado a resultados. ` +
-        `Responsabilidades clave: ` +
-        `(1) Revisar y priorizar tareas diariamente. ` +
-        `(2) Detectar cuellos de botella y proponer soluciones concretas. ` +
-        `(3) Coordinar con otros agentes del equipo para distribuir trabajo. ` +
-        `(4) Proponer la creación de nuevos agentes cuando detectes una brecha. ` +
-        `(5) Mantener todos los elementos del Desk en su estado óptimo. ` +
-        `(6) Dar seguimiento a metas y alertar cuando haya riesgo de no cumplirlas. ` +
+        `Eres Atlas, el CEO Agent de ${dto.owner_name} en FlowDesk.${taglineLine}${missionLine}\n\n` +
+        `Tu misión: garantizar que ${ownerFirstName} cumpla todos sus objetivos personales y empresariales. ` +
+        `Eres su socio estratégico — proactivo, directo y orientado a resultados.\n\n` +
+        `Responsabilidades clave:\n` +
+        `(1) Revisar y priorizar tareas diariamente.\n` +
+        `(2) Detectar cuellos de botella y proponer soluciones concretas.\n` +
+        `(3) Coordinar con otros agentes del equipo para distribuir trabajo.\n` +
+        `(4) Proponer la creación de nuevos agentes cuando detectes una brecha.\n` +
+        `(5) Mantener todos los elementos del Desk en su estado óptimo.\n` +
+        `(6) Dar seguimiento a metas AUP y alertar cuando haya riesgo de no cumplirlas.\n\n` +
         `Tono: ejecutivo, conciso, motivador. Máximo 3 párrafos por respuesta salvo que se pida más detalle.`;
 
       await tx.teamSlot.create({
@@ -284,11 +307,10 @@ export class OnboardingService {
     };
   }
 
-  // PASO 5 — Configurar mapa de oficina (siempre arquitectura universal)
+  // PASO 5 — Configurar mapa de oficina (generado a partir de departamentos reales)
   async setupRooms(tenantId: string, dto: OnboardingRoomsDto) {
     await this.validateStep(tenantId, 4);
 
-    // Verificar si el campus está habilitado para este tenant
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { campus_config: true },
@@ -296,7 +318,6 @@ export class OnboardingService {
     const config = (tenant?.campus_config as any) ?? {};
 
     if (config.campus_enabled === false) {
-      // Modo solo: saltar creación de salas pero avanzar el paso
       await this.advanceStep(tenantId, 5, 'rooms_set');
       return {
         rooms: [],
@@ -306,13 +327,17 @@ export class OnboardingService {
       };
     }
 
-    // Todas las empresas con campus usan el mismo mapa base
-    const roomsData = UNIVERSAL_CAMPUS.rooms;
+    const departments = await this.prisma.department.findMany({
+      where: { tenant_id: tenantId },
+      select: { name: true, color: true },
+    });
+
+    const roomsData = this.buildRoomsFromDepartments(departments);
 
     const created = await this.prisma.$transaction(
       roomsData.map((r: any) =>
         this.prisma.room.create({
-          data: { tenant_id: tenantId, ...r, color: r.color ?? '#1E1E2E' },
+          data: { tenant_id: tenantId, ...r },
         }),
       ),
     );
@@ -327,23 +352,88 @@ export class OnboardingService {
     };
   }
 
-  // PASO 6 — Activar la empresa
-  async launch(tenantId: string) {
+  // Genera el layout del campus a partir de los departamentos declarados.
+  // Reglas: Sala de Juntas siempre primero. Marketing Digital se fusiona con Ventas.
+  // ≤3 departamentos → espacio abierto único. >3 → una sala por departamento.
+  private buildRoomsFromDepartments(depts: { name: string; color: string | null }[]) {
+    const MARGIN = 40;
+    const CANVAS_W = 1860;
+
+    // Marketing Digital se fusiona en Ventas (no recibe sala propia)
+    const MERGED_INTO_VENTAS = ['marketing digital', 'marketing'];
+    const deptRooms = depts.filter(
+      d => !MERGED_INTO_VENTAS.includes(d.name.toLowerCase()),
+    );
+
+    const rooms: any[] = [
+      {
+        name: 'Sala de Juntas',
+        room_type: 'meeting',
+        x: MARGIN, y: MARGIN,
+        width: 480, height: 200,
+        color: '#7F1D1D',
+      },
+    ];
+
+    if (deptRooms.length <= 3) {
+      // Espacio abierto: todos trabajan juntos
+      rooms.push({
+        name: 'Espacio de Trabajo',
+        room_type: 'department',
+        x: MARGIN, y: 280,
+        width: CANVAS_W - MARGIN * 2, height: 660,
+        color: '#1E1E2E',
+      });
+      return rooms;
+    }
+
+    // Una sala por departamento en grid automático
+    const cols = deptRooms.length <= 4 ? 2 : deptRooms.length <= 6 ? 3 : 4;
+    const rows = Math.ceil(deptRooms.length / cols);
+    const GAP = MARGIN;
+    const START_Y = 280;
+    const USABLE_W = CANVAS_W - MARGIN * 2;
+    const USABLE_H = 980 - START_Y - MARGIN;
+    const roomW = Math.floor((USABLE_W - (cols - 1) * GAP) / cols);
+    const roomH = Math.floor((USABLE_H - (rows - 1) * GAP) / rows);
+
+    deptRooms.forEach((dept, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      rooms.push({
+        name: dept.name,
+        room_type: 'department',
+        x: MARGIN + col * (roomW + GAP),
+        y: START_Y + row * (roomH + GAP),
+        width: roomW,
+        height: roomH,
+        color: dept.color ?? '#1E293B',
+      });
+    });
+
+    return rooms;
+  }
+
+  // PASO 6 — Activar la empresa + crear desk inicial del owner
+  async launch(tenantId: string, erpTableNames: Record<string, string> = {}, deskWidgets: any[] = []) {
     await this.validateStep(tenantId, 5);
 
-    await this.prisma.tenant.update({
+    const tenant = await this.prisma.tenant.update({
       where: { id: tenantId },
       data: { status: 'active' },
+      select: { id: true, name: true, campus_config: true },
     });
 
     await this.prisma.onboardingProgress.update({
       where: { tenant_id: tenantId },
-      data: {
-        current_step: 6,
-        steps_completed: STEPS,
-        completed_at: new Date(),
-      },
+      data: { current_step: 6, steps_completed: STEPS, completed_at: new Date() },
     });
+
+    // Crear dashboard inicial del owner
+    await this.createOwnerDashboard(tenantId, deskWidgets);
+
+    // Registrar cliente en ERP MentorIA + crear base Airtable propia (fire & forget, no bloquea)
+    void this.provisionAirtableERP(tenant.id, tenant.name, tenant.campus_config as any, erpTableNames);
 
     const stats = await this.getCompanyStats(tenantId);
 
@@ -351,6 +441,258 @@ export class OnboardingService {
       launched: true,
       stats,
       message: `🚀 ¡FlowDesk activado! La empresa está lista. Los empleados ya pueden hacer login.`,
+    };
+  }
+
+  private async provisionAirtableERP(tenantId: string, tenantName: string, campusConfig: Record<string, any> | null, erpTableNames: Record<string, string> = {}) {
+    const owner = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
+      select: { name: true, email: true },
+    });
+
+    // 1. Registrar en ERP de MentorIA
+    const { crm_id, project_id } = await this.airtable.registerClientInERP({
+      tenant_id: tenantId,
+      company_name: tenantName,
+      owner_name: owner?.name ?? tenantName,
+      owner_email: owner?.email ?? '',
+    });
+
+    // 2. Crear base Airtable propia para el cliente (con nombres personalizados si los hay)
+    const clientBaseId = await this.airtable.createClientBase(tenantName, erpTableNames);
+
+    // 3. Persistir los IDs en campus_config para referencia futura
+    if (crm_id || project_id || clientBaseId) {
+      await this.prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          campus_config: {
+            ...(campusConfig ?? {}),
+            ...(crm_id && { airtable_crm_id: crm_id }),
+            ...(project_id && { airtable_project_id: project_id }),
+            ...(clientBaseId && { airtable_erp_base_id: clientBaseId }),
+          },
+        },
+      });
+    }
+  }
+
+  private async createOwnerDashboard(tenantId: string, customWidgets: any[] = []) {
+    const owner = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
+    });
+    if (!owner) return;
+
+    const existing = await this.prisma.dashboardConfig.findFirst({
+      where: { tenant_id: tenantId, slot_id: owner.id, is_default: true },
+    });
+    if (existing) return;
+
+    // Si el agente de onboarding envió widgets personalizados, úsalos; si no, usa el template.
+    let widgets: any[];
+    let deskName: string;
+
+    if (customWidgets.length > 0) {
+      widgets = this.autoLayoutWidgets(customWidgets);
+      deskName = 'Mi Escritorio';
+    } else {
+      const progress = await this.prisma.onboardingProgress.findFirst({ where: { tenant_id: tenantId } });
+      const isMentoria = progress?.template_used === 'mentoria';
+      const deskDef = isMentoria ? MENTORIA_OWNER_DESK : DEFAULT_OWNER_DESK;
+      widgets = deskDef.widgets;
+      deskName = deskDef.name;
+    }
+
+    const dash = await this.prisma.dashboardConfig.create({
+      data: { tenant_id: tenantId, slot_id: owner.id, name: deskName, is_default: true, layout: { cols: 12, rowHeight: 80 } },
+    });
+
+    await this.prisma.dashboardWidget.createMany({
+      data: widgets.map((w: any) => ({ dashboard_id: dash.id, tenant_id: tenantId, ...w })),
+    });
+  }
+
+  // Auto-posiciona widgets en un grid de 12 columnas según su tipo.
+  // Fila 0: métricas/kpis (hasta 3, 4 cols c/u) — Fila 1+: resto en 2 columnas (6 cols c/u).
+  private autoLayoutWidgets(widgets: any[]): any[] {
+    const metricTypes = ['metric', 'kpi'];
+    const metrics = widgets.filter(w => metricTypes.includes(w.widget_type));
+    const others = widgets.filter(w => !metricTypes.includes(w.widget_type));
+
+    const result: any[] = [];
+
+    // Fila 0: métricas — hasta 3, cada una ocupa 12/count columnas
+    const metricCols = metrics.length === 1 ? 6 : metrics.length === 2 ? 6 : 4;
+    metrics.forEach((w, i) => {
+      result.push({ ...w, position: { x: i * metricCols, y: 0, w: metricCols, h: 4 } });
+    });
+
+    // Filas siguientes: el resto en 2 columnas de 6
+    const startRow = metrics.length > 0 ? 4 : 0;
+    others.forEach((w, i) => {
+      const col = (i % 2) * 6;
+      const row = startRow + Math.floor(i / 2) * 5;
+      result.push({ ...w, position: { x: col, y: row, w: 6, h: 5 } });
+    });
+
+    return result;
+  }
+
+  // PASO OPCIONAL — Configurar Cultura (después de launch, llamado desde el agente de onboarding)
+  async setupCulture(tenantId: string, input: Parameters<CultureService['setupFromOnboarding']>[1]) {
+    return this.culture.setupFromOnboarding(tenantId, input);
+  }
+
+  // PASO OPCIONAL — Registrar integraciones deseadas
+  async setupIntegrations(tenantId: string, items: { provider: string; priority?: string; notes?: string }[]) {
+    return this.integrations.registerWishlist(tenantId, items);
+  }
+
+  // PASO OPCIONAL — Configurar metas AUP (después de launch, llamado desde el agente de onboarding)
+  async setupAupGoals(tenantId: string, input: {
+    mission?: string;
+    vision?: string;
+    values?: string[];
+    company_ksfs?: Array<{
+      name: string; unit: string; description?: string;
+      min: number; sat: number; out: number;
+      category?: string; source?: string; freq?: string;
+    }>;
+    dept_ksfs?: Array<{
+      dept_id: string; name: string; unit: string; description?: string;
+      min: number; sat: number; out: number;
+      category?: string; source?: string; freq?: string;
+    }>;
+    owner_ksfs?: Array<{
+      name: string; unit: string; description?: string;
+      min: number; sat: number; out: number;
+      category?: string; source?: string; freq?: string;
+    }>;
+  }) {
+    const results: Record<string, any> = { company_ksfs: [], dept_ksfs: [], owner_ksfs: [] };
+
+    // 1. Propósito estratégico (si hay misión o visión)
+    if (input.mission || input.vision) {
+      await this.ksf.upsertStrategicPurpose(tenantId, {
+        vision: input.vision ?? 'Por definir',
+        mission: input.mission,
+        values: input.values,
+      });
+    }
+
+    const resolveCategory = (cat?: string): KsfCategory => {
+      const MAP: Record<string, KsfCategory> = {
+        operational: KsfCategory.OPERATIONAL,
+        coordination: KsfCategory.COORDINATION,
+        strategic: KsfCategory.STRATEGIC,
+      };
+      return MAP[cat?.toLowerCase() ?? ''] ?? KsfCategory.OPERATIONAL;
+    };
+
+    const resolveSource = (src?: string): MeasurementSource => {
+      // Si no se especifica, usar MANUAL
+      const valid = Object.values(MeasurementSource) as string[];
+      if (src && valid.includes(src)) return src as MeasurementSource;
+      return MeasurementSource.MANUAL;
+    };
+
+    const resolveFreq = (freq?: string): MeasurementFrequency => {
+      const MAP: Record<string, MeasurementFrequency> = {
+        daily: MeasurementFrequency.DAILY,
+        weekly: MeasurementFrequency.WEEKLY,
+        monthly: MeasurementFrequency.MONTHLY,
+        quarterly: MeasurementFrequency.QUARTERLY,
+      };
+      return MAP[freq?.toLowerCase() ?? ''] ?? MeasurementFrequency.MONTHLY;
+    };
+
+    // 2. KSFs de empresa
+    for (const k of input.company_ksfs ?? []) {
+      try {
+        const created = await this.ksf.createKsf(tenantId, {
+          name: k.name,
+          description: k.description,
+          unit: k.unit,
+          level: KsfLevel.COMPANY,
+          category: resolveCategory(k.category ?? 'strategic'),
+          origin: KsfOrigin.TOP_DOWN,
+          measurement_source: resolveSource(k.source),
+          measurement_freq: resolveFreq(k.freq ?? 'monthly'),
+          minimum_level: k.min,
+          satisfactory_level: k.sat,
+          outstanding_level: k.out,
+        });
+        results.company_ksfs.push({ id: created.id, name: created.name });
+      } catch (e: any) {
+        results.company_ksfs.push({ name: k.name, error: e.message });
+      }
+    }
+
+    // 3. KSFs de departamentos
+    for (const k of input.dept_ksfs ?? []) {
+      try {
+        const created = await this.ksf.createKsf(tenantId, {
+          name: k.name,
+          description: k.description,
+          unit: k.unit,
+          level: KsfLevel.DEPARTMENT,
+          dept_id: k.dept_id,
+          category: resolveCategory(k.category ?? 'operational'),
+          origin: KsfOrigin.TOP_DOWN,
+          measurement_source: resolveSource(k.source),
+          measurement_freq: resolveFreq(k.freq ?? 'weekly'),
+          minimum_level: k.min,
+          satisfactory_level: k.sat,
+          outstanding_level: k.out,
+        });
+        results.dept_ksfs.push({ id: created.id, name: created.name, dept_id: k.dept_id });
+      } catch (e: any) {
+        results.dept_ksfs.push({ name: k.name, dept_id: k.dept_id, error: e.message });
+      }
+    }
+
+    // 4. KSFs personales del owner
+    const owner = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
+      select: { id: true },
+    });
+
+    if (owner) {
+      for (const k of input.owner_ksfs ?? []) {
+        try {
+          const created = await this.ksf.createKsf(tenantId, {
+            name: k.name,
+            description: k.description,
+            unit: k.unit,
+            level: KsfLevel.EMPLOYEE,
+            team_slot_id: owner.id,
+            category: resolveCategory(k.category ?? 'operational'),
+            origin: KsfOrigin.TOP_DOWN,
+            measurement_source: resolveSource(k.source),
+            measurement_freq: resolveFreq(k.freq ?? 'weekly'),
+            minimum_level: k.min,
+            satisfactory_level: k.sat,
+            outstanding_level: k.out,
+          });
+          results.owner_ksfs.push({ id: created.id, name: created.name });
+        } catch (e: any) {
+          results.owner_ksfs.push({ name: k.name, error: e.message });
+        }
+      }
+
+      // 5. Escalation config del owner con valores por defecto
+      await this.ksf.upsertEscalationConfig(tenantId, owner.id, {
+        threshold1_periods: 4,
+        threshold1_levels: 2,
+        threshold2_periods: 8,
+        threshold2_levels: 3,
+      });
+    }
+
+    return {
+      ok: true,
+      strategic_purpose_updated: !!(input.mission || input.vision),
+      ...results,
     };
   }
 
