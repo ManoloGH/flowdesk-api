@@ -476,4 +476,27 @@ export class TenantsService {
       throw new ForbiddenException('Solo puedes modificar tu propia empresa');
     }
   }
+
+  async getSops(tenant_id: string): Promise<{
+    sops: Array<{
+      id: string;
+      name: string;
+      description?: string;
+      category: string;
+      frequency?: string;
+      product_line?: string;
+      steps: any[];
+      checklist: any[];
+      bpmn_xml?: string;
+      updated_at?: string;
+    }>;
+  }> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id },
+      select: { campus_config: true },
+    });
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const sops = (cfg.sops ?? []) as any[];
+    return { sops };
+  }
 }

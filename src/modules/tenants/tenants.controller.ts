@@ -38,6 +38,12 @@ export class TenantsController {
     return this.tenantsService.tokenUsage(tenantId);
   }
 
+  @Get('mine/sops')
+  @ApiOperation({ summary: 'Procesos y SOPs documentados de mi empresa' })
+  mySops(@TenantId() tenantId: string) {
+    return this.tenantsService.getSops(tenantId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Ver empresa por ID (super-admin ve cualquiera, owner solo la suya)' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
