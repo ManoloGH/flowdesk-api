@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
@@ -946,5 +947,151 @@ export class OnboardingService {
       data: { secretary_config: config },
     });
     return { ok: true };
+  }
+
+  async updateSop(tenant_id: string, sop_id: string, patch: {
+    bpmn_xml?: string;
+    name?: string;
+    description?: string;
+    steps?: any[];
+  }): Promise<{ ok: boolean }> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id }, select: { campus_config: true },
+    });
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const sops: any[] = cfg.sops ?? [];
+    const idx = sops.findIndex((s: any) => s.id === sop_id);
+    if (idx < 0) return { ok: false };
+    sops[idx] = { ...sops[idx], ...patch, updated_at: new Date().toISOString() };
+    await this.prisma.tenant.update({
+      where: { id: tenant_id },
+      data: { campus_config: { ...cfg, sops } },
+    });
+    return { ok: true };
+  }
+
+  async generateSopBpmn(tenant_id: string, sop_id: string): Promise<{ ok: boolean; bpmn_xml?: string }> {
+    const anthropic = new Anthropic();
+
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id }, select: { campus_config: true, name: true },
+    });
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const sop = (cfg.sops ?? []).find((s: any) => s.id === sop_id);
+    if (!sop) return { ok: false };
+
+    const stepsText = (sop.steps ?? []).map((s: any, i: number) =>
+      `${i + 1}. ${s.action}${s.responsible ? ` (${s.responsible})` : ''}${s.tool ? ` — herramienta: ${s.tool}` : ''}`
+    ).join('\n');
+
+    const prompt = `Genera un diagrama BPMN 2.0 XML válido para este proceso de negocio.
+
+PROCESO: ${sop.name}
+EMPRESA: ${tenant.name}
+DESCRIPCIÓN: ${sop.description ?? 'Sin descripción'}
+CATEGORÍA: ${sop.category ?? 'internal'}
+
+PASOS:
+${stepsText || 'Sin pasos definidos — genera un flujo básico de inicio, proceso principal y fin.'}
+
+REGLAS ESTRICTAS:
+- Responde SOLO con el XML, sin texto antes ni después, sin \`\`\`xml
+- BPMN 2.0 válido que renderice en bpmn-js
+- Máximo 15 elementos (tareas + eventos + gateways)
+- Cada elemento debe tener id único: "start", "task_1", "task_2", "end_1", etc.
+- Incluir startEvent, una task por cada paso, endEvent
+- Si hay pasos de decisión (si/no, validar, aprobar), usar exclusiveGateway
+- Namespace obligatorio: xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+- Incluir sección bpmndi:BPMNDiagram con posiciones (x, y, width, height) para cada elemento
+- Las posiciones deben ser coherentes (flujo de izquierda a derecha, separadas ~160px entre tareas)
+
+Genera el XML completo ahora:`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+    const xmlMatch = text.match(/(<\?xml[\s\S]*<\/definitions>)/);
+    const xml = xmlMatch?.[1] ?? (text.trim().startsWith('<?xml') ? text.trim() : null);
+
+    if (!xml) return { ok: false };
+
+    await this.updateSop(tenant_id, sop_id, { bpmn_xml: xml });
+    return { ok: true, bpmn_xml: xml };
+  }
+
+  async importAuditReport(tenant_id: string, audit_text: string): Promise<{
+    ok: boolean;
+    sops_created: number;
+    message: string;
+  }> {
+    const anthropic = new Anthropic();
+
+    const extractionPrompt = `Eres un extractor de datos de reportes de auditoría de negocios.
+
+Lee este reporte y extrae los procesos/flujos de trabajo mencionados en formato JSON.
+
+REPORTE:
+${audit_text.slice(0, 6000)}
+
+Responde SOLO con JSON válido, sin texto extra ni backticks:
+{
+  "processes": [
+    {
+      "name": "Nombre del proceso",
+      "description": "Descripción breve en una oración",
+      "category": "client_onboarding|delivery|internal|admin",
+      "frequency": "daily|weekly|monthly|on_demand",
+      "product_line": "línea de producto si se menciona",
+      "steps": [
+        { "order": 1, "action": "Descripción del paso", "responsible": "Quién lo hace", "tool": "Herramienta si se menciona" }
+      ]
+    }
+  ],
+  "summary": "Resumen de 1 línea de lo importado"
+}
+
+Máximo 5 procesos. Si no hay procesos claros, devuelve { "processes": [], "summary": "Sin procesos detectados" }.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: extractionPrompt }],
+    });
+
+    const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '{}';
+    let extracted: { processes?: any[]; summary?: string } = {};
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      extracted = JSON.parse(jsonMatch?.[0] ?? text);
+    } catch {
+      return { ok: false, sops_created: 0, message: 'No se pudo parsear el reporte' };
+    }
+
+    const processes = extracted.processes ?? [];
+    let created = 0;
+    for (const proc of processes) {
+      try {
+        const result = await this.createSop(tenant_id, {
+          name:         proc.name,
+          description:  proc.description,
+          category:     proc.category ?? 'internal',
+          frequency:    proc.frequency,
+          product_line: proc.product_line,
+          steps:        proc.steps ?? [],
+        });
+        await this.generateSopBpmn(tenant_id, result.sop_id).catch(() => null);
+        created++;
+      } catch { /* continuar con el siguiente */ }
+    }
+
+    return {
+      ok: true,
+      sops_created: created,
+      message: extracted.summary ?? `${created} procesos importados`,
+    };
   }
 }
