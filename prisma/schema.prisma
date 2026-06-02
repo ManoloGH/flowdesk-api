@@ -146,6 +146,7 @@ model TeamSlot {
   owner_slot    TeamSlot?  @relation("AgentOwner", fields: [owner_slot_id], references: [id])
   owned_agents  TeamSlot[] @relation("AgentOwner")
 
+  secretary_config Json?   // { connected_tools[], workflow_templates[], delegation_preferences }
   permissions Json?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
