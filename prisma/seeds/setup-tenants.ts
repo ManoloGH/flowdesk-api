@@ -43,19 +43,32 @@ const MENTORIA = {
   owner_pass:  'MentorIA2026!',
 };
 
-// Partnerships de MentorIA — editar con los socios reales
+// Partnerships de MentorIA — equipos de ventas de desarrollo inmobiliario
 const PARTNERSHIPS: Array<{
-  name: string; slug: string; owner_name: string; owner_email: string; owner_pass: string;
+  name: string; slug: string; industry: string; owner_name: string; owner_email: string; owner_pass: string;
 }> = [
-  // Añadir socios aquí, ej:
-  // { name: 'Huesana', slug: 'huesana', owner_name: 'Equipo Huesana', owner_email: 'admin@huesana.com', owner_pass: 'Huesana2026!' },
-  // { name: 'Integra', slug: 'integra', owner_name: 'Equipo Integra', owner_email: 'admin@integra.com', owner_pass: 'Integra2026!' },
+  {
+    name: 'Nodo',
+    slug: 'nodo',
+    industry: 'Inmobiliario — Ventas de Desarrollo',
+    owner_name: 'Equipo Nodo',
+    owner_email: 'admin@nodo.com.mx',
+    owner_pass: 'Nodo2026!',
+  },
+  {
+    name: 'Residencial San Miguel',
+    slug: 'rsm',
+    industry: 'Inmobiliario — Ventas de Desarrollo',
+    owner_name: 'Equipo Residencial San Miguel',
+    owner_email: 'admin@rsm.com.mx',
+    owner_pass: 'RSM2026!',
+  },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function ensureNetworkTenant(config: {
-  name: string; slug: string; tagline?: string; industry?: string;
+  name: string; slug: string; tagline?: string; industry?: string; [key: string]: any;
   mission?: string; vision?: string; website?: string;
   primary_color?: string; secondary_color?: string; plan?: string; tenant_type?: string;
   network_id: string;
@@ -165,7 +178,14 @@ async function main() {
   if (PARTNERSHIPS.length > 0) {
     console.log('📌 Creando partnerships...');
     for (const partner of PARTNERSHIPS) {
-      await ensureNetworkTenant({ ...partner, plan: 'professional', tenant_type: 'NETWORK', network_id: platform.id });
+      await ensureNetworkTenant({
+        ...partner,
+        plan: 'professional',
+        tenant_type: 'NETWORK',
+        network_id: platform.id,
+        primary_color: '#0EA5E9',
+        secondary_color: '#0369A1',
+      });
     }
     console.log();
   } else {
