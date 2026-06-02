@@ -198,6 +198,373 @@ Airtable y Claude son automáticas — no las incluyas.`,
   },
 
   {
+    name: 'save_platform_config',
+    description: `Configura MentorIA como PLATFORM owner de FlowDesk.
+Guarda información de tenants gestionados, KPIs de plataforma y alertas.
+Llámalo cuando el usuario confirme que administra otros FlowDesks o cuando se identifique como plataforma.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string' },
+        managed_tenants: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name:    { type: 'string' },
+              plan:    { type: 'string', enum: ['starter', 'professional', 'enterprise'] },
+              contact: { type: 'string' },
+              status:  { type: 'string', enum: ['active', 'trial', 'churned'] },
+            },
+            required: ['name'],
+          },
+        },
+        platform_kpis:     { type: 'array', items: { type: 'string' } },
+        alert_preferences: { type: 'object' },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'save_report_preferences',
+    description: `Guarda las preferencias de reportes del Founder: cuándo quiere su Daily Brief, qué incluye, con qué frecuencia revisa resultados.
+Llámalo cuando el usuario confirme sus preferencias de reportes (Bloque 7).`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:               { type: 'string' },
+        daily_brief_time:        { type: 'string', description: 'Hora del Daily Brief, ej: "08:00"' },
+        weekly_day:              { type: 'string', description: 'Día para reporte semanal, ej: "lunes"' },
+        client_report_frequency: { type: 'string', enum: ['daily', 'weekly', 'biweekly', 'monthly'] },
+        report_format:           { type: 'string', enum: ['text_summary', 'table', 'both'] },
+        report_templates: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type:      { type: 'string', enum: ['daily_brief', 'weekly_status', 'client_update', 'team_report'] },
+              frequency: { type: 'string' },
+              sections:  { type: 'array', items: { type: 'string' } },
+            },
+            required: ['type', 'frequency'],
+          },
+        },
+        alert_thresholds: { type: 'object', description: 'Umbrales que disparan alertas inmediatas' },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'create_sop',
+    description: `Documenta un proceso o SOP de la empresa (Bloque 8).
+Llámalo por cada proceso que el usuario describa. Puedes llamarlo múltiples veces en la misma sesión.
+Si el usuario no tiene los pasos detallados, crea el SOP con los datos que tenga.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:    { type: 'string' },
+        name:         { type: 'string' },
+        description:  { type: 'string' },
+        category:     { type: 'string', enum: ['client_onboarding', 'delivery', 'internal', 'admin'] },
+        frequency:    { type: 'string', enum: ['daily', 'weekly', 'monthly', 'on_demand'] },
+        product_line: { type: 'string' },
+        steps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              order:        { type: 'number' },
+              action:       { type: 'string' },
+              tool:         { type: 'string' },
+              responsible:  { type: 'string' },
+              duration_min: { type: 'number' },
+              failure_mode: { type: 'string' },
+            },
+            required: ['order', 'action'],
+          },
+        },
+        checklist: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['tenant_id', 'name'],
+    },
+  },
+
+  {
+    name: 'save_founder_profile_extended',
+    description: `Guarda el perfil personal del Founder: estilo de trabajo, preferencias, rutinas sagradas (Bloque 9).
+Llámalo cuando el usuario confirme su perfil personal durante el onboarding.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:                { type: 'string' },
+        slot_id:                  { type: 'string', description: 'ID del TeamSlot del owner' },
+        peak_hours:               { type: 'string' },
+        work_style:               { type: 'string' },
+        communication_preference: { type: 'string', enum: ['text', 'voice', 'video', 'mixed'] },
+        directness_level:         { type: 'number', description: '1=muy suave, 5=muy directo' },
+        sacred_time: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              day:    { type: 'string' },
+              from:   { type: 'string' },
+              to:     { type: 'string' },
+              reason: { type: 'string' },
+            },
+            required: ['day', 'from', 'to'],
+          },
+        },
+        protected_routines:   { type: 'array', items: { type: 'string' } },
+        delegation_threshold: { type: 'string' },
+        personal_goal:        { type: 'string' },
+      },
+      required: ['tenant_id', 'slot_id'],
+    },
+  },
+
+  {
+    name: 'save_rhythms_calendar',
+    description: `Guarda los ritmos operativos: reuniones recurrentes, deadlines cíclicos, configuración del calendario (Bloque 10).`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:         { type: 'string' },
+        calendar_provider: { type: 'string', enum: ['google', 'outlook', 'ical', 'none'] },
+        calendar_ids:      { type: 'array', items: { type: 'string' } },
+        recurring_meetings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name:         { type: 'string' },
+              day_of_week:  { type: 'string', enum: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'] },
+              time:         { type: 'string' },
+              frequency:    { type: 'string', enum: ['daily', 'weekly', 'biweekly', 'monthly'] },
+              participants: { type: 'array', items: { type: 'string' } },
+              duration_min: { type: 'number' },
+            },
+            required: ['name', 'frequency'],
+          },
+        },
+        critical_dates: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              date:        { type: 'string' },
+              description: { type: 'string' },
+              recurrent:   { type: 'boolean' },
+            },
+            required: ['date', 'description'],
+          },
+        },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'save_active_clients',
+    description: `Guarda los clientes activos y pipeline de ventas (Bloque 11).
+Llámalo cuando el usuario liste sus clientes actuales.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string' },
+        clients: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name:          { type: 'string' },
+              product_line:  { type: 'string' },
+              start_date:    { type: 'string' },
+              end_date:      { type: 'string' },
+              mrr:           { type: 'number', description: 'Ingreso mensual recurrente en pesos MXN' },
+              status:        { type: 'string', enum: ['active', 'paused', 'ending', 'renewing', 'at_risk'] },
+              priority_note: { type: 'string' },
+              has_flowdesk:  { type: 'boolean' },
+            },
+            required: ['name'],
+          },
+        },
+      },
+      required: ['tenant_id', 'clients'],
+    },
+  },
+
+  {
+    name: 'save_privacy_config',
+    description: `Configura permisos y privacidad: quién ve qué dentro de FlowDesk (Bloque 12).`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:             { type: 'string' },
+        financial_visibility:  { type: 'string', enum: ['founder_only', 'leadership', 'all_team'] },
+        client_data_scope:     { type: 'string', enum: ['assigned_only', 'all_team'] },
+        sensitive_fields:      { type: 'array', items: { type: 'string' } },
+        data_retention_days:   { type: 'number' },
+        offboarding_procedure: { type: 'string' },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'save_comm_channels',
+    description: `Registra los canales de comunicación activos: email, WhatsApp, redes, CRM, sala de juntas (Bloque 13).`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string' },
+        email: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              address:  { type: 'string' },
+              purpose:  { type: 'string' },
+              priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+              monitor:  { type: 'boolean' },
+            },
+            required: ['address'],
+          },
+        },
+        whatsapp: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              number: { type: 'string' },
+              type:   { type: 'string', enum: ['personal', 'business'] },
+              tool:   { type: 'string', enum: ['evolution_api', 'chatwoot', 'wapi', 'none'] },
+            },
+            required: ['number'],
+          },
+        },
+        social_media: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              platform:    { type: 'string', enum: ['linkedin', 'instagram', 'tiktok', 'youtube', 'x', 'facebook'] },
+              handle:      { type: 'string' },
+              monitor_dms: { type: 'boolean' },
+            },
+            required: ['platform'],
+          },
+        },
+        crm_integration: {
+          type: 'object',
+          properties: {
+            provider:       { type: 'string', enum: ['gohighlevel', 'hubspot', 'airtable', 'other'] },
+            new_lead_alert: { type: 'boolean' },
+          },
+        },
+        war_room: {
+          type: 'object',
+          properties: {
+            enabled:             { type: 'boolean' },
+            auto_summary:        { type: 'boolean' },
+            notify_participants: { type: 'boolean' },
+          },
+        },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'save_content_inventory',
+    description: `Inventario de material comercial: qué tiene y qué falta (Bloque 14).
+Por cada campo con exists:false se generará una tarea pendiente para el Agente de MKT.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string' },
+        brand: {
+          type: 'object',
+          properties: {
+            logo:      { type: 'object', properties: { exists: { type: 'boolean' }, url: { type: 'string' } } },
+            brandbook: { type: 'object', properties: { exists: { type: 'boolean' }, url: { type: 'string' } } },
+          },
+        },
+        digital_presence: {
+          type: 'object',
+          properties: {
+            website: {
+              type: 'object',
+              properties: {
+                exists:    { type: 'boolean' },
+                url:       { type: 'string' },
+                updated:   { type: 'boolean' },
+                has_forms: { type: 'boolean' },
+              },
+            },
+            professional_email: { type: 'object', properties: { exists: { type: 'boolean' }, domain: { type: 'string' } } },
+          },
+        },
+        social_media: {
+          type: 'object',
+          properties: {
+            profiles:           { type: 'array', items: { type: 'object', properties: { platform: { type: 'string' }, active: { type: 'boolean' } } } },
+            content_bank:       { type: 'object', properties: { exists: { type: 'boolean' } } },
+            editorial_calendar: { type: 'object', properties: { exists: { type: 'boolean' }, tool: { type: 'string' } } },
+          },
+        },
+        sales_material: {
+          type: 'object',
+          properties: {
+            one_pager:           { type: 'object', properties: { exists: { type: 'boolean' } } },
+            institutional_video: { type: 'object', properties: { exists: { type: 'boolean' } } },
+            case_studies:        { type: 'object', properties: { exists: { type: 'boolean' }, count: { type: 'number' } } },
+          },
+        },
+        proposals: {
+          type: 'object',
+          properties: {
+            quote_template:    { type: 'object', properties: { exists: { type: 'boolean' }, tool: { type: 'string' } } },
+            proposal_template: { type: 'object', properties: { exists: { type: 'boolean' } } },
+            contracts:         { type: 'object', properties: { exists: { type: 'boolean' } } },
+          },
+        },
+      },
+      required: ['tenant_id'],
+    },
+  },
+
+  {
+    name: 'save_employee_tool',
+    description: `Conecta una herramienta al Secretario de un empleado (Bloque 15).
+Llámalo por cada herramienta que un empleado use regularmente.
+slot_id es el ID del TeamSlot del empleado humano.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        slot_id:          { type: 'string' },
+        tool_name:        { type: 'string' },
+        tool_category:    { type: 'string', enum: ['email', 'crm', 'docs', 'sheets', 'calendar', 'chat', 'billing', 'custom'] },
+        integration_type: { type: 'string', enum: ['oauth', 'api_key', 'webhook', 'mcp'] },
+        use_cases:        { type: 'array', items: { type: 'string' } },
+        autonomy_level: {
+          type: 'object',
+          properties: {
+            auto_execute:      { type: 'array', items: { type: 'string' } },
+            requires_approval: { type: 'array', items: { type: 'string' } },
+            forbidden:         { type: 'array', items: { type: 'string' } },
+          },
+        },
+        usage_frequency: { type: 'string', enum: ['hourly', 'daily', 'weekly'] },
+        priority_rank:   { type: 'number' },
+      },
+      required: ['slot_id', 'tool_name', 'tool_category'],
+    },
+  },
+
+  {
     name: 'launch_company',
     description: `Lanza la empresa: provisiona el ERP en Airtable y crea el desk inicial del owner.
 Llámalo AL FINAL, después de haber configurado cultura, metas e integraciones.
@@ -694,6 +1061,144 @@ export class OnboardingAgentService {
         } catch (err: any) {
           return { ok: false, error: err.message };
         }
+      }
+
+      case 'save_platform_config': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.savePlatformConfig(tenantId, {
+            managed_tenants:   input.managed_tenants,
+            platform_kpis:     input.platform_kpis,
+            alert_preferences: input.alert_preferences,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_report_preferences': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveReportPreferences(tenantId, {
+            daily_brief_time:        input.daily_brief_time,
+            weekly_day:              input.weekly_day,
+            client_report_frequency: input.client_report_frequency,
+            report_format:           input.report_format,
+            report_templates:        input.report_templates,
+            alert_thresholds:        input.alert_thresholds,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'create_sop': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.createSop(tenantId, {
+            name:         input.name,
+            description:  input.description,
+            category:     input.category,
+            frequency:    input.frequency,
+            product_line: input.product_line,
+            steps:        input.steps,
+            checklist:    input.checklist,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_founder_profile_extended': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveFounderProfileExtended(tenantId, input.slot_id, {
+            peak_hours:               input.peak_hours,
+            work_style:               input.work_style,
+            communication_preference: input.communication_preference,
+            directness_level:         input.directness_level,
+            sacred_time:              input.sacred_time,
+            protected_routines:       input.protected_routines,
+            delegation_threshold:     input.delegation_threshold,
+            personal_goal:            input.personal_goal,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_rhythms_calendar': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveRhythmsCalendar(tenantId, {
+            calendar_provider:  input.calendar_provider,
+            calendar_ids:       input.calendar_ids,
+            recurring_meetings: input.recurring_meetings,
+            critical_dates:     input.critical_dates,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_active_clients': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveActiveClients(tenantId, input.clients ?? []);
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_privacy_config': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.savePrivacyConfig(tenantId, {
+            financial_visibility:  input.financial_visibility,
+            client_data_scope:     input.client_data_scope,
+            sensitive_fields:      input.sensitive_fields,
+            data_retention_days:   input.data_retention_days,
+            offboarding_procedure: input.offboarding_procedure,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_comm_channels': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveCommChannels(tenantId, {
+            email:           input.email,
+            whatsapp:        input.whatsapp,
+            social_media:    input.social_media,
+            crm_integration: input.crm_integration,
+            war_room:        input.war_room,
+            internal:        input.internal,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_content_inventory': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.saveContentInventory(tenantId, {
+            brand:            input.brand,
+            digital_presence: input.digital_presence,
+            social_media:     input.social_media,
+            sales_material:   input.sales_material,
+            proposals:        input.proposals,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'save_employee_tool': {
+        try {
+          return this.onboarding.saveEmployeeTool(input.slot_id, {
+            tool_name:        input.tool_name,
+            tool_category:    input.tool_category,
+            integration_type: input.integration_type,
+            use_cases:        input.use_cases,
+            autonomy_level:   input.autonomy_level,
+            usage_frequency:  input.usage_frequency,
+            priority_rank:    input.priority_rank,
+          });
+        } catch (err: any) { return { ok: false, error: err.message }; }
       }
 
       default:
