@@ -7,11 +7,51 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto, UpdateTenantStatusDto, UpdateTenantTypeDto } from './dto/update-tenant.dto';
 
 const SALT_ROUNDS = 12;
+
+export interface FocusBrief {
+  date: string;
+  hero: {
+    label: string;
+    value: string;
+    description: string;
+    urgency: 'critical' | 'high' | 'medium';
+    ksf_name?: string;
+  };
+  metrics: Array<{
+    label: string;
+    current: string;
+    target: string;
+    trend: 'up' | 'down' | 'flat' | 'unknown';
+    color: 'green' | 'amber' | 'red' | 'blue';
+  }>;
+  priorities: Array<{
+    rank: number;
+    title: string;
+    why: string;
+    ksf_impact: string;
+    estimated_minutes: number;
+    category: 'strategic' | 'client' | 'team' | 'admin';
+  }>;
+  momentum: {
+    streak_days: number;
+    message: string;
+    weekly_score: number;
+  };
+  pulse: Array<{
+    source: string;
+    label: string;
+    count: number;
+    urgency: 'high' | 'medium' | 'low';
+    preview?: string;
+  }>;
+  generated_at: string;
+}
 
 // Campos que devuelve una empresa sin datos sensibles
 const TENANT_SELECT = {
@@ -498,5 +538,122 @@ export class TenantsService {
     const cfg = (tenant.campus_config as Record<string, any>) ?? {};
     const sops = (cfg.sops ?? []) as any[];
     return { sops };
+  }
+
+  async getFocusBrief(tenant_id: string, slot_id: string): Promise<FocusBrief> {
+    const anthropic = new Anthropic();
+
+    const [tenant, ksfs, tasks, events, founderProfile] = await Promise.all([
+      this.prisma.tenant.findUniqueOrThrow({
+        where: { id: tenant_id },
+        select: { name: true, mission: true, campus_config: true },
+      }),
+      this.prisma.keySuccessFactor.findMany({
+        where: { tenant_id },
+        select: { name: true, unit: true, minimum_level: true, satisfactory_level: true, outstanding_level: true },
+        take: 7,
+      }).catch(() => [] as any[]),
+      this.prisma.task.findMany({
+        where: { tenant_id, status: { in: ['pending', 'in_progress'] } },
+        orderBy: { due_date: 'asc' },
+        take: 20,
+        select: { title: true, status: true, priority: true, due_date: true },
+      }).catch(() => [] as any[]),
+      this.prisma.calendarEvent.findMany({
+        where: {
+          tenant_id,
+          start_at: { gte: new Date(), lte: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { start_at: 'asc' },
+        take: 5,
+        select: { title: true, start_at: true, end_at: true },
+      }).catch(() => [] as any[]),
+      this.prisma.founderProfile.findUnique({
+        where: { tenant_id },
+        select: { operating_style: true },
+      }).catch(() => null),
+    ]);
+
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const founderStyle = cfg.founder_work_style ?? {};
+    const activeClients: any[] = cfg.active_clients ?? [];
+
+    const contextSummary = [
+      `EMPRESA: ${tenant.name}`,
+      `MISIÓN: ${tenant.mission ?? 'No definida'}`,
+      `FECHA: ${new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`,
+      ``,
+      `KSFs (${ksfs.length}):`,
+      ...ksfs.map((k: any) => `- ${k.name} (${k.unit}): min ${k.minimum_level} | sat ${k.satisfactory_level} | out ${k.outstanding_level}`),
+      ``,
+      `TAREAS PENDIENTES (${tasks.length}):`,
+      ...tasks.slice(0, 10).map((t: any) => `- [${t.priority ?? 'normal'}] ${t.title}`),
+      ``,
+      `EVENTOS HOY: ${events.length > 0 ? events.map((e: any) => e.title).join(', ') : 'ninguno'}`,
+      `CLIENTES ACTIVOS: ${activeClients.length}`,
+      ...activeClients.slice(0, 5).map((c: any) => `- ${c.name} (${c.status ?? 'activo'})`),
+      ``,
+      `PERFIL FOUNDER: estilo operativo ${founderStyle.operating_style ?? founderProfile?.operating_style ?? 'no definido'}`,
+    ].join('\n');
+
+    const systemPrompt = `Eres Atlas, Secretario Personal de ${tenant.name}. Genera el Focus Mode del día en JSON estricto.
+
+REGLAS:
+- hero.value: número de impacto real (pesos MXN, clientes, %)
+- priorities: máximo 5, de mayor a menor impacto en KSFs
+- metrics: máximo 4
+- pulse: canales con actividad (count: 0 si no hay datos)
+- momentum.streak_days: 1 si no hay historial
+- Responde SOLO JSON válido, sin texto extra
+
+JSON esperado:
+{
+  "date": "lunes 1 de junio de 2026",
+  "hero": { "label": "IMPACTO DE HOY", "value": "$120K MXN", "description": "...", "urgency": "critical", "ksf_name": "Ingresos" },
+  "metrics": [{ "label": "MRR", "current": "$48K", "target": "$70K", "trend": "up", "color": "amber" }],
+  "priorities": [{ "rank": 1, "title": "...", "why": "...", "ksf_impact": "...", "estimated_minutes": 45, "category": "client" }],
+  "momentum": { "streak_days": 1, "message": "...", "weekly_score": 60 },
+  "pulse": [],
+  "generated_at": "${new Date().toISOString()}"
+}`;
+
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: `Contexto de hoy:\n\n${contextSummary}` }],
+      });
+      const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '{}';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      return JSON.parse(jsonMatch?.[0] ?? text) as FocusBrief;
+    } catch {
+      return this.buildFallbackBrief(tenant.name, ksfs, tasks);
+    }
+  }
+
+  private buildFallbackBrief(
+    tenantName: string,
+    ksfs: Array<{ name: string; unit: string }>,
+    tasks: Array<{ title: string; priority: string | null }>,
+  ): FocusBrief {
+    return {
+      date: new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+      hero: {
+        label: 'HOY',
+        value: `${tasks.filter(t => t.priority === 'high').length} prioritarias`,
+        description: `${tenantName} · ${tasks.length} tareas pendientes`,
+        urgency: 'medium',
+      },
+      metrics: ksfs.slice(0, 4).map(k => ({
+        label: k.name, current: '—', target: k.unit, trend: 'unknown' as const, color: 'blue' as const,
+      })),
+      priorities: tasks.slice(0, 5).map((t, i) => ({
+        rank: i + 1, title: t.title, why: 'Pendiente', ksf_impact: '—', estimated_minutes: 30, category: 'admin' as const,
+      })),
+      momentum: { streak_days: 1, message: 'Empezando a construir momentum', weekly_score: 50 },
+      pulse: [],
+      generated_at: new Date().toISOString(),
+    };
   }
 }

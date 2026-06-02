@@ -44,6 +44,12 @@ export class TenantsController {
     return this.tenantsService.getSops(tenantId);
   }
 
+  @Get('mine/focus-brief')
+  @ApiOperation({ summary: 'Focus Mode del día generado por Atlas con IA' })
+  getFocusBrief(@TenantId() tenantId: string, @CurrentUser() user: any) {
+    return this.tenantsService.getFocusBrief(tenantId, user.slot_id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Ver empresa por ID (super-admin ve cualquiera, owner solo la suya)' })
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
