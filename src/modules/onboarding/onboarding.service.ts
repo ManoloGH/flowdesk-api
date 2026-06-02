@@ -767,4 +767,184 @@ export class OnboardingService {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@$!';
     return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   }
+
+  private async mergeCampusConfig(tenant_id: string, patch: Record<string, any>): Promise<void> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id },
+      select: { campus_config: true },
+    });
+    const current = (tenant.campus_config as Record<string, any>) ?? {};
+    await this.prisma.tenant.update({
+      where: { id: tenant_id },
+      data: { campus_config: { ...current, ...patch } },
+    });
+  }
+
+  async createSop(tenant_id: string, sop: {
+    name: string;
+    description?: string;
+    category?: string;
+    frequency?: string;
+    product_line?: string;
+    steps?: Array<{ order: number; action: string; tool?: string; responsible?: string; duration_min?: number; failure_mode?: string }>;
+    checklist?: string[];
+  }): Promise<{ ok: boolean; sop_id: string; name: string }> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id }, select: { campus_config: true },
+    });
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const sops: any[] = cfg.sops ?? [];
+    const newSop = { id: `sop_${Date.now()}`, ...sop, category: sop.category ?? 'internal', steps: sop.steps ?? [], checklist: sop.checklist ?? [] };
+    sops.push(newSop);
+    await this.prisma.tenant.update({ where: { id: tenant_id }, data: { campus_config: { ...cfg, sops } } });
+    return { ok: true, sop_id: newSop.id, name: newSop.name };
+  }
+
+  async savePlatformConfig(tenant_id: string, config: {
+    managed_tenants?: Array<{ name: string; plan?: string; contact?: string; status?: string }>;
+    platform_kpis?: string[];
+    alert_preferences?: Record<string, any>;
+  }): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { platform_config: config });
+    await this.prisma.tenant.update({
+      where: { id: tenant_id },
+      data: { tenant_type: 'PLATFORM' },
+    });
+    return { ok: true };
+  }
+
+  async saveReportPreferences(tenant_id: string, prefs: {
+    daily_brief_time?: string;
+    weekly_day?: string;
+    client_report_frequency?: string;
+    report_format?: string;
+    alert_thresholds?: Record<string, any>;
+    report_templates?: Array<{
+      type: string; frequency: string; sections: string[];
+    }>;
+  }): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { report_preferences: prefs });
+    return { ok: true };
+  }
+
+  async saveFounderProfileExtended(tenant_id: string, slot_id: string, profile: {
+    peak_hours?: string;
+    work_style?: string;
+    communication_preference?: string;
+    directness_level?: number;
+    sacred_time?: Array<{ day: string; from: string; to: string; reason?: string }>;
+    protected_routines?: string[];
+    delegation_threshold?: string;
+    personal_goal?: string;
+  }): Promise<{ ok: boolean }> {
+    const existing = await this.prisma.founderProfile.findUnique({ where: { tenant_id } });
+    if (existing) {
+      await this.prisma.founderProfile.update({
+        where: { tenant_id },
+        data: {
+          loved_behaviors:  profile.protected_routines as any,
+          doing_well_means: profile.personal_goal,
+          operating_style:  profile.work_style,
+        },
+      });
+    }
+    await this.mergeCampusConfig(tenant_id, { founder_work_style: profile });
+    return { ok: true };
+  }
+
+  async saveRhythmsCalendar(tenant_id: string, config: {
+    calendar_provider?: string;
+    calendar_ids?: string[];
+    recurring_meetings?: Array<{
+      name: string; day_of_week?: string; time?: string;
+      frequency?: string; participants?: string[]; duration_min?: number;
+    }>;
+    critical_dates?: Array<{ date: string; description: string; recurrent?: boolean }>;
+    business_cycles?: Array<{ name: string; start_day: number; end_day?: number }>;
+  }): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { calendar_config: config });
+    return { ok: true };
+  }
+
+  async saveActiveClients(tenant_id: string, clients: Array<{
+    name: string;
+    product_line?: string;
+    start_date?: string;
+    end_date?: string;
+    mrr?: number;
+    owner_slot_id?: string;
+    status?: string;
+    priority_note?: string;
+    has_flowdesk?: boolean;
+  }>): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { active_clients: clients });
+    return { ok: true };
+  }
+
+  async savePrivacyConfig(tenant_id: string, config: {
+    financial_visibility?: string;
+    client_data_scope?: string;
+    sensitive_fields?: string[];
+    data_retention_days?: number;
+    offboarding_procedure?: string;
+  }): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { privacy_config: config });
+    return { ok: true };
+  }
+
+  async saveCommChannels(tenant_id: string, channels: {
+    email?: Array<{ address: string; purpose?: string; priority?: string; monitor?: boolean }>;
+    whatsapp?: Array<{ number: string; type?: string; tool?: string }>;
+    social_media?: Array<{ platform: string; handle?: string; manager_slot_id?: string; monitor_dms?: boolean }>;
+    crm_integration?: { provider?: string; new_lead_alert?: boolean };
+    war_room?: { enabled?: boolean; auto_summary?: boolean; notify_participants?: boolean };
+    internal?: Array<{ tool: string; workspace_id?: string }>;
+  }): Promise<{ ok: boolean }> {
+    await this.mergeCampusConfig(tenant_id, { communication_channels: channels });
+    return { ok: true };
+  }
+
+  async saveContentInventory(tenant_id: string, inventory: {
+    brand?: { logo?: { exists: boolean; url?: string }; brandbook?: { exists: boolean; url?: string } };
+    digital_presence?: { website?: { exists: boolean; url?: string; updated?: boolean } };
+    social_media?: { profiles?: Array<{ platform: string; handle?: string; active?: boolean }> };
+    mailing?: { list_size?: number; tool?: string; welcome_sequence?: { exists: boolean } };
+    sales_material?: { one_pager?: { exists: boolean }; case_studies?: { exists: boolean; count?: number } };
+    proposals?: { quote_template?: { exists: boolean }; contracts?: { exists: boolean } };
+  }): Promise<{ ok: boolean; pending_count: number }> {
+    await this.mergeCampusConfig(tenant_id, { content_inventory: inventory });
+    const flat = JSON.stringify(inventory);
+    const pending = (flat.match(/"exists":false/g) ?? []).length;
+    return { ok: true, pending_count: pending };
+  }
+
+  async saveEmployeeTool(slot_id: string, tool: {
+    tool_name: string;
+    tool_category: string;
+    integration_type: string;
+    use_cases?: string[];
+    autonomy_level?: {
+      auto_execute?: string[];
+      requires_approval?: string[];
+      forbidden?: string[];
+    };
+    usage_frequency?: string;
+    priority_rank?: number;
+  }): Promise<{ ok: boolean }> {
+    const slot = await this.prisma.teamSlot.findUniqueOrThrow({
+      where: { id: slot_id },
+      select: { secretary_config: true },
+    });
+    const config = (slot.secretary_config as any) ?? { connected_tools: [], workflow_templates: [] };
+    const existing = config.connected_tools as any[];
+    const idx = existing.findIndex((t: any) => t.tool_name === tool.tool_name);
+    if (idx >= 0) existing[idx] = tool;
+    else existing.push(tool);
+    config.connected_tools = existing;
+    await this.prisma.teamSlot.update({
+      where: { id: slot_id },
+      data: { secretary_config: config },
+    });
+    return { ok: true };
+  }
 }
