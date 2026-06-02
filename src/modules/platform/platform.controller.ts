@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Request, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlatformService } from './platform.service';
@@ -35,6 +35,7 @@ class SetAccessDto {
 @ApiBearerAuth()
 @Controller()
 export class PlatformController {
+  private readonly logger = new Logger(PlatformController.name);
   constructor(private service: PlatformService) {}
 
   // ── PLATFORM endpoints (solo tenant_type = PLATFORM) ──────────────────────
@@ -57,7 +58,8 @@ export class PlatformController {
     try {
       return await this.service.provisionTenant(req.user.tenant_id, dto);
     } catch (err: any) {
-      throw new (await import('@nestjs/common').then(m => m.BadRequestException))(err?.message ?? 'Error al provisionar tenant');
+      this.logger.error('provisionTenant failed', err?.message, err?.stack);
+      throw new BadRequestException(err?.message ?? 'Error al provisionar tenant');
     }
   }
 
