@@ -1094,4 +1094,16 @@ Máximo 5 procesos. Si no hay procesos claros, devuelve { "processes": [], "summ
       message: extracted.summary ?? `${created} procesos importados`,
     };
   }
+
+  async saveAccountType(tenantId: string, accountType: string): Promise<void> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { campus_config: true },
+    });
+    const current = (tenant?.campus_config as Record<string, unknown>) ?? {};
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { campus_config: { ...current, account_type: accountType } },
+    });
+  }
 }

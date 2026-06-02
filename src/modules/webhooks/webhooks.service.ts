@@ -5,6 +5,9 @@ import { AuditService, AuditAction } from '../../common/audit/audit.service';
 import { ChatwootAdapter } from '../../integrations/chatwoot/chatwoot.adapter';
 import { EvolutionAdapter } from '../../integrations/evolution/evolution.adapter';
 import { GhlAdapter } from '../../integrations/ghl/ghl.adapter';
+import { SecretaryService } from '../secretary/secretary.service';
+import { SecretaryAgentService } from '../secretary/secretary-agent.service';
+import { WhatsAppService } from '../secretary/whatsapp.service';
 
 @Injectable()
 export class WebhooksService {
@@ -17,6 +20,9 @@ export class WebhooksService {
     private chatwoot: ChatwootAdapter,
     private evolution: EvolutionAdapter,
     private ghl: GhlAdapter,
+    private secretary: SecretaryService,
+    private secretaryAgent: SecretaryAgentService,
+    private whatsapp: WhatsAppService,
   ) {}
 
   // Resolver el tenant a partir del identificador del webhook
@@ -116,6 +122,19 @@ export class WebhooksService {
           contact_id: contact.id,
           content: parsed.content?.slice(0, 80),
         });
+
+        // Enrutar al Secretary Agent si el mensaje viene del owner
+        const secretaryConfig = await this.secretary.getConfig(tenantId);
+        const normalizedFrom = parsed.from.replace(/\D/g, '');
+        const normalizedOwner = secretaryConfig?.owner_phone?.replace(/\D/g, '') ?? '';
+
+        if (secretaryConfig?.enabled && normalizedFrom === normalizedOwner) {
+          const instance = await this.secretary.getEvolutionInstance(tenantId);
+          if (instance) {
+            const reply = await this.secretaryAgent.chat(tenantId, parsed.content, parsed.from);
+            await this.whatsapp.send(instance, parsed.from, reply);
+          }
+        }
       }
     } catch (err) {
       this.logger.error('Error procesando webhook Evolution', err);

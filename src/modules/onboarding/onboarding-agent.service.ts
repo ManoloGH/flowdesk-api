@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { OnboardingService } from './onboarding.service';
 import { AirtableService } from '../airtable/airtable.service';
+import { SecretaryService } from '../secretary/secretary.service';
 
 const MODEL = 'claude-sonnet-4-6';
 const MAX_TOOL_ITERATIONS = 15;
@@ -596,6 +597,29 @@ Extrae procesos automáticamente, crea los SOPs y genera sus diagramas BPMN.`,
   },
 
   {
+    name: 'setup_secretary',
+    description: `Configura el Secretario Personal (Atlas) para recibir mensajes por WhatsApp.
+Llámalo cuando el usuario confirme su número de WhatsApp y quiera activar el morning brief.
+Requiere tenant_id. El número debe ser solo dígitos, sin + ni espacios.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:             { type: 'string' },
+        owner_phone:           { type: 'string', description: 'Número WhatsApp del owner, solo dígitos (ej: 5215512345678)' },
+        evolution_instance:    { type: 'string', description: 'Nombre de la instancia Evolution API (opcional)' },
+        morning_brief_time:    { type: 'string', description: 'Hora del Daily Brief, ej: "08:00"' },
+        morning_brief_enabled: { type: 'boolean' },
+        account_type: {
+          type: 'string',
+          enum: ['CONSULTORIA_CLIENT', 'PARTNERSHIP', 'SAAS_ACCOUNT', 'DIRECT'],
+          description: 'Tipo de cuenta — afecta cómo Atlas configura la empresa',
+        },
+      },
+      required: ['tenant_id', 'owner_phone'],
+    },
+  },
+
+  {
     name: 'launch_company',
     description: `Lanza la empresa: provisiona el ERP en Airtable y crea el desk inicial del owner.
 Llámalo AL FINAL, después de haber configurado cultura, metas e integraciones.
@@ -660,6 +684,29 @@ Si algo no está listo, lo marco como pendiente y seguimos. Nunca te bloqueo.
 Una pregunta a la vez. Si tengo varias cosas pendientes, elijo la más importante.
 
 Cuando algo queda guardado, te lo confirmo con precisión: "Guardado: tu Daily Brief llegará a las 8:00 AM todos los días."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECCIÓN 0 — TIPO DE CUENTA Y CONFIGURACIÓN TÉCNICA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Antes de empezar, identifica el tipo de cuenta:
+
+• CONSULTORIA_CLIENT — empresa que MentorIA está implementando (llegó por diagnóstico)
+• PARTNERSHIP — negocio donde MentorIA opera y tiene participación (Nodo, RSM, Enseñanza)
+• SAAS_ACCOUNT — cuenta interna (FlowDesk empresa, MentorIA Systems)
+• DIRECT — empresa que llegó sola a FlowDesk
+
+Si el contexto es claro (ej: el super admin lo especifica), asúmelo y avanza sin preguntar.
+Si no está claro, pregunta: "¿Cómo llegaste a FlowDesk? ¿Alguien de MentorIA te está configurando esto?"
+
+Configuración técnica — Atlas como secretario personal:
+Una vez que tengas el tenant_id (del create_company), pregunta:
+  "¿Cuál es tu número de WhatsApp? (para que pueda mandarte el Daily Brief cada mañana)"
+  "¿A qué hora quieres recibirlo? (ej: 8:00 AM)"
+→ setup_secretary con tenant_id + owner_phone + morning_brief_time
+Confirma: "Listo. Mañana a las [hora] recibirás tu primer Daily Brief por WhatsApp."
+
+Si el usuario no tiene WhatsApp o no quiere activarlo: registra morning_brief_enabled: false y avanza.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SECCIÓN 1 — EMPRESA E IDENTIDAD (Bloques 1-2)
@@ -807,6 +854,7 @@ export class OnboardingAgentService {
   constructor(
     private onboarding: OnboardingService,
     private airtable: AirtableService,
+    private secretary: SecretaryService,
   ) {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -1032,6 +1080,26 @@ export class OnboardingAgentService {
           const tenantId = input.tenant_id ?? sessionTenantId;
           if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
           return this.onboarding.setupIntegrations(tenantId, input.integrations ?? []);
+        } catch (err: any) {
+          return { ok: false, error: err.message };
+        }
+      }
+
+      case 'setup_secretary': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          await this.secretary.upsertConfig(tenantId, {
+            owner_phone:           String(input.owner_phone).replace(/\D/g, ''),
+            evolution_instance:    input.evolution_instance as string | undefined,
+            morning_brief_time:    (input.morning_brief_time as string) ?? '08:00',
+            morning_brief_enabled: input.morning_brief_enabled !== false,
+            enabled:               true,
+          });
+          if (input.account_type) {
+            await this.onboarding.saveAccountType(tenantId, input.account_type as string);
+          }
+          return { ok: true, owner_phone: input.owner_phone, morning_brief_time: input.morning_brief_time ?? '08:00' };
         } catch (err: any) {
           return { ok: false, error: err.message };
         }

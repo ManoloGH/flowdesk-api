@@ -74,6 +74,13 @@ model Tenant {
   culture_blueprint      CultureBlueprint?
   operating_map          OperatingMap?
   meetings               Meeting[]
+  vault_entries          VaultEntry[]
+  brain_documents        EmpresaBrainDocument[]
+  secretary_config       SecretaryConfig?
+  billing_config         BillingConfig?
+  pending_approvals      PendingApproval[]
+  delegation_history     DelegationHistory[]
+  work_reports           WorkReport[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -1473,6 +1480,138 @@ model OperatingMap {
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
+
+// ═════════════════════════════════════════════
+// BILLING CONFIG — Stripe + Facturapi por tenant
+// ═════════════════════════════════════════════
+
+model BillingConfig {
+  id                  String   @id @default(cuid())
+  tenant_id           String   @unique
+  tenant              Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  stripe_account_id   String?  // Stripe Connect account ID
+  facturapi_org_id    String?  // ID organización Facturapi
+  rfc                 String?
+  fiscal_regime       String?  // Régimen fiscal SAT (ej: "601")
+  legal_name          String?  // Razón social
+  tax_zip             String?  // Código postal fiscal
+  invoice_series      String?  @default("A")
+  payment_conditions  String?  @default("PUE")
+  enabled             Boolean  @default(false)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+// ═════════════════════════════════════════════
+// SECRETARY — Atlas Secretario Personal
+// ═════════════════════════════════════════════
+
+model SecretaryConfig {
+  id                    String   @id @default(cuid())
+  tenant_id             String   @unique
+  tenant                Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  owner_phone           String   // número WhatsApp del owner (sin +, sin @)
+  evolution_instance    String?  // nombre de la instancia Evolution API
+  morning_brief_time    String   @default("08:00")  // HH:MM hora local
+  morning_brief_enabled Boolean  @default(true)
+  enabled               Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}
+
+model PendingApproval {
+  id           String    @id @default(cuid())
+  tenant_id    String
+  tenant       Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  requested_by String    // slot_id del agente o humano que pide aprobación
+  description  String
+  context      Json      @default("{}")
+  status       String    @default("pending")  // "pending" | "approved" | "rejected"
+  decided_by   String?
+  decided_at   DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@index([tenant_id, status])
+}
+
+model DelegationHistory {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  from_slot  String
+  to_slot    String
+  task       String
+  result     String?
+  created_at DateTime @default(now())
+
+  @@index([tenant_id])
+}
+
+model WorkReport {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  slot_id    String
+  period     String   // "daily" | "weekly"
+  content    Json     @default("{}")
+  created_at DateTime @default(now())
+
+  @@index([tenant_id, slot_id])
+  @@index([tenant_id, period])
+}
+
+// ═════════════════════════════════════════════
+// EMPRESA BRAIN — Base de conocimiento vectorial
+// ═════════════════════════════════════════════
+
+model EmpresaBrainDocument {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  tenant      Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  source_type String   // "onboarding" | "sop" | "conversation" | "document" | "decision" | "culture" | "goal"
+  source_id   String?  // ID del objeto origen
+  title       String
+  content     String
+  embedding   Unsupported("vector(1536)")?
+  metadata    Json     @default("{}")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([tenant_id, source_type])
+}
+
+// ═════════════════════════════════════════════
+// VAULT — Credenciales cifradas AES-256-GCM
+// ═════════════════════════════════════════════
+
+model VaultEntry {
+  id              String   @id @default(cuid())
+  tenant_id       String
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  key_name        String   // "EVOLUTION_API_KEY" | "STRIPE_SECRET" | "GOOGLE_OAUTH_TOKEN" etc.
+  encrypted_value String   // AES-256-GCM: iv:tag:data (via EncryptionService)
+  category        String   // "whatsapp" | "email" | "billing" | "calendar" | "crm" | "storage" | "other"
+  description     String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  access_logs VaultAccessLog[]
+
+  @@unique([tenant_id, key_name])
+  @@index([tenant_id, category])
+}
+
+model VaultAccessLog {
+  id         String     @id @default(cuid())
+  entry_id   String
+  entry      VaultEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  accessor   String     // "system" | slot_id
+  action     String     // "read" | "write" | "delete"
+  created_at DateTime   @default(now())
+
+  @@index([entry_id])
 }
 
 // ── War Room — Reuniones grabadas ─────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
@@ -31,12 +32,17 @@ import { BranchesModule } from './modules/branches/branches.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
 import { CultureModule } from './modules/culture/culture.module';
+import { VaultModule } from './modules/vault/vault.module';
+import { BrainModule } from './modules/brain/brain.module';
+import { SecretaryModule } from './modules/secretary/secretary.module';
+import { SalesModule } from './modules/sales/sales.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       useFactory: () => ({
         throttlers: [{ name: 'default', ttl: 60_000, limit: 200 }],
@@ -82,6 +88,14 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     SpacesModule,
     // Cultura operativa
     CultureModule,
+    // Vault — credenciales cifradas
+    VaultModule,
+    // Empresa Brain — base de conocimiento vectorial
+    BrainModule,
+    // Secretary — Atlas Secretario Personal
+    SecretaryModule,
+    // Sales — Pipeline + Agente Comercial
+    SalesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

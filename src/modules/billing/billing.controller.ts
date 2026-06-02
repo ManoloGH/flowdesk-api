@@ -1,16 +1,29 @@
-import { Controller, Get, Post, Body, Req, Headers, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, Headers, HttpCode, HttpStatus, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, TenantId } from '../../common/decorators/tenant.decorator';
 import { BillingService } from './billing.service';
+import { BillingAgentService } from './billing-agent.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
 @Controller('billing')
 export class BillingController {
-  constructor(private billing: BillingService) {}
+  constructor(
+    private billing: BillingService,
+    private billingAgent: BillingAgentService,
+  ) {}
+
+  @Post('agent/chat')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(200)
+  async agentChat(@Request() req: any, @Body() body: { message: string }) {
+    const reply = await this.billingAgent.chat(req.user.tenant_id, req.user.slot_id, body.message);
+    return { reply };
+  }
 
   @Get('status')
   @ApiOperation({ summary: 'Estado de facturación del tenant actual' })
@@ -45,7 +58,7 @@ export class BillingController {
     @Headers('stripe-signature') signature: string,
   ) {
     // req.body es Buffer (express.raw aplicado en main.ts para esta ruta)
-    return this.billing.handleWebhook(req.body as Buffer, signature);
+    return this.billing.handleWebhook(req.body as unknown as Buffer, signature);
   }
 
   @Get('admin/overview')

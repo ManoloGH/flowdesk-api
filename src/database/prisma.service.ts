@@ -87,6 +87,22 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get cultureBlueprint() { return this.prisma.cultureBlueprint; }
   get operatingMap() { return this.prisma.operatingMap; }
 
+  // ── Billing Config ────────────────────────────────────────────────────────
+  get billingConfig() { return this.prisma.billingConfig; }
+
+  // ── Secretary ─────────────────────────────────────────────────────────────
+  get secretaryConfig() { return this.prisma.secretaryConfig; }
+  get pendingApproval() { return this.prisma.pendingApproval; }
+  get delegationHistory() { return this.prisma.delegationHistory; }
+  get workReport() { return this.prisma.workReport; }
+
+  // ── Empresa Brain ─────────────────────────────────────────────────────────
+  get empresaBrainDocument() { return this.prisma.empresaBrainDocument; }
+
+  // ── Vault — credenciales cifradas ────────────────────────────────────────
+  get vaultEntry() { return this.prisma.vaultEntry; }
+  get vaultAccessLog() { return this.prisma.vaultAccessLog; }
+
   // ── AUP Goals Module ──────────────────────────────────────────────────────
   get strategicPurpose() { return this.prisma.strategicPurpose; }
   get ksfRelationship() { return this.prisma.ksfRelationship; }
@@ -105,6 +121,22 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $transaction(...args: any[]): any {
     return (this.prisma.$transaction as any)(...args);
+  }
+
+  // Raw SQL — necesario para operaciones vectoriales (pgvector)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $executeRawUnsafe(query: string, ...values: any[]): Promise<number> {
+    return this.prisma.$executeRawUnsafe(query, ...values);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $queryRawUnsafe<T = unknown>(query: string, ...values: any[]): Promise<T> {
+    return this.prisma.$queryRawUnsafe<T>(query, ...values);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $queryRaw<T = unknown>(strings: any, ...values: any[]): Promise<T> {
+    return this.prisma.$queryRaw<T>(strings, ...values);
   }
 
   // Transacción con tenant_id inyectado en la sesión de Postgres.
