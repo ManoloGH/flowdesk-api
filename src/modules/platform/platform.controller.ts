@@ -1,32 +1,33 @@
 import { Controller, Get, Post, Patch, Param, Body, Request, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlatformService } from './platform.service';
 
 // ─── DTOs inline ─────────────────────────────────────────────────────────────
 
 class ProvisionTenantDto {
-  name: string;
-  slug: string;
-  tenant_type: 'NETWORK' | 'BRANCH';
-  network_id?: string;
-  external_ref?: string;
-  plan?: string;
-  owner_email: string;
-  owner_name: string;
+  @IsString()  name: string;
+  @IsString()  slug: string;
+  @IsIn(['NETWORK', 'BRANCH'])  tenant_type: 'NETWORK' | 'BRANCH';
+  @IsOptional() @IsString()  network_id?: string;
+  @IsOptional() @IsString()  external_ref?: string;
+  @IsOptional() @IsString()  plan?: string;
+  @IsEmail()   owner_email: string;
+  @IsString()  owner_name: string;
 }
 
 class ProvisionBranchDto {
-  name: string;
-  slug: string;
-  external_ref?: string;
-  employee_desks_enabled?: boolean;
-  owner_email: string;
-  owner_name: string;
+  @IsString()   name: string;
+  @IsString()   slug: string;
+  @IsOptional() @IsString()   external_ref?: string;
+  @IsOptional() employee_desks_enabled?: boolean;
+  @IsEmail()    owner_email: string;
+  @IsString()   owner_name: string;
 }
 
 class SetAccessDto {
-  access: 'FULL' | 'LIGHT' | 'NONE';
+  @IsIn(['FULL', 'LIGHT', 'NONE']) access: 'FULL' | 'LIGHT' | 'NONE';
 }
 
 // ─── Controller ──────────────────────────────────────────────────────────────
