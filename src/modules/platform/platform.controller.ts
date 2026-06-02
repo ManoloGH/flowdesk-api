@@ -53,8 +53,12 @@ export class PlatformController {
 
   @Post('platform/network')
   @ApiOperation({ summary: '[PLATFORM] Provisionar un nuevo tenant (NETWORK o BRANCH)' })
-  provisionTenant(@Body() dto: ProvisionTenantDto, @Request() req: any) {
-    return this.service.provisionTenant(req.user.tenant_id, dto);
+  async provisionTenant(@Body() dto: ProvisionTenantDto, @Request() req: any) {
+    try {
+      return await this.service.provisionTenant(req.user.tenant_id, dto);
+    } catch (err: any) {
+      throw new (await import('@nestjs/common').then(m => m.BadRequestException))(err?.message ?? 'Error al provisionar tenant');
+    }
   }
 
   // ── NETWORK endpoints (tenant_type = NETWORK o PLATFORM) ──────────────────
