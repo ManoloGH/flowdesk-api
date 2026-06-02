@@ -292,6 +292,21 @@ Si el usuario no tiene los pasos detallados, crea el SOP con los datos que tenga
   },
 
   {
+    name: 'generate_sop_bpmn',
+    description: `Genera el diagrama BPMN 2.0 para un SOP ya creado con create_sop.
+Llámalo SIEMPRE justo después de create_sop usando el sop_id devuelto.
+El diagrama se guarda automáticamente y el usuario puede verlo en /sops.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string' },
+        sop_id:    { type: 'string', description: 'El id devuelto por create_sop' },
+      },
+      required: ['tenant_id', 'sop_id'],
+    },
+  },
+
+  {
     name: 'save_founder_profile_extended',
     description: `Guarda el perfil personal del Founder: estilo de trabajo, preferencias, rutinas sagradas (Bloque 9).
 Llámalo cuando el usuario confirme su perfil personal durante el onboarding.`,
@@ -565,6 +580,22 @@ slot_id es el ID del TeamSlot del empleado humano.`,
   },
 
   {
+    name: 'import_audit_report',
+    description: `Importa procesos y hallazgos desde un reporte de auditoría previo.
+Llámalo cuando el usuario diga que tiene una auditoría previa, un diagnóstico inicial,
+o pegue texto de un informe de análisis de negocio.
+Extrae procesos automáticamente, crea los SOPs y genera sus diagramas BPMN.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id:  { type: 'string' },
+        audit_text: { type: 'string', description: 'Texto completo o parcial del reporte de auditoría' },
+      },
+      required: ['tenant_id', 'audit_text'],
+    },
+  },
+
+  {
     name: 'launch_company',
     description: `Lanza la empresa: provisiona el ERP en Airtable y crea el desk inicial del owner.
 Llámalo AL FINAL, después de haber configurado cultura, metas e integraciones.
@@ -680,9 +711,17 @@ Reportes (Bloque 7):
   → save_report_preferences
 
 SOPs (Bloque 8):
-  "¿Cuáles son los 3 procesos más repetitivos en [Empresa]?"
-  Por cada proceso confirmado: → create_sop
-  Máximo 5 SOPs en el onboarding. Los demás se documentan después.
+  Si el usuario menciona que tiene una auditoría, diagnóstico previo o informe de análisis:
+  → Pídele que pegue el texto del informe → import_audit_report
+  → Confirma: "Importé [N] procesos con sus diagramas BPMN. Puedes verlos en /sops."
+
+  Si no tiene auditoría previa:
+  "¿Cuáles son los 3 procesos más importantes de [Empresa]?"
+  Por cada proceso confirmado:
+  1. → create_sop con los pasos que describa
+  2. → generate_sop_bpmn con el sop_id devuelto (SIEMPRE, inmediatamente después)
+  → Confirma: "Proceso documentado y diagrama generado. Puedes verlo en /sops."
+  Máximo 5 SOPs en el onboarding. Los demás se documentan después desde /sops.
 
 Perfil del Founder (Bloque 9):
   "¿A qué hora eres más productivo? ¿Hay días o horarios sagrados?"
@@ -1049,6 +1088,23 @@ export class OnboardingAgentService {
             steps:        input.steps,
             checklist:    input.checklist,
           });
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'generate_sop_bpmn': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          const result = await this.onboarding.generateSopBpmn(tenantId, input.sop_id);
+          return { ok: result.ok, message: result.ok ? 'Diagrama BPMN generado correctamente' : 'No se pudo generar el diagrama' };
+        } catch (err: any) { return { ok: false, error: err.message }; }
+      }
+
+      case 'import_audit_report': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          return this.onboarding.importAuditReport(tenantId, input.audit_text);
         } catch (err: any) { return { ok: false, error: err.message }; }
       }
 
