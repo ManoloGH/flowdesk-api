@@ -155,7 +155,6 @@ export class GoogleAdapter {
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/documents',
-        'offline_access',
       ].join(' '),
       access_type: 'offline',
       prompt: 'consent',
