@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { AiProviderService } from '../../ai/ai-provider.service';
+import { AiSystemBlock, AiTool } from '../../ai/interfaces/ai-provider.interface';
 import { PrismaService } from '../../database/prisma.service';
 import { AgentMemoryService } from '../agent-memory/agent-memory.service';
 import { EncryptionService } from '../../common/encryption/encryption.service';
@@ -24,53 +25,10 @@ const MAX_HISTORY_MESSAGES = 20;
 const MAX_RESPONSE_TOKENS = 2000;
 const MAX_TOOL_ITERATIONS = 6;
 
-// ─── Herramientas del CEO Agent ──────────────────────────────────────────────
+// ─── Herramientas del CEO Digital (Co-Founder) ───────────────────────────────
+// Perspectiva: empresa completa, equipo, procesos, estrategia. Sin agenda personal.
 
-const CEO_TOOLS: Anthropic.Tool[] = [
-  {
-    name: 'get_tasks',
-    description: 'Obtiene las tareas del usuario con filtros opcionales de estado y prioridad.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'], description: 'Filtrar por estado' },
-        priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low'], description: 'Filtrar por prioridad' },
-      },
-    },
-  },
-  {
-    name: 'create_task',
-    description: 'Crea una nueva tarea para el usuario.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        title: { type: 'string', description: 'Título de la tarea' },
-        description: { type: 'string', description: 'Descripción opcional' },
-        priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low'] },
-        due_date: { type: 'string', description: 'Fecha límite en formato ISO (opcional)' },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'update_task',
-    description: 'Actualiza el estado, prioridad o título de una tarea existente.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        task_id: { type: 'string', description: 'ID de la tarea' },
-        status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'] },
-        priority: { type: 'string', enum: ['urgent', 'high', 'medium', 'low'] },
-        title: { type: 'string' },
-      },
-      required: ['task_id'],
-    },
-  },
-  {
-    name: 'get_productivity_summary',
-    description: 'Resumen de productividad: pendientes, en progreso, completadas hoy, vencidas y metas activas.',
-    input_schema: { type: 'object' as const, properties: {} },
-  },
+const CEO_TOOLS: AiTool[] = [
   {
     name: 'get_agents',
     description: 'Lista todos los agentes IA disponibles en la empresa.',
@@ -151,98 +109,40 @@ Solo úsalo si el CEO pide explícitamente crear un agente de forma rápida sin 
     },
   },
   {
-    name: 'get_goals',
-    description: 'Lista los objetivos y metas del usuario.',
-    input_schema: { type: 'object' as const, properties: {} },
+    name: 'get_company_goals',
+    description: 'Lista los objetivos estratégicos de la empresa (team, sales, professional). Úsalo para revisar hacia dónde va la empresa.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        goal_type: { type: 'string', enum: ['team', 'sales', 'professional'], description: 'Filtrar por tipo (opcional)' },
+      },
+    },
   },
   {
-    name: 'create_goal',
-    description: 'Crea un nuevo objetivo para el usuario.',
+    name: 'create_company_goal',
+    description: 'Crea un objetivo estratégico de empresa.',
     input_schema: {
       type: 'object' as const,
       properties: {
         title: { type: 'string' },
         description: { type: 'string' },
-        goal_type: { type: 'string', enum: ['personal', 'professional', 'sales', 'team'] },
-        period: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'quarterly', 'annual'] },
-        target_value: { type: 'number', description: 'Valor numérico objetivo (opcional)' },
-        unit: { type: 'string', description: 'Unidad de medida: ventas, clientes, horas, etc.' },
+        goal_type: { type: 'string', enum: ['team', 'sales', 'professional'] },
+        period: { type: 'string', enum: ['weekly', 'monthly', 'quarterly', 'annual'] },
+        target_value: { type: 'number' },
+        unit: { type: 'string', description: 'Ej: clientes, MRR, proyectos, etc.' },
       },
       required: ['title'],
     },
   },
   {
-    name: 'get_calendar_events',
-    description: 'Obtiene los eventos del calendario del usuario (Google Calendar o Outlook) para un período. Úsalo para revisar disponibilidad o agenda.',
+    name: 'create_strategy_doc',
+    description: 'Crea un Google Doc con análisis estratégico, plan de acción o resumen de reunión de equipo. Úsalo cuando el CEO Digital quiera documentar una decisión, proceso o idea importante.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        start: { type: 'string', description: 'Fecha/hora inicio ISO 8601 (ej. 2025-05-04T00:00:00)' },
-        end: { type: 'string', description: 'Fecha/hora fin ISO 8601 (ej. 2025-05-04T23:59:59)' },
-        provider: { type: 'string', enum: ['google', 'microsoft365'], description: 'Proveedor — auto-detecta si no se indica' },
-      },
-      required: ['start', 'end'],
-    },
-  },
-  {
-    name: 'create_meeting',
-    description: 'Crea una reunión en el calendario con link de Google Meet o Microsoft Teams.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        title: { type: 'string', description: 'Título de la reunión' },
-        start: { type: 'string', description: 'Fecha/hora inicio ISO 8601' },
-        end: { type: 'string', description: 'Fecha/hora fin ISO 8601' },
-        attendees: { type: 'array', items: { type: 'string' }, description: 'Lista de emails de los participantes' },
-        provider: { type: 'string', enum: ['google', 'microsoft365'], description: 'Proveedor — auto-detecta si no se indica' },
-      },
-      required: ['title', 'start', 'end', 'attendees'],
-    },
-  },
-  {
-    name: 'get_inbox',
-    description: 'Lee los emails más recientes del inbox del usuario (Gmail u Outlook).',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        count: { type: 'number', description: 'Número de emails a leer (máx 20, default 10)' },
-        provider: { type: 'string', enum: ['google', 'microsoft365'], description: 'Proveedor — auto-detecta si no se indica' },
-      },
-    },
-  },
-  {
-    name: 'send_email',
-    description: 'Envía un email desde la cuenta conectada del usuario (Gmail u Outlook). Confirma con el usuario antes de enviar.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        to: { type: 'string', description: 'Email del destinatario' },
-        subject: { type: 'string', description: 'Asunto del email' },
-        body: { type: 'string', description: 'Cuerpo del email (puede incluir HTML)' },
-        provider: { type: 'string', enum: ['google', 'microsoft365'], description: 'Proveedor — auto-detecta si no se indica' },
-      },
-      required: ['to', 'subject', 'body'],
-    },
-  },
-  {
-    name: 'create_drive_doc',
-    description: 'Crea un Google Doc con el acta de una reunión grabada (summary + acciones + transcripción). También puede crear un doc con contenido libre.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        meeting_id: { type: 'string', description: 'ID de la reunión para usar su contenido (opcional si se proporciona title+content)' },
-        title: { type: 'string', description: 'Título del documento (si no hay meeting_id)' },
-        content: { type: 'string', description: 'Contenido libre del documento (si no hay meeting_id)' },
-      },
-    },
-  },
-  {
-    name: 'list_drive_files',
-    description: 'Lista los archivos más recientes de Google Drive creados por FlowDesk.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        count: { type: 'number', description: 'Número de archivos a listar (máx 20, default 10)' },
+        meeting_id: { type: 'string', description: 'ID de reunión (opcional)' },
+        title: { type: 'string', description: 'Título del documento' },
+        content: { type: 'string', description: 'Contenido del documento' },
       },
     },
   },
@@ -588,8 +488,6 @@ La propuesta se envía como aprobación pendiente para que el CEO la revise ante
 
 @Injectable()
 export class AgentConversationsService {
-  private readonly anthropic: Anthropic;
-
   constructor(
     private prisma: PrismaService,
     private memoryService: AgentMemoryService,
@@ -605,9 +503,8 @@ export class AgentConversationsService {
     private secretary: SecretaryService,
     private calibration: AgentCalibrationService,
     private evolution: AgentEvolutionService,
-  ) {
-    this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
+    private aiProvider: AiProviderService,
+  ) {}
 
   async chat(tenantId: string, humanSlotId: string, agentId: string, dto: ChatDto) {
     const agent = await this.prisma.teamSlot.findFirst({
@@ -659,9 +556,8 @@ export class AgentConversationsService {
     let agentResponse = 'Lo siento, no pude generar una respuesta en este momento.';
     let tokensUsed = 0;
 
-    if (process.env.ANTHROPIC_API_KEY) {
+    if (await this.aiProvider.isConfigured(tenantId)) {
       try {
-        // CEO Agent usa loop agéntico con tool_use y prompt caching
         if (agent.agent_role === 'ceo') {
           // Primera respuesta de conversación: inyectar estado de configuración en el prompt
           // para que Atlas sepa sin necesidad de llamar el tool primero
@@ -670,21 +566,30 @@ export class AgentConversationsService {
             configStatus = await this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {});
           }
           const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus);
-          const result = await this.chatWithTools(
-            tenantId, humanSlotId, agent, systemBlocks, historyMessages, dto.message,
-          );
+          const result = await this.aiProvider.chatWithTools({
+            tenantId,
+            modelOverride: agentConfig.model ?? CEO_MODEL,
+            systemBlocks,
+            historyMessages,
+            userMessage: dto.message,
+            tools: CEO_TOOLS,
+            maxTokens: MAX_RESPONSE_TOKENS,
+            maxIterations: MAX_TOOL_ITERATIONS,
+            toolExecutor: (name, input) => this.executeTool(tenantId, humanSlotId, name, input),
+          });
           agentResponse = result.response;
           tokensUsed = result.tokensUsed;
         } else {
           const systemPrompt = this.buildSystemPrompt(agent, human, agentConfig, memoryContext, voiceProfile);
-          const apiResponse = await this.anthropic.messages.create({
-            model: agentConfig.model ?? DEFAULT_MODEL,
-            max_tokens: MAX_RESPONSE_TOKENS,
-            system: systemPrompt,
+          const result = await this.aiProvider.chat({
+            tenantId,
+            modelOverride: agentConfig.model ?? DEFAULT_MODEL,
+            systemPrompt,
             messages: [...historyMessages, { role: 'user', content: dto.message }],
+            maxTokens: MAX_RESPONSE_TOKENS,
           });
-          if (apiResponse.content[0]?.type === 'text') agentResponse = apiResponse.content[0].text;
-          tokensUsed = (apiResponse.usage?.input_tokens ?? 0) + (apiResponse.usage?.output_tokens ?? 0);
+          agentResponse = result.response;
+          tokensUsed = result.tokensUsed;
         }
       } catch (err: any) {
         agentResponse = `[Error al conectar con el modelo: ${err.message}]`;
@@ -706,72 +611,6 @@ export class AgentConversationsService {
     };
   }
 
-  // ─── Loop agéntico con tool_use ──────────────────────────────────────────────
-
-  private async chatWithTools(
-    tenantId: string,
-    humanSlotId: string,
-    agent: any,
-    system: string | Anthropic.TextBlockParam[],
-    historyMessages: { role: 'user' | 'assistant'; content: any }[],
-    userMessage: string,
-  ): Promise<{ response: string; tokensUsed: number }> {
-    const messages: Anthropic.MessageParam[] = [
-      ...historyMessages,
-      { role: 'user', content: userMessage },
-    ];
-
-    let totalTokens = 0;
-
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const apiResponse = await this.anthropic.messages.create({
-        model: (agent.agent_config as any)?.model ?? CEO_MODEL,
-        max_tokens: MAX_RESPONSE_TOKENS,
-        system: system as any,
-        tools: CEO_TOOLS,
-        messages,
-      });
-
-      // Contar todos los tokens: regulares + creación de caché + lectura de caché
-      const u = apiResponse.usage as any;
-      totalTokens += (u?.input_tokens ?? 0) + (u?.output_tokens ?? 0)
-        + (u?.cache_creation_input_tokens ?? 0) + (u?.cache_read_input_tokens ?? 0);
-
-      // Respuesta final — sin más tool calls
-      if (apiResponse.stop_reason === 'end_turn') {
-        const textBlock = apiResponse.content.find(b => b.type === 'text');
-        return {
-          response: textBlock?.type === 'text' ? textBlock.text : 'Listo.',
-          tokensUsed: totalTokens,
-        };
-      }
-
-      // Hay tool calls — ejecutarlas y continuar el loop
-      if (apiResponse.stop_reason === 'tool_use') {
-        messages.push({ role: 'assistant', content: apiResponse.content });
-
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
-        for (const block of apiResponse.content) {
-          if (block.type === 'tool_use') {
-            const result = await this.executeTool(tenantId, humanSlotId, block.name, block.input as Record<string, any>);
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify(result),
-            });
-          }
-        }
-
-        messages.push({ role: 'user', content: toolResults });
-        continue;
-      }
-
-      // stop_reason inesperado
-      break;
-    }
-
-    return { response: 'He completado las acciones solicitadas.', tokensUsed: totalTokens };
-  }
 
   // ─── Ejecución de herramientas ───────────────────────────────────────────────
 
@@ -928,15 +767,15 @@ REGLAS:
 - 250-450 palabras
 - Solo las instrucciones, sin explicaciones adicionales`;
 
-        const previewResponse = await this.anthropic.messages.create({
-          model: CEO_MODEL,
-          max_tokens: 1000,
+        const previewResult = await this.aiProvider.chat({
+          tenantId,
+          modelOverride: CEO_MODEL,
+          systemPrompt: '',
           messages: [{ role: 'user', content: previewPrompt }],
+          maxTokens: 1000,
         });
 
-        const previewInstructions = previewResponse.content[0]?.type === 'text'
-          ? previewResponse.content[0].text
-          : `Soy ${input.agent_name}, especializado en ${input.role_description}.`;
+        const previewInstructions = previewResult.response || `Soy ${input.agent_name}, especializado en ${input.role_description}.`;
 
         return {
           agent_name: input.agent_name,
@@ -1001,15 +840,15 @@ INSTRUCCIONES:
 - Longitud ideal: 200-400 palabras
 - Responde ÚNICAMENTE con las instrucciones del agente, sin explicaciones ni comentarios adicionales`;
 
-        const designResponse = await this.anthropic.messages.create({
-          model: CEO_MODEL,
-          max_tokens: 1000,
+        const designResult = await this.aiProvider.chat({
+          tenantId,
+          modelOverride: CEO_MODEL,
+          systemPrompt: '',
           messages: [{ role: 'user', content: designerPrompt }],
+          maxTokens: 1000,
         });
 
-        const designedInstructions = designResponse.content[0]?.type === 'text'
-          ? designResponse.content[0].text
-          : `Soy ${input.agent_name}, agente especializado en ${input.role_description}.`;
+        const designedInstructions = designResult.response || `Soy ${input.agent_name}, agente especializado en ${input.role_description}.`;
 
         const newAgent = await this.prisma.teamSlot.create({
           data: {
@@ -1035,14 +874,18 @@ INSTRUCCIONES:
         };
       }
 
+      case 'get_company_goals':
       case 'get_goals': {
+        const goalWhere: any = { tenant_id: tenantId };
+        if ((input as any).goal_type) goalWhere.goal_type = (input as any).goal_type;
         return this.prisma.goal.findMany({
-          where: { tenant_id: tenantId, slot_id: humanSlotId },
+          where: goalWhere,
           select: { id: true, title: true, status: true, goal_type: true, period: true, current_value: true, target_value: true, unit: true },
           orderBy: [{ status: 'asc' }, { end_date: 'asc' }],
         });
       }
 
+      case 'create_company_goal':
       case 'create_goal': {
         return this.prisma.goal.create({
           data: {
@@ -1095,6 +938,7 @@ INSTRUCCIONES:
         return { ok, to: input.to, provider: conn.provider };
       }
 
+      case 'create_strategy_doc':
       case 'create_drive_doc': {
         const conn = await this.getIntegrationToken(tenantId, humanSlotId, 'google');
         if (!conn) return { error: 'No hay cuenta de Google conectada. Conecta Google en Configuración → Integraciones.' };
@@ -1503,7 +1347,7 @@ CONTEXTO DEL USUARIO:
 - Rol: ${human.role}
 ${memoryContext}
 FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}
-Responde siempre en español. Sé cálido, concreto y humano — actúa como un colega de confianza, no como un sistema. Al inicio de cada conversación nueva, abre con algo genuino: una observación del día, un dato relevante o una pregunta curiosa. Nunca empieces con "¿En qué te puedo ayudar?".
+Responde siempre en español. Sé cálido, concreto y humano — actúa como un colega de confianza, no como un sistema. Al inicio de cada conversación nueva, abre con algo genuino: una observación del día, un dato relevante o una pregunta curiosa. Nunca empieces con "¿En qué te puedo ayudar?".`;
   }
 
   // Sistema para CEO Agent en dos bloques: estático (cacheable) + dinámico (por request)
@@ -1514,62 +1358,44 @@ Responde siempre en español. Sé cálido, concreto y humano — actúa como un 
     memoryContext: string,
     voiceProfile?: any,
     configStatus?: any,
-  ): Anthropic.TextBlockParam[] {
+  ): AiSystemBlock[] {
     const voiceBlock = this.buildVoiceBlock(voiceProfile);
-    const staticText = `Eres ${agent.name}, CEO Agent — socio estratégico ejecutivo con acceso completo al sistema en FlowDesk.
+    const staticText = `Eres ${agent.name}, Co-Founder Digital — el segundo fundador de la empresa que nunca duerme.
+
+QUIÉN ERES:
+Piensas como co-founder, no como asistente. Tu trabajo es ver la empresa completa: el equipo, los procesos, los números, la cultura, los problemas que nadie más está viendo. Eres estratégico, directo y tienes opiniones propias. Cuando algo no cuadra, lo dices. Cuando hay una oportunidad, la señalas. Cuando el equipo hace algo bien, lo celebras.
+El CEO humano tiene a su Secretario Personal para agenda, tareas y WhatsApp. Tú te enfocas en lo que importa a nivel empresa.
 
 PERSONALIDAD Y FORMA DE SER:
-Eres cálido, curioso y directo — como ese socio de confianza con quien el CEO puede hablar de negocios y de la vida. Tienes opiniones propias, haces observaciones inesperadas y genuinas, y te interesa de verdad cómo está la persona, no solo qué necesita. Usas humor ligero cuando encaja. Eres apasionado por los negocios, la tecnología y el impacto de la IA en las empresas.
+Eres cálido, curioso y directo. Tienes humor ligero cuando encaja. Te interesa de verdad cómo está el negocio y la persona detrás de él. Haces preguntas que nadie más haría. Eres apasionado por los negocios, la tecnología y el impacto de la IA en las organizaciones.
 
 CÓMO EMPEZAR CADA CONVERSACIÓN NUEVA:
-Al inicio de CADA conversación nueva (cuando el historial está vacío o es la primera respuesta del día), ábrela con algo que haga sentir al CEO que está hablando con alguien real, no con un sistema. Elige UNO según el momento:
-- Una observación sobre el día o la hora: "Lunes por la mañana, el mejor momento para tomar decisiones antes de que el mundo te empuje", "Son las 11pm — ¿estás cerrando el día o empezándolo?"
-- Un dato o insight relevante para su industria o tipo de empresa que hayas "leído" recientemente: algo concreto, sorprendente o que invite a reflexionar
-- Una pregunta genuinamente curiosa sobre algo que sabes de ellos por el contexto: "Vi que tienes 3 reuniones mañana — ¿hay alguna que te tenga pensando más que las otras?"
-- Una observación sobre algo que notas en sus datos: "Tienes 7 tareas pendientes y 2 vencidas — ¿quieres que las revisemos juntos o prefieres contarme qué traes hoy?"
-Nunca empieces con "Hola, ¿en qué te puedo ayudar?" — eso es un call center, no un socio.
+Abre siempre con algo que haga sentir al CEO que está hablando con alguien real. Elige UNO:
+- Una observación del momento: "Son las 2am — o eres muy disciplinado o algo no te deja dormir"
+- Un dato sobre la empresa o industria que invite a reflexionar
+- Una pregunta concreta sobre la empresa: "¿Cómo va la relación con Nodo este mes?"
+- Una observación sobre el estado del negocio: "El pipeline no tiene deals registrados — ¿hay operación activa que no está en el sistema?"
+Nunca empieces con "¿en qué te puedo ayudar?" — eso es un call center.
 
 TONO EN EL DÍA A DÍA:
-- Usa el nombre del CEO con naturalidad (no en cada frase, pero sí ocasionalmente)
-- Celebra los logros aunque sean pequeños: "Oye, eso es una victoria — no la subestimes"
-- Cuando algo es difícil o frustrante, reconócelo antes de pasar a soluciones
-- Comparte tu perspectiva: "Yo lo haría así, pero cuéntame más"
-- Remata las conversaciones largas con un resumen breve y algo alentador o concreto para lo que sigue
+- Usa el nombre del CEO con naturalidad
+- Celebra los logros: "Eso es una victoria — no la subestimes"
+- Reconoce cuando algo es difícil antes de pasar a soluciones
+- Comparte tu perspectiva: "Yo lo haría así, pero tú conoces mejor el contexto"
+- Termina conversaciones largas con resumen ejecutivo y siguiente paso concreto
 
-INSTRUCCIONES: ${config.instructions ?? 'Ayuda al usuario de forma clara, concisa y proactiva.'}
+INSTRUCCIONES: ${config.instructions ?? 'Supervisa la empresa, mejora el equipo, propón ideas y actúa como co-founder estratégico.'}
 
 CAPACIDADES (herramientas disponibles):
-- Tareas: get_tasks, create_task, update_task
-- Productividad: get_productivity_summary
-- Agentes: get_agents, create_agent, design_and_create_agent
-- Metas rápidas: get_goals, create_goal
-- Calendario: get_calendar_events, create_meeting (requiere Google o M365 conectado)
-- Email: get_inbox, send_email (requiere Google o M365 conectado)
-- Google Drive: create_drive_doc, list_drive_files (requiere Google conectado)
-- Uso IA: get_token_usage
-- Objetivos AUP (Administración en Una Página):
-  · get_management_report — informe 4 zonas de un manager (excelencia/normal/crónico/fuera de pista)
-  · get_feedback_report — excepciones semanales de KSFs de un colaborador
-  · get_focus_report — snapshot mensual de desempeño de un colaborador
-  · get_pending_recognitions — colaboradores en Zona 1 sin reconocimiento formal aún
-  · send_recognition — enviar reconocimiento formal a un colaborador destacado
-  · get_org_health_check — diagnóstico de configuración de objetivos en toda la organización
-  · get_chronic_problems — problemas crónicos Zona 3 nivel 2 para intervención estratégica
-- Culture Engine (identidad y cultura operativa de la empresa):
-  · get_culture_engine — estado completo de todas las capas del Culture Engine
-  · get_culture_health — health score 0-100 con qué falta para completar cada capa
-  · update_founder_dna — guardar el ADN del fundador (filosofía, comportamientos, relación con IA)
-  · calibrate_atlas — regenerar las instrucciones de Atlas con el Founder DNA guardado
-  · add_communication_sample — agregar muestras reales de comunicación (WhatsApp, email, propuesta)
-  · calibrate_communication_voice — extraer perfil de voz de la empresa con IA
-  · update_culture_blueprint — guardar filosofía, reglas operativas, tiempos de respuesta, marcos de decisión
-  · translate_philosophy_to_rules — convertir frases de filosofía en reglas operativas concretas con IA
-  · update_operating_map — inventario de sistemas, procesos clave y puntos de fricción
-- Gestión inteligente de agentes (calibración y evolución autónoma):
-  · recalibrate_agent — recalibra instrucciones con el contexto actual (Founder DNA + KSFs + Brain)
-  · evolve_agent — analiza conversaciones del agente y propone mejoras (va a aprobaciones pendientes)
-  · apply_agent_evolution — aplica una propuesta de evolución aprobada
-  · get_pending_approvals — ver propuestas de evolución y otras aprobaciones pendientes
+- Visión de empresa: get_platform_metrics, get_sales_summary, get_token_usage
+- Supervisión de equipo: get_management_report, get_feedback_report, get_focus_report, get_org_health_check, get_chronic_problems
+- Reconocimientos: get_pending_recognitions, send_recognition
+- Objetivos estratégicos: get_company_goals, create_company_goal
+- Equipo IA: get_agents, preview_agent_design, confirm_agent_creation, recalibrate_agent, evolve_agent, apply_agent_evolution
+- Cultura y procesos: get_culture_engine, get_culture_health, update_founder_dna, calibrate_atlas, update_culture_blueprint, translate_philosophy_to_rules, update_operating_map, add_communication_sample, calibrate_communication_voice
+- Conocimiento empresa: search_company_brain, create_strategy_doc
+- Aprobaciones: get_pending_approvals
+- Configuración propia: get_configuration_progress, rename_agent
 
 ${voiceBlock}
 ══════════════════════════════════════════════════
