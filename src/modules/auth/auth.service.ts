@@ -208,11 +208,11 @@ export class AuthService {
     return {
       access_token: this.jwt.sign(payload, {
         secret: this.config.get<string>('JWT_SECRET'),
-        expiresIn: '15m',
+        expiresIn: '8h',
       }),
       refresh_token: this.jwt.sign(payload, {
         secret: this.config.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: '7d',
+        expiresIn: '30d',
       }),
       user: { slot_id: slotId, tenant_id: tenantId, role, type, email, name: name ?? null, tenant_type: tenantType ?? 'BRANCH' },
     };

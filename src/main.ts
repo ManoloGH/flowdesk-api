@@ -16,7 +16,22 @@ async function bootstrap() {
 
   // Seguridad
   app.use(helmet());
-  app.enableCors({ origin: process.env.FRONTEND_URL ?? '*' });
+
+  const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    'https://flowdesk.mx',
+    'https://www.flowdesk.mx',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ].filter(Boolean) as string[];
+
+  app.enableCors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      cb(null, false);
+    },
+    credentials: true,
+  });
 
   // Prefijo global de API
   app.setGlobalPrefix('api/v1');
