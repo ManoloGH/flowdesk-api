@@ -274,7 +274,7 @@ Máximo 300 palabras.`;
     if (!secretaryConfig?.evolution_instance || !secretaryConfig?.owner_phone) return;
 
     const ownerFirstName = owner.name.split(' ')[0];
-    const message = `Oye ${ownerFirstName} 👋\n\n${agentName} aquí. Estuve revisando todo esta semana y tengo unas cosas que quiero platicar contigo — cómo vamos con el equipo, unos huecos que vi en los procesos y una idea que me parece interesante.\n\n¿Tienes unos minutos para la charla semanal? Puedes encontrarme en la app cuando quieras 🙌`;
+    const message = `Oye ${ownerFirstName} 👋\n\nTu CEO Digital (${agentName}) tiene unos temas que quiere platicar contigo — revisó cómo va el equipo, vio unos huecos en los procesos y trae ideas nuevas.\n\n¿Tienes unos minutos para la charla semanal? Puedes encontrarlo en la app o decirme aquí "pásame con ${agentName}" 🙌`;
 
     const evolutionUrl = secretaryConfig.evolution_url ?? process.env.EVOLUTION_API_URL;
     if (!evolutionUrl || !process.env.EVOLUTION_API_KEY) return;

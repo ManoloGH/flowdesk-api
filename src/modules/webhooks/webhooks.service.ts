@@ -8,6 +8,10 @@ import { GhlAdapter } from '../../integrations/ghl/ghl.adapter';
 import { SecretaryService } from '../secretary/secretary.service';
 import { SecretaryAgentService } from '../secretary/secretary-agent.service';
 import { WhatsAppService } from '../secretary/whatsapp.service';
+import { WhatsAppRouterService } from '../whatsapp-channel/whatsapp-router.service';
+import { EmployeeWhatsAppService } from '../whatsapp-channel/employee-whatsapp.service';
+import { CustomerWhatsAppService } from '../whatsapp-channel/customer-whatsapp.service';
+import { ChatwootBridgeService } from '../chatwoot-bridge/chatwoot-bridge.service';
 
 @Injectable()
 export class WebhooksService {
@@ -23,6 +27,10 @@ export class WebhooksService {
     private secretary: SecretaryService,
     private secretaryAgent: SecretaryAgentService,
     private whatsapp: WhatsAppService,
+    private waRouter: WhatsAppRouterService,
+    private employeeWa: EmployeeWhatsAppService,
+    private customerWa: CustomerWhatsAppService,
+    private chatwootBridge: ChatwootBridgeService,
   ) {}
 
   // Resolver el tenant a partir del identificador del webhook
@@ -52,6 +60,22 @@ export class WebhooksService {
       }
 
       await this.chatwoot.processWebhook(payload, tenantId, messagesGateway);
+
+      // Auto-respuesta IA para mensajes entrantes de clientes externos
+      if (payload.event === 'message_created' && payload.message_type === 'incoming') {
+        const conversationId = payload.conversation?.id;
+        const message = payload.content;
+        if (conversationId && message) {
+          // No bloquear — responder en background
+          this.chatwootBridge.handleIncomingMessage({
+            conversationId,
+            message,
+            contactName: payload.conversation?.meta?.sender?.name,
+            tenantId,
+            channel: payload.conversation?.channel,
+          }).catch(err => this.logger.error('ChatwootBridge error', err));
+        }
+      }
 
       // Emitir evento al campus para mostrar badge de mensaje entrante
       if (payload.event === 'message_created' && payload.message_type === 'incoming') {
@@ -123,17 +147,39 @@ export class WebhooksService {
           content: parsed.content?.slice(0, 80),
         });
 
-        // Enrutar al Secretary Agent si el mensaje viene del owner
-        const secretaryConfig = await this.secretary.getConfig(tenantId);
-        const normalizedFrom = parsed.from.replace(/\D/g, '');
-        const normalizedOwner = secretaryConfig?.owner_phone?.replace(/\D/g, '') ?? '';
+        // Routing inteligente según quién escribe
+        const identity = await this.waRouter.identify(parsed.from, instanceName);
 
-        if (secretaryConfig?.enabled && normalizedFrom === normalizedOwner) {
+        if (identity.type === 'owner') {
           const instance = await this.secretary.getEvolutionInstance(tenantId);
           if (instance) {
-            const reply = await this.secretaryAgent.chat(tenantId, parsed.content, parsed.from);
+            let reply: string;
+            // Si hay un agente activo en sesión, enrutar al agente
+            if (this.secretaryAgent.hasActiveAgent(parsed.from)) {
+              reply = await this.secretaryAgent.chatWithActiveAgent(tenantId, parsed.from, parsed.content);
+            } else {
+              // Flujo normal con el Secretario
+              reply = await this.secretaryAgent.chat(tenantId, parsed.content, parsed.from);
+            }
             await this.whatsapp.send(instance, parsed.from, reply);
           }
+        } else if (identity.type === 'employee') {
+          // Empleado → su agente personal
+          await this.employeeWa.handle({
+            phone: parsed.from,
+            message: parsed.content,
+            tenantId,
+            teamSlot: identity.teamSlot,
+            instanceName,
+          });
+        } else {
+          // Cliente externo → Chatwoot + IA
+          await this.customerWa.handle({
+            phone: parsed.from,
+            message: parsed.content,
+            tenantId,
+            instanceName,
+          });
         }
       }
     } catch (err) {

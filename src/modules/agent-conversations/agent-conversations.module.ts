@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AgentConversationsService } from './agent-conversations.service';
 import { AgentConversationsController } from './agent-conversations.controller';
 import { AgentMemoryModule } from '../agent-memory/agent-memory.module';
@@ -12,7 +12,7 @@ import { AgentEvolutionModule } from '../agent-evolution/agent-evolution.module'
 import { WeeklyMeetingModule } from '../weekly-meeting/weekly-meeting.module';
 
 @Module({
-  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, SecretaryModule, AgentCalibrationModule, AgentEvolutionModule, WeeklyMeetingModule],
+  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, forwardRef(() => SecretaryModule), AgentCalibrationModule, AgentEvolutionModule, WeeklyMeetingModule],
   controllers: [AgentConversationsController],
   providers: [AgentConversationsService],
   exports: [AgentConversationsService],

@@ -1,13 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../database/prisma.service';
 import { SecretaryService } from './secretary.service';
 import { BrainService } from '../brain/brain.service';
 import { WhatsAppService } from './whatsapp.service';
+import { AgentConversationsService } from '../agent-conversations/agent-conversations.service';
 
 const ATLAS_MODEL = 'claude-sonnet-4-6';
 const MAX_TOOL_ITERATIONS = 10;
 const MAX_TOKENS = 1500;
+
+// phone → { agentId, agentName, sessionId }
+const activeAgentSessions = new Map<string, { agentId: string; agentName: string; sessionId?: string }>();
 
 const ATLAS_TOOLS: Anthropic.Tool[] = [
   {
@@ -68,6 +72,30 @@ const ATLAS_TOOLS: Anthropic.Tool[] = [
     input_schema: { type: 'object' as const, properties: {} },
   },
   {
+    name: 'list_agents',
+    description: 'Lista los agentes IA disponibles de la empresa para que el owner pueda conectarse con uno.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'switch_to_agent',
+    description: `Conecta al owner con un agente IA específico en este chat de WhatsApp.
+Úsalo cuando el owner pida hablar con un agente ("pásame con el CEO Digital", "quiero hablar con Atlas", "@agente").
+A partir de ese momento, los mensajes irán directo al agente seleccionado hasta que el owner diga "listo", "gracias" o "volver al secretario".`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_id:   { type: 'string', description: 'ID del agente' },
+        agent_name: { type: 'string', description: 'Nombre del agente' },
+      },
+      required: ['agent_id', 'agent_name'],
+    },
+  },
+  {
+    name: 'return_to_secretary',
+    description: 'Termina la sesión con el agente activo y regresa el chat al Secretario.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
     name: 'log_delegation',
     description: 'Registra una delegación de tarea.',
     input_schema: {
@@ -91,7 +119,62 @@ export class SecretaryAgentService {
     private readonly secretary: SecretaryService,
     private readonly brain: BrainService,
     private readonly whatsapp: WhatsAppService,
+    @Inject(forwardRef(() => AgentConversationsService))
+    private readonly agentConversations: AgentConversationsService,
   ) {}
+
+  // ── Routing multi-agente ────────────────────────────────────────────────────
+
+  hasActiveAgent(phone: string): boolean {
+    return activeAgentSessions.has(phone);
+  }
+
+  getActiveAgent(phone: string) {
+    return activeAgentSessions.get(phone) ?? null;
+  }
+
+  setActiveAgent(phone: string, agentId: string, agentName: string, sessionId?: string) {
+    activeAgentSessions.set(phone, { agentId, agentName, sessionId });
+  }
+
+  clearActiveAgent(phone: string) {
+    activeAgentSessions.delete(phone);
+  }
+
+  // Enruta el mensaje al agente activo y devuelve su respuesta
+  async chatWithActiveAgent(tenantId: string, phone: string, message: string): Promise<string> {
+    const session = activeAgentSessions.get(phone);
+    if (!session) return '';
+
+    const owner = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
+      select: { id: true },
+    });
+    if (!owner) return '';
+
+    // Detectar señales de cierre
+    const closeSignals = ['listo', 'gracias', 'ok gracias', 'volver al secretario', 'volver', 'ya terminé', 'bye', 'hasta luego'];
+    if (closeSignals.some(s => message.toLowerCase().includes(s))) {
+      activeAgentSessions.delete(phone);
+      return `De acuerdo, te regreso con tu Secretario. Fue un gusto chatear 👋`;
+    }
+
+    try {
+      const result = await this.agentConversations.chat(
+        tenantId,
+        owner.id,
+        session.agentId,
+        { message, session_id: session.sessionId },
+      );
+      // Guardar session_id para continuidad
+      if (result.conversation_id) {
+        activeAgentSessions.set(phone, { ...session, sessionId: result.conversation_id });
+      }
+      return result.response;
+    } catch {
+      return `No pude conectarme con ${session.agentName} en este momento. Intenta de nuevo.`;
+    }
+  }
 
   async chat(tenantId: string, message: string, ownerPhone: string): Promise<string> {
     const tenant = await this.prisma.tenant.findUnique({
@@ -114,6 +197,8 @@ Tu trabajo es gestionar el día a día del founder de forma proactiva y precisa:
 - Gestionar aprobaciones pendientes y escalar solo lo que requiere decisión del founder
 
 ${pendingCount > 0 ? `⚠️ Hay ${pendingCount} aprobación(es) pendiente(s).` : ''}
+
+MULTI-AGENTE: Si el owner pide hablar con un agente específico ("pásame con el CEO Digital", "quiero hablar con Atlas", "@[nombre]"), usa list_agents para ver los disponibles y luego switch_to_agent. Di: "Te conecto con [nombre], un momento..." — el agente tomará el chat a partir del siguiente mensaje. Para regresar al Secretario, el owner puede decir "listo", "volver" o "gracias".
 
 TONO: Directo, ejecutivo, conciso. Máximo 3-4 líneas en WhatsApp.
 Usa emojis con moderación para facilitar la lectura en móvil.
@@ -138,7 +223,7 @@ Responde SIEMPRE en español.`;
 
       for (const block of response.content) {
         if (block.type !== 'tool_use') continue;
-        const result = await this.executeTool(tenantId, block.name, block.input as Record<string, unknown>);
+        const result = await this.executeTool(tenantId, block.name, block.input as Record<string, unknown>, ownerPhone);
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
       }
 
@@ -223,7 +308,7 @@ Responde SIEMPRE en español.`;
     return lines.join('\n');
   }
 
-  private async executeTool(tenantId: string, name: string, input: Record<string, unknown>): Promise<unknown> {
+  private async executeTool(tenantId: string, name: string, input: Record<string, unknown>, ownerPhone = ''): Promise<unknown> {
     try {
       switch (name) {
         case 'get_pending_approvals':
@@ -280,6 +365,23 @@ Responde SIEMPRE en español.`;
             select: { name: true, type: true, role: true, status: true, agent_role: true },
             orderBy: [{ type: 'asc' }, { status: 'asc' }],
           });
+
+        case 'list_agents':
+          return await this.prisma.teamSlot.findMany({
+            where: { tenant_id: tenantId, type: 'AI_AGENT' },
+            select: { id: true, name: true, agent_role: true, status: true },
+            orderBy: { name: 'asc' },
+          });
+
+        case 'switch_to_agent': {
+          this.setActiveAgent(ownerPhone, input.agent_id as string, input.agent_name as string);
+          return { ok: true, switched_to: input.agent_name };
+        }
+
+        case 'return_to_secretary': {
+          this.clearActiveAgent(ownerPhone);
+          return { ok: true };
+        }
 
         case 'log_delegation': {
           const owner = await this.prisma.teamSlot.findFirst({
