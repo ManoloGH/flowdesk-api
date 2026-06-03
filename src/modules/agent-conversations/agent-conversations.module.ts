@@ -7,9 +7,11 @@ import { CultureModule } from '../culture/culture.module';
 import { BrainModule } from '../brain/brain.module';
 import { SalesModule } from '../sales/sales.module';
 import { SecretaryModule } from '../secretary/secretary.module';
+import { AgentCalibrationModule } from '../agent-calibration/agent-calibration.module';
+import { AgentEvolutionModule } from '../agent-evolution/agent-evolution.module';
 
 @Module({
-  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, SecretaryModule],
+  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, SecretaryModule, AgentCalibrationModule, AgentEvolutionModule],
   controllers: [AgentConversationsController],
   providers: [AgentConversationsService],
   exports: [AgentConversationsService],

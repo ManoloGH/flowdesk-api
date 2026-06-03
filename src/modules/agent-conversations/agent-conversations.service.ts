@@ -13,6 +13,8 @@ import { CultureEngineService } from '../culture/culture-engine.service';
 import { BrainService } from '../brain/brain.service';
 import { SalesService } from '../sales/sales.service';
 import { SecretaryService } from '../secretary/secretary.service';
+import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
+import { AgentEvolutionService } from '../agent-evolution/agent-evolution.service';
 import { KsfLevel } from '@prisma/client';
 import { startOfWeek, subDays, startOfMonth } from 'date-fns';
 
@@ -507,6 +509,41 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
     description: 'Lista las aprobaciones pendientes que esperan decisión del Founder.',
     input_schema: { type: 'object' as const, properties: {} },
   },
+  {
+    name: 'recalibrate_agent',
+    description: `Recalibra las instrucciones de un agente usando todo el contexto actual de la empresa (Founder DNA, cultura, KSFs, Brain).
+Úsalo cuando el CEO quiera mejorar o actualizar un agente inmediatamente sin esperar el ciclo semanal.
+Si no se indica agent_id, recalibra TODOS los agentes del tenant.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_id: { type: 'string', description: 'ID del agente a recalibrar. Si se omite, recalibra todos.' },
+      },
+    },
+  },
+  {
+    name: 'evolve_agent',
+    description: `Analiza las conversaciones recientes de un agente, detecta patrones y errores, y propone mejoras a sus instrucciones.
+La propuesta se envía como aprobación pendiente para que el CEO la revise antes de aplicar.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_id: { type: 'string', description: 'ID del agente a evolucionar' },
+      },
+      required: ['agent_id'],
+    },
+  },
+  {
+    name: 'apply_agent_evolution',
+    description: 'Aplica una propuesta de evolución de agente previamente aprobada por el CEO. Actualiza las instrucciones del agente con la versión mejorada.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        approval_id: { type: 'string', description: 'ID de la aprobación pendiente de tipo agent_evolution' },
+      },
+      required: ['approval_id'],
+    },
+  },
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -528,6 +565,8 @@ export class AgentConversationsService {
     private brain: BrainService,
     private sales: SalesService,
     private secretary: SecretaryService,
+    private calibration: AgentCalibrationService,
+    private evolution: AgentEvolutionService,
   ) {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -1138,6 +1177,38 @@ INSTRUCCIONES:
         return await this.secretary.getPendingApprovals(tenantId);
       }
 
+      case 'recalibrate_agent': {
+        if (input.agent_id) {
+          const agent = await this.prisma.teamSlot.findFirst({
+            where: { id: input.agent_id, tenant_id: tenantId, type: 'AI_AGENT' },
+            select: { agent_role: true, owner_slot_id: true, name: true },
+          });
+          if (!agent) return { error: 'Agente no encontrado' };
+          if (agent.agent_role === 'ceo') {
+            await this.calibration.calibrateCeoAgent(tenantId, input.agent_id);
+          } else if (agent.owner_slot_id) {
+            await this.calibration.calibratePersonalAssistant(tenantId, input.agent_id, agent.owner_slot_id);
+          } else {
+            await this.calibration.calibrateCompanyAgent(tenantId, input.agent_id, agent.agent_role ?? 'assistant');
+          }
+          return { ok: true, message: `${agent.name} recalibrado con el contexto actualizado de la empresa.` };
+        }
+        const result = await this.calibration.calibrateAllAgents(tenantId);
+        return { ok: true, ...result, message: `${result.calibrated} agentes recalibrados correctamente.` };
+      }
+
+      case 'evolve_agent': {
+        const proposed = await this.evolution.evolveAgent(tenantId, input.agent_id);
+        if (!proposed) return { ok: false, message: 'No hay suficientes conversaciones para proponer mejoras, o ya existe una propuesta pendiente para este agente.' };
+        return { ok: true, message: 'Propuesta de evolución creada. Revísala en las aprobaciones pendientes antes de aplicarla.' };
+      }
+
+      case 'apply_agent_evolution': {
+        const result = await this.evolution.applyEvolution(tenantId, input.approval_id);
+        if (!result.applied) return { ok: false, message: 'No se encontró la propuesta o ya fue procesada.' };
+        return { ok: true, message: `✅ Instrucciones de ${result.agent_name} actualizadas con la versión evolucionada.` };
+      }
+
       default:
         return { error: `Herramienta desconocida: ${toolName}` };
     }
@@ -1314,6 +1385,11 @@ CAPACIDADES (herramientas disponibles):
   · update_culture_blueprint — guardar filosofía, reglas operativas, tiempos de respuesta, marcos de decisión
   · translate_philosophy_to_rules — convertir frases de filosofía en reglas operativas concretas con IA
   · update_operating_map — inventario de sistemas, procesos clave y puntos de fricción
+- Gestión inteligente de agentes (calibración y evolución autónoma):
+  · recalibrate_agent — recalibra instrucciones con el contexto actual (Founder DNA + KSFs + Brain)
+  · evolve_agent — analiza conversaciones del agente y propone mejoras (va a aprobaciones pendientes)
+  · apply_agent_evolution — aplica una propuesta de evolución aprobada
+  · get_pending_approvals — ver propuestas de evolución y otras aprobaciones pendientes
 
 ${voiceBlock}
 REGLAS DE USO:
@@ -1329,6 +1405,7 @@ REGLAS DE USO:
 - Para RECONOCIMIENTOS: usa get_pending_recognitions primero, muestra los candidatos al CEO con su nombre y KSF destacado, y confirma el mensaje antes de ejecutar send_recognition.
 - Para ORG HEALTH CHECK: invócalo proactivamente cuando el CEO pregunte por el estado de objetivos o la salud de la organización.
 - Para CULTURE ENGINE: invoca get_culture_health cuando el CEO pregunte cómo va su configuración. Cuando el CEO comparta información personal (su filosofía, lo que ama/odia, ejemplos de mensajes), usa update_founder_dna o add_communication_sample proactivamente sin esperar que lo pida explícitamente. Después de guardar el Founder DNA, sugiere calibrar Atlas con calibrate_atlas. Cuando el CEO tenga frases de filosofía abstractas, ofrece translate_philosophy_to_rules para hacerlas accionables.
+- Para EVOLUCIÓN DE AGENTES: usa evolve_agent proactivamente cuando el CEO pregunte cómo está funcionando un agente. Usa recalibrate_agent cuando el CEO actualice el Founder DNA, la cultura o los KSFs — siempre ofrece recalibrar los agentes afectados. Cuando veas una propuesta en get_pending_approvals de tipo agent_evolution, muéstrala al CEO con el resumen de mejoras y pregunta si desea aplicarla con apply_agent_evolution.
 Responde siempre en español. Sé conciso pero completo. Actúa como un colega de confianza, no como un chatbot genérico.`;
 
     const dynamicText = `CONTEXTO DEL USUARIO:

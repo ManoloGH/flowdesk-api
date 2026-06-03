@@ -81,12 +81,30 @@ export class AgentMemoryService {
     if (!process.env.ANTHROPIC_API_KEY) return;
 
     try {
+      // Detección rápida de correcciones antes de la extracción general
+      await this.detectCorrections(tenantId, agentId, ownerSlotId, conversationText);
+
       const response = await this.anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 800,
-        system: `Eres un extractor de memorias. Analiza la conversación y extrae máximo 5 memorias útiles sobre el usuario.
+        max_tokens: 1000,
+        system: `Eres un extractor de memorias para un agente IA. Analiza la conversación y extrae memorias útiles sobre el usuario y patrones de uso.
 Responde SOLO con JSON válido con este formato:
-{ "memories": [{ "memory_type": "factual|episodic|preference|goal|relationship|skill", "content": "...", "importance": 1-10 }] }`,
+{
+  "memories": [
+    { "memory_type": "factual|episodic|preference|goal|relationship|skill|pattern|gap", "content": "...", "importance": 1-10 }
+  ]
+}
+
+Tipos a usar:
+- factual: datos concretos del usuario (nombre, empresa, contexto)
+- preference: cómo prefiere trabajar, comunicarse o recibir información
+- goal: objetivos y metas que mencionó
+- pattern: pregunta o solicitud recurrente que el usuario hace frecuentemente
+- gap: tema donde el agente no pudo responder bien o el usuario quedó insatisfecho
+- skill: capacidad o conocimiento que el usuario demostró tener
+- episodic: evento o situación específica relevante
+
+Extrae máximo 6 memorias. Prioriza correcciones, preferencias y patrones.`,
         messages: [{ role: 'user', content: `Conversación:\n${conversationText}` }],
       });
 
@@ -114,6 +132,57 @@ Responde SOLO con JSON válido con este formato:
       );
     } catch {
       // No bloquear el flujo si falla la extracción
+    }
+  }
+
+  // Detecta si el usuario está corrigiendo al agente y guarda la corrección como memoria de alta prioridad
+  private async detectCorrections(
+    tenantId: string,
+    agentId: string,
+    ownerSlotId: string,
+    conversationText: string,
+  ): Promise<void> {
+    const correctionSignals = [
+      'eso está mal', 'eso estuvo mal', 'no me refería', 'te equivocaste', 'incorrecto',
+      'no es así', 'estás confundiendo', 'no entendiste', 'no era eso', 'me malentendiste',
+      'eso no es correcto', 'no, quiero decir', 'no, lo que quiero', 'está equivocado',
+      'that\'s wrong', 'you misunderstood', 'incorrect', 'not what i meant',
+    ];
+
+    const lower = conversationText.toLowerCase();
+    const hasCorrectionSignal = correctionSignals.some(s => lower.includes(s));
+    if (!hasCorrectionSignal) return;
+
+    try {
+      const response = await this.anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        system: `Analiza si el usuario está corrigiendo al agente. Si hay una corrección, extrae qué estuvo mal y cuál es la respuesta correcta.
+Responde SOLO con JSON: { "is_correction": true/false, "what_was_wrong": "...", "correct_answer": "..." }
+Si no hay corrección clara, responde { "is_correction": false }`,
+        messages: [{ role: 'user', content: conversationText }],
+      });
+
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+
+      const result = JSON.parse(jsonMatch[0]);
+      if (!result.is_correction) return;
+
+      await this.prisma.agentMemory.create({
+        data: {
+          tenant_id: tenantId,
+          agent_id: agentId,
+          owner_slot_id: ownerSlotId,
+          memory_type: 'correction',
+          content: `CORRECCIÓN: ${result.what_was_wrong} → CORRECTO: ${result.correct_answer}`,
+          source_type: 'conversation',
+          importance: 9,
+        },
+      });
+    } catch {
+      // No bloquear el flujo
     }
   }
 

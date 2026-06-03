@@ -36,6 +36,8 @@ import { VaultModule } from './modules/vault/vault.module';
 import { BrainModule } from './modules/brain/brain.module';
 import { SecretaryModule } from './modules/secretary/secretary.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibration.module';
+import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -96,6 +98,9 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     SecretaryModule,
     // Sales — Pipeline + Agente Comercial
     SalesModule,
+    // Agent Intelligence — Calibración y Evolución autónoma
+    AgentCalibrationModule,
+    AgentEvolutionModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

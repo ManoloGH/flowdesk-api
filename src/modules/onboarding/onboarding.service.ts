@@ -8,6 +8,7 @@ import { CultureService } from '../culture/culture.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { BrainService } from '../brain/brain.service';
 import { SalesService } from '../sales/sales.service';
+import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
 import { INDUSTRY_TEMPLATES, UNIVERSAL_CAMPUS, DEFAULT_OWNER_DESK, MENTORIA_OWNER_DESK } from './onboarding.templates';
 import {
   OnboardingStartDto,
@@ -31,6 +32,7 @@ export class OnboardingService {
     private integrations: IntegrationsService,
     private brain: BrainService,
     private salesService: SalesService,
+    private agentCalibration: AgentCalibrationService,
   ) {}
 
   // Listar templates disponibles
@@ -445,6 +447,9 @@ export class OnboardingService {
 
     // Alimentar el Brain con el conocimiento base de la empresa (fire & forget)
     void this.populateBrainFromOnboarding(tenantId);
+
+    // Calibrar todos los agentes con el contexto del onboarding (fire & forget)
+    void this.agentCalibration.calibrateAllAgents(tenantId);
 
     const stats = await this.getCompanyStats(tenantId);
 
