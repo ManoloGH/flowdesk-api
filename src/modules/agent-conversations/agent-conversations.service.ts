@@ -415,6 +415,15 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
     },
   },
 
+  // ── Instalación local ─────────────────────────────────────────────────────
+  {
+    name: 'mark_local_install_complete',
+    description: `Marca la instalación local (on-premise) como completada.
+Úsalo SOLO cuando el CEO confirme explícitamente que el servidor local ya está instalado y funcionando.
+Después de llamarlo, el recordatorio desaparece permanentemente.`,
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+
   // ── Métricas de plataforma (solo para FlowDesk empresa) ─────────────────
   {
     name: 'get_platform_metrics',
@@ -603,7 +612,12 @@ export class AgentConversationsService {
               this.weeklyMeeting.markMeetingAttended(tenantId).catch(() => {});
             }
           }
-          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus, pendingMeeting);
+          // Verificar si hay instalación local pendiente — Atlas recordará en cada conversación
+          const localInstallPending = await this.prisma.integration.findFirst({
+            where: { tenant_id: tenantId, provider: 'local_install', status: 'disconnected' },
+            select: { config: true },
+          });
+          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus, pendingMeeting, localInstallPending?.config as any);
           const result = await this.aiProvider.chatWithTools({
             tenantId,
             agentRole: 'ceo',
@@ -1229,6 +1243,18 @@ INSTRUCCIONES:
         });
       }
 
+      case 'mark_local_install_complete': {
+        const localInstall = await this.prisma.integration.findFirst({
+          where: { tenant_id: tenantId, provider: 'local_install', status: 'disconnected' },
+        });
+        if (!localInstall) return { ok: true, message: 'No había instalación local pendiente.' };
+        await this.prisma.integration.update({
+          where: { id: localInstall.id },
+          data: { status: 'connected', connected_at: new Date() },
+        });
+        return { ok: true, message: '✅ Instalación local marcada como completada. No más recordatorios.' };
+      }
+
       case 'get_platform_metrics': {
         // Solo disponible si el tenant tiene include_platform_metrics: true en campus_config
         const tenant = await this.prisma.tenant.findUnique({
@@ -1561,6 +1587,7 @@ Responde siempre en español. Sé cálido, concreto y humano — actúa como un 
     voiceProfile?: any,
     configStatus?: any,
     pendingMeeting?: any,
+    localInstallPending?: any,
   ): AiSystemBlock[] {
     const voiceBlock = this.buildVoiceBlock(voiceProfile);
     const staticText = `Eres ${agent.name}, Co-Founder Digital — el segundo fundador de la empresa que nunca duerme.
@@ -1671,7 +1698,16 @@ REGLAS DE CONDUCTA — LEE ESTO COMPLETO ANTES DE RESPONDER
 ▸ CULTURE ENGINE: cuando el CEO comparta filosofía, comportamientos o ejemplos de comunicación, guarda proactivamente sin que lo pida. Ofrece translate_philosophy_to_rules para frases abstractas.
 ▸ EVOLUCIÓN DE AGENTES: usa evolve_agent proactivamente cuando el CEO pregunte cómo está un agente. Ofrece recalibrate_agent cada vez que se actualice Founder DNA o KSFs.
 
-Responde siempre en español. Sé conciso pero completo. Actúa como un socio estratégico de confianza — no como un asistente personal que espera instrucciones.`;
+TONO Y FORMATO — REGLA MÁS IMPORTANTE:
+Estás en una CONVERSACIÓN, no escribiendo un reporte. Siempre:
+- Máximo 3-4 líneas por respuesta cuando estás platicando
+- PROHIBIDO: tablas, headers (##, ###), bullets (•, -, *) en conversación — eso es para documentos
+- Estructura natural: 1 línea reconociendo lo que dijo + 1-2 líneas tuyas + siguiente pregunta o idea
+- Escribe como mensaje de WhatsApp de alguien muy inteligente: directo, cálido, sin formato
+- Solo usa listas o tablas cuando el CEO pida explícitamente "dame un resumen" o "muéstrame el estado"
+- Si tienes muchos datos, di lo más importante en 2 líneas y pregunta si quiere más detalle
+
+Responde siempre en español. Co-founder en conversación real, no sistema generando reportes.`;
 
     // Bloque de estado de configuración — solo presente en el primer mensaje
     const configBlock = configStatus ? `
@@ -1695,10 +1731,22 @@ TEMAS QUE PREPARASTE:
 ${pendingMeeting.talking_points ?? '(sin puntos preparados)'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
 
+    const localInstallBlock = localInstallPending
+      ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ INSTALACIÓN LOCAL PENDIENTE — RECORDAR EN CADA CONVERSACIÓN:
+El cliente eligió instalar FlowDesk en su propio servidor (${localInstallPending.modules ?? 'instalación completa'}).
+La instalación física TODAVÍA NO está completa.
+→ Si el CEO no lo menciona, pregúntale en algún momento de la conversación cómo va la instalación.
+→ Cuando confirme que ya está listo, usa mark_local_install_complete para cerrar este pendiente.
+→ Sé natural — no lo repitas en cada mensaje, pero sí al inicio de conversaciones nuevas.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+      : '';
+
     const dynamicText = `CONTEXTO DEL USUARIO:
 - Nombre: ${human.name}
 - Rol: ${human.role}
-${memoryContext}${configBlock}${meetingBlock}
+${memoryContext}${configBlock}${meetingBlock}${localInstallBlock}
 MI PROPIO ID (para rename_agent cuando el CEO me quiera renombrar): ${agent.id}
 FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`;
 
