@@ -689,53 +689,107 @@ export class AgentConversationsService {
       }
 
       case 'get_configuration_progress': {
-        const [founder, voice, blueprint, agents] = await Promise.all([
+        const [founder, voice, blueprint, operatingMap, allSlots, integrations, departments, onboarding, ksfs] = await Promise.all([
           this.prisma.founderProfile.findUnique({ where: { tenant_id: tenantId } }),
           this.prisma.communicationProfile.findUnique({ where: { tenant_id: tenantId } }),
           this.prisma.cultureBlueprint.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.operatingMap.findUnique({ where: { tenant_id: tenantId } }),
           this.prisma.teamSlot.findMany({
-            where: { tenant_id: tenantId, type: 'AI_AGENT' },
-            select: { id: true, name: true, agent_role: true, agent_config: true },
+            where: { tenant_id: tenantId },
+            select: { id: true, name: true, type: true, role: true, agent_role: true, agent_config: true, department_id: true },
+          }),
+          this.prisma.integration.findMany({
+            where: { tenant_id: tenantId, status: 'connected' },
+            select: { provider: true },
+          }),
+          this.prisma.department.findMany({
+            where: { tenant_id: tenantId },
+            select: { id: true, name: true },
+          }),
+          this.prisma.onboardingProgress.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.keySuccessFactor.findMany({
+            where: { tenant_id: tenantId },
+            select: { team_slot_id: true },
           }),
         ]);
 
-        const dnaFields = [
-          'industry_change', 'differentiator', 'loved_behaviors', 'zero_tolerance',
-          'doing_well_means', 'team_feeling', 'client_energy', 'ai_tasks', 'ai_never_replace',
-          'leadership_style', 'key_obsessions',
-        ];
-        const missingDna = founder
-          ? dnaFields.filter(f => {
-              const val = (founder as any)[f];
-              return !val || (Array.isArray(val) && val.length === 0);
-            })
-          : dnaFields;
+        // ── Founder DNA ──────────────────────────────────────────────────────
+        const dnaFields = ['industry_change', 'differentiator', 'loved_behaviors', 'zero_tolerance', 'doing_well_means', 'team_feeling', 'client_energy', 'ai_tasks', 'ai_never_replace', 'leadership_style', 'key_obsessions'];
+        const missingDna = founder ? dnaFields.filter(f => { const v = (founder as any)[f]; return !v || (Array.isArray(v) && v.length === 0); }) : dnaFields;
 
+        // ── Agentes ──────────────────────────────────────────────────────────
+        const agents = allSlots.filter(s => s.type === 'AI_AGENT');
         const ceoAgent = agents.find(a => a.agent_role === 'ceo');
         const ceoCalibrated = !!(ceoAgent?.agent_config as any)?.calibrated_at;
-        const hasVoice = !!voice?.voice_summary;
-        const hasBlueprint = !!(blueprint?.philosophy_statements as any[])?.length;
 
-        const score = Math.round(
-          ((dnaFields.length - missingDna.length) / dnaFields.length) * 40 +
-          (ceoCalibrated ? 20 : 0) + (hasVoice ? 20 : 0) + (hasBlueprint ? 20 : 0),
-        );
+        // ── Equipo humano ────────────────────────────────────────────────────
+        const humanSlots = allSlots.filter(s => s.type === 'HUMAN');
+        const slotsWithKsf = new Set(ksfs.map(k => k.team_slot_id));
+        const humanWithoutKsf = humanSlots.filter(s => !slotsWithKsf.has(s.id));
+        const humanWithoutDept = humanSlots.filter(s => !s.department_id);
 
-        const suggestions: string[] = [];
-        if (missingDna.length > 0) suggestions.push(`Founder DNA incompleto: faltan ${missingDna.length} campos`);
-        if (!ceoCalibrated) suggestions.push('El CEO Digital no ha sido calibrado aún');
-        if (!hasVoice) suggestions.push('Sin perfil de voz de la empresa (agrega muestras de comunicación)');
-        if (!hasBlueprint) suggestions.push('Sin filosofía operativa documentada');
+        // ── Onboarding ───────────────────────────────────────────────────────
+        const onboardingComplete = onboarding?.completed_at != null;
+        const onboardingStep = onboarding?.current_step ?? 0;
+
+        // ── Procesos ─────────────────────────────────────────────────────────
+        const processes = (operatingMap?.key_processes as any[] | null) ?? [];
+        const hasProcesses = processes.length >= 2;
+        const painPoints = (operatingMap?.pain_points as any[] | null) ?? [];
+
+        // ── Integraciones ────────────────────────────────────────────────────
+        const connectedProviders = integrations.map(i => i.provider);
+        const missingIntegrations: string[] = [];
+        if (!connectedProviders.includes('google') && !connectedProviders.includes('microsoft365')) missingIntegrations.push('Calendario/Email (Google o Microsoft 365)');
+        if (!connectedProviders.includes('ghl')) missingIntegrations.push('CRM (GoHighLevel)');
+
+        // ── Score (100 pts distribuidos) ─────────────────────────────────────
+        let score = 0;
+        score += Math.round(((dnaFields.length - missingDna.length) / dnaFields.length) * 20); // 20pts DNA
+        score += ceoCalibrated ? 10 : 0;                                                          // 10pts CEO calibrado
+        score += voice?.voice_summary ? 5 : 0;                                                    // 5pts voz
+        score += (blueprint?.philosophy_statements as any[])?.length ? 5 : 0;                     // 5pts blueprint
+        score += onboardingComplete ? 15 : Math.round((onboardingStep / 6) * 10);                 // 15pts onboarding
+        score += humanSlots.length >= 1 ? 10 : 0;                                                 // 10pts equipo dado de alta
+        score += humanWithoutKsf.length === 0 && humanSlots.length > 0 ? 10 : 0;                  // 10pts todos con KSFs
+        score += departments.length >= 1 ? 5 : 0;                                                 // 5pts áreas configuradas
+        score += hasProcesses ? 10 : 0;                                                            // 10pts procesos documentados
+        score += missingIntegrations.length === 0 ? 10 : 5;                                       // 10pts integraciones
+
+        // ── Faltantes priorizados ─────────────────────────────────────────────
+        const gaps: { area: string; detail: string; priority: 'high' | 'medium' | 'low' }[] = [];
+
+        if (!onboardingComplete) gaps.push({ area: 'Onboarding', detail: `Paso ${onboardingStep}/6 completado — el onboarding activa todos los módulos de la empresa`, priority: 'high' });
+        if (humanSlots.length === 0) gaps.push({ area: 'Equipo', detail: 'No hay empleados dados de alta — sin equipo no hay empresa que operar', priority: 'high' });
+        if (departments.length === 0) gaps.push({ area: 'Áreas', detail: 'No hay departamentos/áreas configuradas', priority: 'high' });
+        if (humanWithoutKsf.length > 0) gaps.push({ area: 'KSFs del equipo', detail: `${humanWithoutKsf.length} persona(s) sin objetivos configurados: ${humanWithoutKsf.map(h => h.name).join(', ')}`, priority: 'high' });
+        if (missingDna.length > 0) gaps.push({ area: 'Founder DNA', detail: `Faltan ${missingDna.length} campos del perfil del fundador`, priority: 'high' });
+        if (!hasProcesses) gaps.push({ area: 'Procesos', detail: 'Sin procesos clave documentados — el equipo opera sin mapa de operación', priority: 'medium' });
+        if (missingIntegrations.length > 0) gaps.push({ area: 'Integraciones', detail: `Sin conectar: ${missingIntegrations.join(', ')}`, priority: 'medium' });
+        if (!ceoCalibrated) gaps.push({ area: 'CEO Digital', detail: 'No calibrado con el perfil del fundador', priority: 'medium' });
+        if (!voice?.voice_summary) gaps.push({ area: 'Voz de empresa', detail: 'Sin perfil de comunicación — los agentes no hablan con tu tono', priority: 'low' });
+        if (!(blueprint?.philosophy_statements as any[])?.length) gaps.push({ area: 'Filosofía operativa', detail: 'Sin declaraciones de filosofía documentadas', priority: 'low' });
+        if (painPoints.length === 0) gaps.push({ area: 'Puntos de fricción', detail: 'No se han documentado los cuellos de botella del negocio', priority: 'low' });
+        if (humanWithoutDept.length > 0) gaps.push({ area: 'Asignación de áreas', detail: `${humanWithoutDept.length} persona(s) sin área asignada`, priority: 'low' });
 
         return {
-          score,
-          ceo_agent: { id: ceoAgent?.id, name: ceoAgent?.name, calibrated: ceoCalibrated },
-          founder_dna: { complete: missingDna.length === 0, missing_fields: missingDna, filled: dnaFields.length - missingDna.length, total: dnaFields.length },
-          communication_voice: { configured: hasVoice },
-          culture_blueprint: { configured: hasBlueprint },
-          total_agents: agents.length,
-          suggestions,
+          score: Math.min(100, score),
           ready_for_full_operation: score >= 80,
+          ceo_agent: { id: ceoAgent?.id, name: ceoAgent?.name, calibrated: ceoCalibrated },
+          onboarding: { complete: onboardingComplete, step: onboardingStep, total_steps: 6 },
+          team: { total_humans: humanSlots.length, without_ksf: humanWithoutKsf.length, without_department: humanWithoutDept.length },
+          departments: { total: departments.length, names: departments.map(d => d.name) },
+          processes: { documented: processes.length, has_pain_points: painPoints.length > 0 },
+          integrations: { connected: connectedProviders, missing: missingIntegrations },
+          founder_dna: { filled: dnaFields.length - missingDna.length, total: dnaFields.length, missing_fields: missingDna },
+          communication_voice: { configured: !!voice?.voice_summary },
+          culture_blueprint: { configured: !!(blueprint?.philosophy_statements as any[])?.length },
+          gaps_by_priority: {
+            high: gaps.filter(g => g.priority === 'high').map(g => `[${g.area}] ${g.detail}`),
+            medium: gaps.filter(g => g.priority === 'medium').map(g => `[${g.area}] ${g.detail}`),
+            low: gaps.filter(g => g.priority === 'low').map(g => `[${g.area}] ${g.detail}`),
+          },
+          total_gaps: gaps.length,
         };
       }
 
