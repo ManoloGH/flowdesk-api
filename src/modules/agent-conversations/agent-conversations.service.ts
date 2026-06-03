@@ -448,6 +448,29 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
     input_schema: { type: 'object' as const, properties: {} },
   },
   {
+    name: 'get_customer_journey_status',
+    description: `Revisa qué etapas del journey del cliente están documentadas en los procesos de la empresa y cuáles faltan.
+Cubre todo el ciclo: atracción, ventas, onboarding, entrega, soporte, postventa, fidelización, facturación, legal, contabilidad.
+Úsalo cuando el CEO pregunte por el estado de los procesos del cliente, o proactivamente cuando detectes que el journey no está mapeado.`,
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'document_journey_stage',
+    description: 'Documenta una etapa del journey del cliente como proceso clave en el Operating Map.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        stage:       { type: 'string', description: 'Nombre de la etapa (ej: "Generación de leads", "Onboarding del cliente")' },
+        owner_name:  { type: 'string', description: 'Responsable del proceso' },
+        steps:       { type: 'array', items: { type: 'string' }, description: 'Pasos del proceso' },
+        friction:    { type: 'array', items: { type: 'string' }, description: 'Puntos de fricción o problemas actuales' },
+        ai_potential:{ type: 'string', description: 'Qué parte podría automatizar la IA (opcional)' },
+        journey_area:{ type: 'string', enum: ['marketing', 'ventas', 'onboarding', 'entrega', 'soporte', 'postventa', 'fidelizacion', 'administracion', 'legal', 'contabilidad'], description: 'Área del journey' },
+      },
+      required: ['stage', 'owner_name', 'steps', 'friction'],
+    },
+  },
+  {
     name: 'recalibrate_agent',
     description: `Recalibra las instrucciones de un agente usando todo el contexto actual de la empresa (Founder DNA, cultura, KSFs, Brain).
 Úsalo cuando el CEO quiera mejorar o actualizar un agente inmediatamente sin esperar el ciclo semanal.
@@ -771,6 +794,7 @@ export class AgentConversationsService {
         if (!(blueprint?.philosophy_statements as any[])?.length) gaps.push({ area: 'Filosofía operativa', detail: 'Sin declaraciones de filosofía documentadas', priority: 'low' });
         if (painPoints.length === 0) gaps.push({ area: 'Puntos de fricción', detail: 'No se han documentado los cuellos de botella del negocio', priority: 'low' });
         if (humanWithoutDept.length > 0) gaps.push({ area: 'Asignación de áreas', detail: `${humanWithoutDept.length} persona(s) sin área asignada`, priority: 'low' });
+        if (processes.length < 5) gaps.push({ area: 'Journey del cliente', detail: `Solo ${processes.length} procesos documentados — el journey completo necesita al menos marketing, ventas, onboarding, entrega, soporte, facturación y legal`, priority: 'medium' });
 
         return {
           score: Math.min(100, score),
@@ -1236,6 +1260,103 @@ INSTRUCCIONES:
         return await this.secretary.getPendingApprovals(tenantId);
       }
 
+      case 'get_customer_journey_status': {
+        const [operatingMap, brainDocs] = await Promise.all([
+          this.prisma.operatingMap.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.empresaBrainDocument.findMany({
+            where: { tenant_id: tenantId },
+            select: { title: true, content: true, source_type: true },
+            take: 30,
+          }),
+        ]);
+
+        const processes = (operatingMap?.key_processes as any[] | null) ?? [];
+        const systems   = (operatingMap?.current_systems as any[] | null) ?? [];
+        const painPts   = (operatingMap?.pain_points as any[] | null) ?? [];
+
+        // Etapas estándar del journey del cliente
+        const JOURNEY_STAGES = [
+          { area: 'marketing',      stage: 'Creación de contenido',         keywords: ['contenido', 'content', 'blog', 'post', 'video', 'reel', 'copy'] },
+          { area: 'marketing',      stage: 'Publicidad y atracción',         keywords: ['publicidad', 'ads', 'meta', 'google ads', 'pauta', 'anuncio', 'atracción', 'leads'] },
+          { area: 'marketing',      stage: 'Gestión de redes sociales',      keywords: ['redes', 'social media', 'instagram', 'facebook', 'linkedin', 'tiktok'] },
+          { area: 'ventas',         stage: 'Calificación de prospectos',     keywords: ['calificación', 'prospecto', 'lead', 'pipeline', 'crm', 'oportunidad', 'scoring'] },
+          { area: 'ventas',         stage: 'Propuesta y cierre',             keywords: ['propuesta', 'cotización', 'cierre', 'contrato', 'firma', 'venta'] },
+          { area: 'onboarding',     stage: 'Onboarding del cliente',         keywords: ['onboarding', 'bienvenida', 'activación', 'setup', 'implementación', 'alta de cliente'] },
+          { area: 'entrega',        stage: 'Entrega del producto/servicio',  keywords: ['entrega', 'delivery', 'producción', 'ejecución', 'proyecto', 'servicio'] },
+          { area: 'soporte',        stage: 'Atención y soporte',             keywords: ['soporte', 'atención', 'ticket', 'queja', 'incidencia', 'help desk', 'whatsapp'] },
+          { area: 'postventa',      stage: 'Seguimiento postventa',          keywords: ['postventa', 'seguimiento', 'satisfacción', 'feedback', 'encuesta', 'nps'] },
+          { area: 'fidelizacion',   stage: 'Fidelización y renovación',      keywords: ['fidelización', 'retención', 'renovación', 'upsell', 'cross-sell', 'lealtad'] },
+          { area: 'administracion', stage: 'Facturación y cobros',           keywords: ['facturación', 'cobro', 'pago', 'invoice', 'cobranza', 'cfdi', 'factura'] },
+          { area: 'legal',          stage: 'Contratos y legal',              keywords: ['contrato', 'legal', 'acuerdo', 'términos', 'firma', 'nda', 'compliance'] },
+          { area: 'contabilidad',   stage: 'Contabilidad e impuestos',       keywords: ['contabilidad', 'impuestos', 'sat', 'declaración', 'balance', 'contador'] },
+          { area: 'administracion', stage: 'Recursos humanos',               keywords: ['rrhh', 'nómina', 'contratación', 'empleados', 'vacaciones', 'capacitación'] },
+        ];
+
+        const allText = [
+          ...processes.map((p: any) => `${p.name} ${p.steps?.join(' ') ?? ''}`),
+          ...brainDocs.map(d => `${d.title} ${d.content?.slice(0, 200) ?? ''}`),
+          ...systems.map((s: any) => `${s.name} ${s.used_for ?? ''}`),
+        ].join(' ').toLowerCase();
+
+        const covered: typeof JOURNEY_STAGES = [];
+        const missing: typeof JOURNEY_STAGES = [];
+
+        for (const stage of JOURNEY_STAGES) {
+          const found = stage.keywords.some(k => allText.includes(k));
+          if (found) covered.push(stage);
+          else missing.push(stage);
+        }
+
+        const coveragePercent = Math.round((covered.length / JOURNEY_STAGES.length) * 100);
+
+        // Agrupar por área
+        const missingByArea: Record<string, string[]> = {};
+        for (const s of missing) {
+          if (!missingByArea[s.area]) missingByArea[s.area] = [];
+          missingByArea[s.area].push(s.stage);
+        }
+
+        return {
+          coverage_percent: coveragePercent,
+          total_stages: JOURNEY_STAGES.length,
+          covered: covered.length,
+          missing: missing.length,
+          covered_stages: covered.map(s => ({ area: s.area, stage: s.stage })),
+          missing_stages: missingByArea,
+          documented_processes: processes.length,
+          pain_points_registered: painPts.length,
+          recommendation: coveragePercent < 40
+            ? 'El journey del cliente está muy incompleto — prioridad alta documentar los procesos faltantes'
+            : coveragePercent < 70
+            ? 'El journey tiene huecos importantes — hay riesgo de desalineación entre áreas'
+            : 'El journey está bien mapeado — revisar si los procesos documentados están actualizados',
+        };
+      }
+
+      case 'document_journey_stage': {
+        const existing = await this.prisma.operatingMap.findUnique({ where: { tenant_id: tenantId } });
+        const currentProcesses = (existing?.key_processes as any[] | null) ?? [];
+
+        const newProcess = {
+          name: input.stage,
+          owner_name: input.owner_name,
+          steps: input.steps ?? [],
+          friction: input.friction ?? [],
+          ai_potential: input.ai_potential ?? '',
+          journey_area: input.journey_area ?? 'operaciones',
+        };
+
+        const updated = [...currentProcesses.filter((p: any) => p.name !== input.stage), newProcess];
+
+        await this.prisma.operatingMap.upsert({
+          where: { tenant_id: tenantId },
+          create: { tenant_id: tenantId, key_processes: updated as any, current_systems: [], pain_points: [] },
+          update: { key_processes: updated as any },
+        });
+
+        return { ok: true, stage: input.stage, message: `Etapa "${input.stage}" documentada en el Operating Map.` };
+      }
+
       case 'recalibrate_agent': {
         if (input.agent_id) {
           const agent = await this.prisma.teamSlot.findFirst({
@@ -1421,7 +1542,7 @@ Eres el Co-Founder Digital. Tu misión tiene 5 pilares — son tu lente para TOD
 
 1. EL EQUIPO — Conoces a cada persona: su rol, sus KSFs, cómo va su desempeño, en qué zona está (excelencia/normal/problema/fuera de pista). Detectas cuando alguien necesita apoyo antes de que lo pida. Celebras el buen trabajo sin que el CEO tenga que recordártelo.
 
-2. LOS PROCESOS DEL EQUIPO — Entiendes cómo trabaja cada área: sus pasos, sus herramientas, sus puntos de fricción. Cuando un proceso no funciona, lo señalas y propones cómo mejorarlo. Buscas constantemente formas de hacer las cosas más rápido, más claro y con menos esfuerzo.
+2. LOS PROCESOS DEL EQUIPO Y EL JOURNEY DEL CLIENTE — Entiendes cómo trabaja cada área y cómo se ve el ciclo completo del cliente: desde que lo atraes con contenido y publicidad, pasas por ventas, onboarding, entrega, soporte, postventa, hasta facturación, legal y contabilidad. Usas get_customer_journey_status para saber qué etapas están mapeadas y cuáles son un punto ciego. Cuando hay huecos, los señalas y propones documentarlos con document_journey_stage.
 
 3. CUIDAR QUE EL EQUIPO TENGA TODO — Te aseguras de que cada persona tenga lo que necesita: claridad en sus objetivos, herramientas adecuadas, información relevante, capacitación cuando sea necesario. Si algo está bloqueando a alguien, lo identificas y propones solución.
 
@@ -1458,6 +1579,7 @@ CAPACIDADES (herramientas disponibles):
 - Objetivos estratégicos: get_company_goals, create_company_goal
 - Equipo IA: get_agents, preview_agent_design, confirm_agent_creation, recalibrate_agent, evolve_agent, apply_agent_evolution
 - Cultura y procesos: get_culture_engine, get_culture_health, update_founder_dna, calibrate_atlas, update_culture_blueprint, translate_philosophy_to_rules, update_operating_map, add_communication_sample, calibrate_communication_voice
+- Journey del cliente: get_customer_journey_status, document_journey_stage
 - Conocimiento empresa: search_company_brain, create_strategy_doc
 - Aprobaciones: get_pending_approvals
 - Configuración propia: get_configuration_progress, rename_agent
