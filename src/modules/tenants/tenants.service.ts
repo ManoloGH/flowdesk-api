@@ -540,6 +540,62 @@ export class TenantsService {
     return { sops };
   }
 
+  private readonly CACHE_FRESH_MS   = 30 * 60 * 1000;   // 30 min → devuelve cache sin tocar Claude
+  private readonly CACHE_STALE_MS   = 4 * 60 * 60 * 1000; // 4h  → devuelve cache + regenera en background
+
+  async getFocusBriefCached(tenant_id: string, slot_id: string, force = false): Promise<FocusBrief & { cached?: boolean }> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenant_id },
+      select: { campus_config: true, name: true },
+    });
+
+    const cfg = (tenant.campus_config as Record<string, any>) ?? {};
+    const cachedBrief   = cfg.focus_brief_cache as FocusBrief | undefined;
+    const cachedAt      = cfg.focus_brief_generated_at as string | undefined;
+    const ageMs         = cachedAt ? Date.now() - new Date(cachedAt).getTime() : Infinity;
+    const isToday       = cachedAt ? new Date(cachedAt).toDateString() === new Date().toDateString() : false;
+
+    // Forzar regeneración (botón Refresh del usuario)
+    if (force) {
+      const fresh = await this.getFocusBrief(tenant_id, slot_id);
+      void this.saveBriefCache(tenant_id, cfg, fresh);
+      return fresh;
+    }
+
+    // Cache fresca (< 30 min y misma fecha) → devolver instantáneo
+    if (cachedBrief && isToday && ageMs < this.CACHE_FRESH_MS) {
+      return { ...cachedBrief, cached: true };
+    }
+
+    // Cache algo vieja (30 min - 4h, misma fecha) → devolver ahora + regenerar en background
+    if (cachedBrief && isToday && ageMs < this.CACHE_STALE_MS) {
+      void this.getFocusBrief(tenant_id, slot_id).then(fresh =>
+        this.saveBriefCache(tenant_id, cfg, fresh)
+      );
+      return { ...cachedBrief, cached: true };
+    }
+
+    // Sin cache o muy antigua → generar sincrónicamente (primer acceso del día)
+    const fresh = await this.getFocusBrief(tenant_id, slot_id);
+    void this.saveBriefCache(tenant_id, cfg, fresh);
+    return fresh;
+  }
+
+  private async saveBriefCache(tenantId: string, currentCfg: Record<string, any>, brief: FocusBrief): Promise<void> {
+    try {
+      await this.prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          campus_config: {
+            ...currentCfg,
+            focus_brief_cache: brief as any,
+            focus_brief_generated_at: new Date().toISOString(),
+          },
+        },
+      });
+    } catch { /* fire & forget */ }
+  }
+
   async getFocusBrief(tenant_id: string, slot_id: string): Promise<FocusBrief> {
     const anthropic = new Anthropic();
 

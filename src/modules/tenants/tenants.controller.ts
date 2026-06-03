@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Header, Res } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Header, Res, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { TenantsService } from './tenants.service';
@@ -45,9 +45,13 @@ export class TenantsController {
   }
 
   @Get('mine/focus-brief')
-  @ApiOperation({ summary: 'Focus Mode del día generado por Atlas con IA' })
-  getFocusBrief(@TenantId() tenantId: string, @CurrentUser() user: any) {
-    return this.tenantsService.getFocusBrief(tenantId, user.slot_id);
+  @ApiOperation({ summary: 'Focus Mode del día — cacheado, regenera en background si es antiguo' })
+  getFocusBrief(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Query('force') force?: string,
+  ) {
+    return this.tenantsService.getFocusBriefCached(tenantId, user.slot_id, force === 'true');
   }
 
   @Get(':id')
