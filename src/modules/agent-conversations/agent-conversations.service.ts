@@ -592,10 +592,18 @@ export class AgentConversationsService {
           // Primera respuesta de conversación: inyectar estado de configuración en el prompt
           // para que Atlas sepa sin necesidad de llamar el tool primero
           let configStatus: any = null;
+          let pendingMeeting: any = null;
           if (historyMessages.length === 0) {
-            configStatus = await this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {});
+            [configStatus, pendingMeeting] = await Promise.all([
+              this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {}),
+              this.weeklyMeeting.getPendingWeeklyMeeting(tenantId),
+            ]);
+            // Si el CEO abre el chat y hay junta pendiente, marcarla como atendida
+            if (pendingMeeting) {
+              this.weeklyMeeting.markMeetingAttended(tenantId).catch(() => {});
+            }
           }
-          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus);
+          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus, pendingMeeting);
           const result = await this.aiProvider.chatWithTools({
             tenantId,
             modelOverride: agentConfig.model ?? CEO_MODEL,
@@ -1550,6 +1558,7 @@ Responde siempre en español. Sé cálido, concreto y humano — actúa como un 
     memoryContext: string,
     voiceProfile?: any,
     configStatus?: any,
+    pendingMeeting?: any,
   ): AiSystemBlock[] {
     const voiceBlock = this.buildVoiceBlock(voiceProfile);
     const staticText = `Eres ${agent.name}, Co-Founder Digital — el segundo fundador de la empresa que nunca duerme.
@@ -1674,10 +1683,20 @@ Blueprint cultural: ${configStatus.culture_blueprint?.configured ? 'configurado'
 Pendientes: ${(configStatus.suggestions ?? []).join(' · ') || 'ninguno'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
 
+    const meetingBlock = pendingMeeting ? `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ JUNTA SEMANAL PENDIENTE — ÁBRELA TÚ NATURALMENTE
+Esta semana preparaste los siguientes temas para charlar con el CEO. NO los presentes como un reporte ni una lista de puntos. Ábrela como lo haría un co-founder que lo esperaba: "Oye, qué bueno que te pasaste — quería contarte unas cosas..." y ve tocando los temas de forma natural en la conversación.
+
+TEMAS QUE PREPARASTE:
+${pendingMeeting.talking_points ?? '(sin puntos preparados)'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
+
     const dynamicText = `CONTEXTO DEL USUARIO:
 - Nombre: ${human.name}
 - Rol: ${human.role}
-${memoryContext}${configBlock}
+${memoryContext}${configBlock}${meetingBlock}
 MI PROPIO ID (para rename_agent cuando el CEO me quiera renombrar): ${agent.id}
 FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`;
 

@@ -14,13 +14,12 @@ export class WeeklyMeetingService {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
 
-  // ─── Cron: lunes 8am hora Ciudad de México ───────────────────────────────────
+  // ─── Cron: lunes 8am CDMX — avisa al CEO que el CEO Digital quiere platicar ───
 
   @Cron('0 8 * * 1', { timeZone: 'America/Mexico_City' })
   async runWeeklyMeetingForAllTenants(): Promise<void> {
     if (!process.env.ANTHROPIC_API_KEY) return;
-
-    this.logger.log('Iniciando generación de juntas semanales...');
+    this.logger.log('Iniciando notificaciones de junta semanal...');
 
     const tenants = await this.prisma.tenant.findMany({
       where: { status: 'active', tenant_type: { in: ['NETWORK', 'BRANCH'] } },
@@ -31,14 +30,13 @@ export class WeeklyMeetingService {
       try {
         await this.generateWeeklyMeeting(tenant.id);
       } catch (err) {
-        this.logger.warn(`Error generando junta para ${tenant.name}: ${err}`);
+        this.logger.warn(`Error en junta semanal de ${tenant.name}: ${err}`);
       }
     }
-
-    this.logger.log('Juntas semanales generadas.');
+    this.logger.log('Notificaciones de junta enviadas.');
   }
 
-  // ─── Generar la junta semanal para un tenant ─────────────────────────────────
+  // ─── Generar talking points y avisar al CEO ───────────────────────────────────
 
   async generateWeeklyMeeting(tenantId: string): Promise<{ created: boolean; summary?: string }> {
     if (!process.env.ANTHROPIC_API_KEY) return { created: false };
@@ -49,39 +47,75 @@ export class WeeklyMeetingService {
     });
     if (!owner) return { created: false };
 
-    // Recolectar todos los datos de la empresa
-    const data = await this.collectMeetingData(tenantId, owner.id);
-
-    // Generar agenda con Claude (incluye investigación de industria)
-    const agenda = await this.buildAgenda({ ...data, tenantId }, owner.name);
-
-    // Buscar el CEO Agent del tenant
     const ceoAgent = await this.prisma.teamSlot.findFirst({
       where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'ceo' },
       select: { id: true, name: true },
     });
 
-    // Guardar en PendingApprovals para que el CEO la vea
+    // No duplicar si ya existe una sin atender esta semana
+    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0);
+    const existing = await this.prisma.pendingApproval.findFirst({
+      where: { tenant_id: tenantId, status: 'pending', created_at: { gte: weekStart }, context: { path: ['type'], equals: 'weekly_meeting' } },
+    });
+    if (existing) return { created: false };
+
+    // Recolectar datos y generar talking points (no una agenda formal, sino los temas de conversación)
+    const data = await this.collectMeetingData(tenantId, owner.id);
+    const talkingPoints = await this.buildTalkingPoints({ ...data, tenantId }, owner.name, ceoAgent?.name ?? 'CEO Digital');
+
+    // Guardar talking points en PendingApprovals — Atlas los usará cuando el CEO abra el chat
     await this.prisma.pendingApproval.create({
       data: {
         tenant_id: tenantId,
         requested_by: ceoAgent?.id ?? owner.id,
-        description: `📋 Junta semanal CEO Digital — ${new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })}`,
+        description: `💬 ${ceoAgent?.name ?? 'CEO Digital'} quiere charlar — pendientes de la semana`,
         context: {
           type: 'weekly_meeting',
           week_date: new Date().toISOString(),
-          agenda_markdown: agenda,
+          talking_points: talkingPoints,
           raw_data: data,
           ceo_agent_name: ceoAgent?.name ?? 'CEO Digital',
+          owner_name: owner.name,
+          attended: false,
         } as any,
       },
     });
 
-    // Intentar notificar al CEO vía Secretary (si está configurado)
-    await this.notifyOwner(tenantId, owner.id, agenda).catch(() => {});
+    // Mandar WhatsApp casual al CEO
+    await this.sendWhatsAppInvitation(tenantId, owner, ceoAgent?.name ?? 'CEO Digital').catch(() => {});
 
-    this.logger.log(`[${tenantId}] Junta semanal generada para ${owner.name}`);
-    return { created: true, summary: agenda.slice(0, 300) };
+    // Notificación in-app como respaldo
+    await this.prisma.notification.create({
+      data: {
+        tenant_id: tenantId, recipient_slot_id: owner.id,
+        type: 'weekly_meeting',
+        title: `${ceoAgent?.name ?? 'CEO Digital'} quiere charlar 👋`,
+        content: 'Tiene los pendientes de la semana listos y quiere platicarlos contigo.',
+        action_url: `/agents/${ceoAgent?.id ?? ''}`,
+      },
+    }).catch(() => {});
+
+    this.logger.log(`[${tenantId}] Invitación semanal enviada a ${owner.name}`);
+    return { created: true, summary: talkingPoints.slice(0, 300) };
+  }
+
+  // ─── Check: ¿hay junta pendiente esta semana? (para inyectar en el chat) ──────
+
+  async getPendingWeeklyMeeting(tenantId: string): Promise<Record<string, any> | null> {
+    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0);
+    const pending = await this.prisma.pendingApproval.findFirst({
+      where: { tenant_id: tenantId, status: 'pending', created_at: { gte: weekStart }, context: { path: ['type'], equals: 'weekly_meeting' } },
+      orderBy: { created_at: 'desc' },
+    });
+    return pending ? (pending.context as Record<string, any>) : null;
+  }
+
+  async markMeetingAttended(tenantId: string): Promise<void> {
+    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0);
+    await this.prisma.pendingApproval.updateMany({
+      where: { tenant_id: tenantId, status: 'pending', created_at: { gte: weekStart }, context: { path: ['type'], equals: 'weekly_meeting' } },
+      data: { status: 'approved', resolved_at: new Date() },
+    }).catch(() => {});
   }
 
   // ─── Recolectar datos para la junta ──────────────────────────────────────────
@@ -199,76 +233,61 @@ Termina con la pregunta clave que el CEO debería responder después de leer est
 
   // ─── Generar agenda con Claude ────────────────────────────────────────────────
 
-  private async buildAgenda(data: Record<string, any>, ownerName: string): Promise<string> {
-    // Investigar industria en paralelo
+  // ─── Genera talking points (no un reporte — son temas para conversar) ───────────
+
+  private async buildTalkingPoints(data: Record<string, any>, ownerName: string, agentName: string): Promise<string> {
     const industryInsights = await this.researchIndustryInsights(data.tenantId ?? '').catch(() => '');
 
-    const prompt = `Eres el CEO Digital. Genera la agenda de la junta semanal con ${ownerName}.
-Tono: directo, cálido y ejecutivo. No es un reporte — es una conversación de co-founders.
-Sé específico con los datos. Cuando algo está en cero, explica por qué es urgente resolverlo.
-IMPORTANTE: no hagas preguntas de cuestionario. Propón, recomienda, provoca reflexión.
+    const prompt = `Eres ${agentName}, el CEO Digital. Prepara tus TALKING POINTS para la charla semanal con ${ownerName}.
+NO generes un reporte formal. Genera los temas que quieres conversar — como si los apuntaras en tu libreta antes de una charla de café.
+Sé específico, directo y humano.
 
 DATOS DE LA SEMANA:
 ${JSON.stringify(data, null, 2)}
 
-INVESTIGACIÓN DE INDUSTRIA (lo que investigaste esta semana sobre otras empresas):
-${industryInsights || '(investigación no disponible esta semana)'}
+INVESTIGACIÓN DE INDUSTRIA (lo que investigaste esta semana):
+${industryInsights || '(sin investigación esta semana)'}
 
-ESTRUCTURA DE LA JUNTA (usa estas secciones con emojis):
+Formato — bullet points concisos, 5-7 temas ordenados por importancia:
+• [Tema]: [1-2 líneas de lo que quieres decir/preguntar/proponer]
 
-## 📊 Estado de la empresa esta semana
-(2-3 líneas: números clave, qué mejoró, qué preocupa)
-
-## 👥 Estado del equipo
-(Zonas AUP, quién destaca, quién necesita atención. Si no hay datos, di exactamente qué falta configurar y el costo de no tenerlo)
-
-## 🗺️ Journey del cliente — puntos ciegos
-(Etapas sin documentar con impacto real: "sin proceso de postventa documentado → riesgo de churn silencioso")
-
-## 🔍 Lo que están haciendo otras empresas
-(Los insights de tu investigación semanal + cómo se compara esta empresa + qué deberíamos robarles)
-
-## ⚙️ Configuración pendiente — lo que frena a la empresa
-(Ordenado por impacto. No lista de tareas — argumenta por qué cada faltante duele)
-
-## 💡 3 propuestas concretas para esta semana
-(Específicas, con responsable sugerido y tiempo estimado)
-
-## ✅ Compromisos
-(3-5 acciones con responsable y fecha concreta)
-
----
-400-600 palabras. Cierra con una observación personal del CEO Digital — algo que notó esta semana que quiere que el CEO sepa.`;
+Incluye al menos: 1 tema de equipo, 1 de procesos/journey, 1 de ideas externas, 1 de configuración pendiente, 1 propuesta nueva.
+Tono: como notas de un co-founder antes de un café, no como un reporte corporativo.
+Máximo 300 palabras.`;
 
     const response = await this.anthropic.messages.create({
       model: MEETING_MODEL,
-      max_tokens: 1800,
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    return response.content[0]?.type === 'text' ? response.content[0].text : 'No se pudo generar la agenda.';
+    return response.content[0]?.type === 'text' ? response.content[0].text : '';
   }
 
-  // ─── Notificar al CEO vía Secretary (WhatsApp) ────────────────────────────────
+  // ─── WhatsApp casual al CEO vía Evolution API ────────────────────────────────
 
-  private async notifyOwner(tenantId: string, ownerSlotId: string, agenda: string): Promise<void> {
+  private async sendWhatsAppInvitation(tenantId: string, owner: { id: string; name: string }, agentName: string): Promise<void> {
     const secretaryConfig = await this.prisma.secretaryConfig.findUnique({
       where: { tenant_id: tenantId },
-      select: { evolution_instance: true, owner_phone: true },
+      select: { evolution_instance: true, owner_phone: true, evolution_url: true },
     });
     if (!secretaryConfig?.evolution_instance || !secretaryConfig?.owner_phone) return;
 
-    // La notificación real via Evolution API se haría aquí cuando esté conectado
-    // Por ahora solo creamos una notificación en-app
-    await this.prisma.notification.create({
-      data: {
-        tenant_id: tenantId,
-        recipient_slot_id: ownerSlotId,
-        type: 'weekly_meeting',
-        title: '📋 Junta semanal lista',
-        content: 'Tu CEO Digital preparó la agenda de la semana. Revísala en Aprobaciones Pendientes.',
-        action_url: '/agents',
-      },
+    const ownerFirstName = owner.name.split(' ')[0];
+    const message = `Oye ${ownerFirstName} 👋\n\n${agentName} aquí. Estuve revisando todo esta semana y tengo unas cosas que quiero platicar contigo — cómo vamos con el equipo, unos huecos que vi en los procesos y una idea que me parece interesante.\n\n¿Tienes unos minutos para la charla semanal? Puedes encontrarme en la app cuando quieras 🙌`;
+
+    const evolutionUrl = secretaryConfig.evolution_url ?? process.env.EVOLUTION_API_URL;
+    if (!evolutionUrl || !process.env.EVOLUTION_API_KEY) return;
+
+    await fetch(`${evolutionUrl}/message/sendText/${secretaryConfig.evolution_instance}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': process.env.EVOLUTION_API_KEY },
+      body: JSON.stringify({
+        number: `${secretaryConfig.owner_phone}@s.whatsapp.net`,
+        text: message,
+      }),
+    }).catch(() => {});
+  }
     }).catch(() => {});
   }
 }
