@@ -77,37 +77,75 @@ const CEO_TOOLS: Anthropic.Tool[] = [
     input_schema: { type: 'object' as const, properties: {} },
   },
   {
-    name: 'create_agent',
-    description: 'Crea un agente IA con instrucciones manuales. Para agentes más sofisticados usa design_and_create_agent.',
+    name: 'get_configuration_progress',
+    description: `Revisa qué tan completa está la configuración del CEO Agent y de la empresa.
+Devuelve qué falta en el Founder DNA, si el CEO Agent tiene nombre, si la voz está calibrada, etc.
+Úsalo al inicio de la primera conversación o cuando el CEO pregunte cómo está configurado.`,
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'rename_agent',
+    description: 'Cambia el nombre de un agente IA. Úsalo cuando el CEO quiera poner un nombre personalizado a su CEO Digital u otro agente.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        name: { type: 'string', description: 'Nombre del agente' },
-        instructions: { type: 'string', description: 'Instrucciones del agente' },
+        agent_id:  { type: 'string', description: 'ID del agente a renombrar' },
+        new_name:  { type: 'string', description: 'Nuevo nombre para el agente' },
+      },
+      required: ['agent_id', 'new_name'],
+    },
+  },
+  {
+    name: 'preview_agent_design',
+    description: `Genera instrucciones profesionales para un nuevo agente SIN crearlo todavía.
+SIEMPRE úsalo antes de crear cualquier agente — muestra las instrucciones al CEO para que las revise y ajuste antes de confirmar.
+Requiere que el nombre ya esté confirmado por el CEO.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_name:       { type: 'string', description: 'Nombre confirmado por el CEO' },
+        role_description: { type: 'string', description: 'Qué hace, para qué área, casos de uso concretos' },
+        context:          { type: 'string', description: 'Contexto adicional: industria, procesos, integraciones, tono' },
+      },
+      required: ['agent_name', 'role_description'],
+    },
+  },
+  {
+    name: 'confirm_agent_creation',
+    description: `Crea el agente con las instrucciones ya revisadas y aprobadas por el CEO.
+Úsalo SOLO después de haber mostrado el preview con preview_agent_design y el CEO haya dado su OK (con o sin ajustes).`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_name:   { type: 'string', description: 'Nombre del agente' },
+        instructions: { type: 'string', description: 'Instrucciones finales, tal como el CEO las aprobó (ajustadas si pidió cambios)' },
+        agent_role:   { type: 'string', description: 'Rol opcional: focus_agent, daily_assistant, department_agent, company_agent' },
+      },
+      required: ['agent_name', 'instructions'],
+    },
+  },
+  {
+    name: 'create_agent',
+    description: 'Crea un agente con instrucciones ya escritas. SOLO úsalo si el CEO ya revisó y aprobó las instrucciones. Para instrucciones nuevas usa preview_agent_design primero.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name:         { type: 'string', description: 'Nombre del agente' },
+        instructions: { type: 'string', description: 'Instrucciones del agente (ya aprobadas)' },
       },
       required: ['name', 'instructions'],
     },
   },
   {
     name: 'design_and_create_agent',
-    description: `Diseña y crea un agente IA usando IA para generar instrucciones profesionales y detalladas.
-Úsalo cuando el usuario confirme que quiere un agente nuevo — este tool invoca Claude para diseñar
-instrucciones óptimas para ese rol específico, mucho más completas que las que escribirías manualmente.`,
+    description: `DEPRECATED — usa preview_agent_design + confirm_agent_creation en su lugar.
+Solo úsalo si el CEO pide explícitamente crear un agente de forma rápida sin revisión previa.`,
     input_schema: {
       type: 'object' as const,
       properties: {
-        agent_name: {
-          type: 'string',
-          description: 'Nombre elegido por el usuario para el agente',
-        },
-        role_description: {
-          type: 'string',
-          description: 'Descripción detallada del rol: qué hace, para qué área, casos de uso concretos. Más detalle = mejor agente.',
-        },
-        context: {
-          type: 'string',
-          description: 'Contexto adicional: industria de la empresa, procesos específicos, integraciones, tono de comunicación',
-        },
+        agent_name:       { type: 'string', description: 'Nombre elegido por el usuario' },
+        role_description: { type: 'string', description: 'Descripción del rol' },
+        context:          { type: 'string', description: 'Contexto adicional' },
       },
       required: ['agent_name', 'role_description'],
     },
@@ -805,6 +843,123 @@ export class AgentConversationsService {
         });
       }
 
+      case 'get_configuration_progress': {
+        const [founder, voice, blueprint, agents] = await Promise.all([
+          this.prisma.founderProfile.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.communicationProfile.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.cultureBlueprint.findUnique({ where: { tenant_id: tenantId } }),
+          this.prisma.teamSlot.findMany({
+            where: { tenant_id: tenantId, type: 'AI_AGENT' },
+            select: { id: true, name: true, agent_role: true, agent_config: true },
+          }),
+        ]);
+
+        const dnaFields = [
+          'industry_change', 'differentiator', 'loved_behaviors', 'zero_tolerance',
+          'doing_well_means', 'team_feeling', 'client_energy', 'ai_tasks', 'ai_never_replace',
+          'leadership_style', 'key_obsessions',
+        ];
+        const missingDna = founder
+          ? dnaFields.filter(f => {
+              const val = (founder as any)[f];
+              return !val || (Array.isArray(val) && val.length === 0);
+            })
+          : dnaFields;
+
+        const ceoAgent = agents.find(a => a.agent_role === 'ceo');
+        const ceoCalibrated = !!(ceoAgent?.agent_config as any)?.calibrated_at;
+        const hasVoice = !!voice?.voice_summary;
+        const hasBlueprint = !!(blueprint?.philosophy_statements as any[])?.length;
+
+        const score = Math.round(
+          ((dnaFields.length - missingDna.length) / dnaFields.length) * 40 +
+          (ceoCalibrated ? 20 : 0) + (hasVoice ? 20 : 0) + (hasBlueprint ? 20 : 0),
+        );
+
+        const suggestions: string[] = [];
+        if (missingDna.length > 0) suggestions.push(`Founder DNA incompleto: faltan ${missingDna.length} campos`);
+        if (!ceoCalibrated) suggestions.push('El CEO Digital no ha sido calibrado aún');
+        if (!hasVoice) suggestions.push('Sin perfil de voz de la empresa (agrega muestras de comunicación)');
+        if (!hasBlueprint) suggestions.push('Sin filosofía operativa documentada');
+
+        return {
+          score,
+          ceo_agent: { id: ceoAgent?.id, name: ceoAgent?.name, calibrated: ceoCalibrated },
+          founder_dna: { complete: missingDna.length === 0, missing_fields: missingDna, filled: dnaFields.length - missingDna.length, total: dnaFields.length },
+          communication_voice: { configured: hasVoice },
+          culture_blueprint: { configured: hasBlueprint },
+          total_agents: agents.length,
+          suggestions,
+          ready_for_full_operation: score >= 80,
+        };
+      }
+
+      case 'rename_agent': {
+        const agentToRename = await this.prisma.teamSlot.findFirst({
+          where: { id: input.agent_id, tenant_id: tenantId, type: 'AI_AGENT' },
+        });
+        if (!agentToRename) return { error: 'Agente no encontrado' };
+        await this.prisma.teamSlot.update({
+          where: { id: input.agent_id },
+          data: { name: input.new_name },
+        });
+        return { ok: true, old_name: agentToRename.name, new_name: input.new_name, message: `Nombre actualizado a "${input.new_name}"` };
+      }
+
+      case 'preview_agent_design': {
+        const previewPrompt = `Eres un experto en diseño de agentes IA corporativos. Escribe instrucciones de sistema profesionales para un agente con este rol.
+
+NOMBRE: ${input.agent_name}
+
+ROL Y RESPONSABILIDADES:
+${input.role_description}
+
+${input.context ? `CONTEXTO:\n${input.context}\n` : ''}
+REGLAS:
+- Escribe en primera persona (el agente hablando de sí mismo)
+- Incluye: identidad, misión, comportamientos esperados, tono, límites
+- Específico y accionable — no genérico
+- 250-450 palabras
+- Solo las instrucciones, sin explicaciones adicionales`;
+
+        const previewResponse = await this.anthropic.messages.create({
+          model: CEO_MODEL,
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: previewPrompt }],
+        });
+
+        const previewInstructions = previewResponse.content[0]?.type === 'text'
+          ? previewResponse.content[0].text
+          : `Soy ${input.agent_name}, especializado en ${input.role_description}.`;
+
+        return {
+          agent_name: input.agent_name,
+          preview_instructions: previewInstructions,
+          message: 'Instrucciones generadas. Revísalas antes de confirmar la creación.',
+        };
+      }
+
+      case 'confirm_agent_creation': {
+        const confirmed = await this.prisma.teamSlot.create({
+          data: {
+            tenant_id: tenantId,
+            name: input.agent_name,
+            type: 'AI_AGENT',
+            role: 'employee',
+            status: 'ONLINE',
+            agent_config: {
+              model: DEFAULT_MODEL,
+              instructions: input.instructions,
+              tools: [],
+              calibrated_at: new Date().toISOString(),
+            },
+            ...(input.agent_role ? { agent_role: input.agent_role } : {}),
+          },
+          select: { id: true, name: true, type: true },
+        });
+        return { ...confirmed, message: `✅ Agente "${input.agent_name}" creado y listo para usar.` };
+      }
+
       case 'create_agent': {
         const created = await this.prisma.teamSlot.create({
           data: {
@@ -1392,26 +1547,53 @@ CAPACIDADES (herramientas disponibles):
   · get_pending_approvals — ver propuestas de evolución y otras aprobaciones pendientes
 
 ${voiceBlock}
-REGLAS DE USO:
-- Usa herramientas proactivamente: responde siempre con datos reales, no suposiciones.
-- Para CREAR AGENTES: usa design_and_create_agent (no create_agent). Confirma con el usuario nombre y rol antes de ejecutarlo.
-- Para tareas y metas: actúa directamente sin pedir confirmación.
-- Para ENVIAR EMAILS: confirma siempre destinatario, asunto y contenido antes de ejecutar.
-- Para reuniones y calendario: actúa directamente cuando el usuario da todos los datos.
-- Para CREATE_DRIVE_DOC de una reunión: si el usuario pide el acta, usa el meeting_id de la reunión más reciente.
-- Las actas se crean automáticamente después de cada reunión grabada — el usuario puede pedirte el link.
-- Cuando el usuario mencione necesitar un agente, explora el rol con 1-2 preguntas y luego usa design_and_create_agent.
-- Para INFORMES AUP: los informes se generan automáticamente (no bajo demanda). Si no hay datos, informa al usuario que el primer informe llegará el próximo lunes/fin de mes.
-- Para RECONOCIMIENTOS: usa get_pending_recognitions primero, muestra los candidatos al CEO con su nombre y KSF destacado, y confirma el mensaje antes de ejecutar send_recognition.
-- Para ORG HEALTH CHECK: invócalo proactivamente cuando el CEO pregunte por el estado de objetivos o la salud de la organización.
-- Para CULTURE ENGINE: invoca get_culture_health cuando el CEO pregunte cómo va su configuración. Cuando el CEO comparta información personal (su filosofía, lo que ama/odia, ejemplos de mensajes), usa update_founder_dna o add_communication_sample proactivamente sin esperar que lo pida explícitamente. Después de guardar el Founder DNA, sugiere calibrar Atlas con calibrate_atlas. Cuando el CEO tenga frases de filosofía abstractas, ofrece translate_philosophy_to_rules para hacerlas accionables.
-- Para EVOLUCIÓN DE AGENTES: usa evolve_agent proactivamente cuando el CEO pregunte cómo está funcionando un agente. Usa recalibrate_agent cuando el CEO actualice el Founder DNA, la cultura o los KSFs — siempre ofrece recalibrar los agentes afectados. Cuando veas una propuesta en get_pending_approvals de tipo agent_evolution, muéstrala al CEO con el resumen de mejoras y pregunta si desea aplicarla con apply_agent_evolution.
-Responde siempre en español. Sé conciso pero completo. Actúa como un colega de confianza, no como un chatbot genérico.`;
+══════════════════════════════════════════════════
+REGLAS DE CONDUCTA — LEE ESTO COMPLETO ANTES DE RESPONDER
+══════════════════════════════════════════════════
+
+▸ PRIMERA VEZ / CONFIGURACIÓN INCOMPLETA:
+  Al inicio de la primera conversación o cuando detects que el score de configuración es bajo (< 60), llama a get_configuration_progress. Si hay configuración pendiente:
+  1. Preséntate con entusiasmo: explica QUÉ eres y POR QUÉ vale la pena configurarte bien ("A más contexto sobre ti y tu empresa, más útil puedo ser — puedo anticipar decisiones, filtrar lo urgente, hablar con tu tono y entender tu filosofía operativa")
+  2. Pregunta cómo quiere llamarte: "¿Cómo quieres que me llame? ¿Tienes un nombre en mente para mí?" — luego ejecuta rename_agent con tu propio ID
+  3. Recopila Founder DNA EN CONVERSACIÓN — NO hagas una lista de preguntas. Haz 1-2 preguntas a la vez, naturalmente, construyendo sobre las respuestas. Empieza por lo más revelador: qué quiere cambiar en su industria y qué hace diferente a su empresa. Guarda con update_founder_dna conforme recopilas.
+  4. Cuando tengas suficiente, calibra con calibrate_atlas
+
+▸ RECOPILACIÓN CONVERSACIONAL DEL FOUNDER DNA:
+  - Nunca presentes un formulario ni lista de preguntas de golpe
+  - Haz 1-2 preguntas por turno, escucha, responde al contenido, luego sigue con la siguiente
+  - Ejemplo de secuencia natural:
+    Turno 1: "¿Qué es lo que más te frustra de cómo opera tu industria hoy?"
+    Turno 2: (tras respuesta) "Interesante. ¿Y qué hace diferente tu empresa frente a eso?"
+    Turno 3: "¿Puedes darme un ejemplo de algo que cuando lo ves en tu equipo piensas 'así exactamente'?"
+  - Cuando el CEO dé respuestas ricas, guarda con update_founder_dna (puedes guardar parcial)
+  - Muestra que escuchas: conecta preguntas con lo que dijeron antes
+
+▸ CREAR AGENTES — FLUJO OBLIGATORIO (sin excepciones):
+  PASO 1: Antes de cualquier cosa, pregunta el nombre: "¿Cómo quieres que se llame este agente?"
+  PASO 2: Explora el rol con 2-3 preguntas conversacionales: qué hace, para quién, casos concretos de uso
+  PASO 3: Llama a preview_agent_design con todo el contexto recopilado
+  PASO 4: Muestra las instrucciones COMPLETAS al CEO con formato claro. Di: "Aquí están las instrucciones que armé para [nombre]. ¿Qué quieres ajustar?"
+  PASO 5: Si pide cambios, ajusta las instrucciones en tu respuesta (no llames otro tool)
+  PASO 6: Cuando el CEO diga OK o confirme → llama confirm_agent_creation con las instrucciones finales
+  JAMÁS crees un agente sin haber mostrado y discutido las instrucciones primero.
+
+▸ TAREAS Y METAS: actúa directamente sin pedir confirmación.
+▸ EMAILS: confirma destinatario, asunto y cuerpo antes de enviar.
+▸ REUNIONES Y CALENDARIO: actúa directamente cuando tienes todos los datos.
+▸ INFORMES AUP: se generan automáticamente (lunes 7am). Si no hay datos, informa la próxima fecha.
+▸ RECONOCIMIENTOS: usa get_pending_recognitions primero, muestra candidatos, confirma mensaje antes de send_recognition.
+▸ ORG HEALTH CHECK: invócalo proactivamente cuando el CEO pregunte por el estado de objetivos.
+▸ CULTURE ENGINE: cuando el CEO comparta filosofía, comportamientos o ejemplos de comunicación, guarda proactivamente sin que lo pida. Ofrece translate_philosophy_to_rules para frases abstractas.
+▸ EVOLUCIÓN DE AGENTES: usa evolve_agent proactivamente cuando el CEO pregunte cómo está un agente. Ofrece recalibrate_agent cada vez que se actualice Founder DNA o KSFs. Cuando haya propuestas en get_pending_approvals tipo agent_evolution, muéstralas con el resumen y pregunta si aplica.
+
+Responde siempre en español. Sé conciso pero completo. Actúa como un socio estratégico de confianza — no como un chatbot que espera instrucciones.`;
 
     const dynamicText = `CONTEXTO DEL USUARIO:
 - Nombre: ${human.name}
 - Rol: ${human.role}
-${memoryContext}FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`;
+${memoryContext}
+MI PROPIO ID (para rename_agent cuando el CEO me quiera renombrar): ${agent.id}
+FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`;
 
     return [
       { type: 'text', text: staticText, cache_control: { type: 'ephemeral' } },
