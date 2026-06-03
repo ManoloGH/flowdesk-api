@@ -9,8 +9,13 @@ export class PlatformService {
   constructor(private prisma: PrismaService) {}
 
   private async assertPlatform(tenantId: string) {
-    const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { tenant_type: true } });
-    if (t?.tenant_type !== 'PLATFORM') throw new ForbiddenException('Acceso restringido a la plataforma.');
+    const t = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { tenant_type: true, campus_config: true },
+    });
+    const cfg = (t?.campus_config as Record<string, unknown>) ?? {};
+    const hasPlatformAccess = t?.tenant_type === 'PLATFORM' || !!cfg.include_platform_metrics;
+    if (!hasPlatformAccess) throw new ForbiddenException('Acceso restringido a la plataforma.');
   }
 
   private async assertNetworkOrAbove(tenantId: string) {

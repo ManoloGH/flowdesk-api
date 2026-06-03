@@ -5,11 +5,12 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../database/prisma.service';
 
 export interface JwtPayload {
-  sub: string;       // slot_id
+  sub: string;
   tenant_id: string;
-  role: string;      // owner | admin | manager | employee
-  type: string;      // HUMAN | AI_AGENT
+  role: string;
+  type: string;
   email: string;
+  platform_admin?: boolean;
 }
 
 @Injectable()
@@ -34,11 +35,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!slot) throw new UnauthorizedException('Sesión inválida');
 
     return {
-      slot_id: slot.id,
-      tenant_id: slot.tenant_id,
-      role: slot.role,
-      type: slot.type,
-      email: slot.email,
+      slot_id:        slot.id,
+      tenant_id:      slot.tenant_id,
+      role:           slot.role,
+      type:           slot.type,
+      email:          slot.email,
+      platform_admin: payload.platform_admin ?? false,
     };
   }
 }

@@ -65,7 +65,7 @@ export class AuthService {
 
     const slot = await this.prisma.teamSlot.findFirst({
       where: { email: dto.email, type: 'HUMAN' },
-      include: { tenant: { select: { status: true, tenant_type: true } } },
+      include: { tenant: { select: { status: true, tenant_type: true, campus_config: true } } },
     });
 
     if (!slot || !slot.password_hash) {
@@ -107,7 +107,10 @@ export class AuthService {
       ipAddress,
     });
 
-    return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined);
+    const cfg = (slot.tenant.campus_config as Record<string, unknown>) ?? {};
+    const platformAdmin = !!(cfg.include_platform_metrics) || slot.tenant.tenant_type === 'PLATFORM';
+
+    return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined, platformAdmin);
   }
 
   async refresh(token: string) {
@@ -202,8 +205,13 @@ export class AuthService {
     email: string,
     name?: string | null,
     tenantType?: string,
+    platformAdmin?: boolean,
   ) {
-    const payload = { sub: slotId, tenant_id: tenantId, role, type, email, tenant_type: tenantType ?? 'BRANCH' };
+    const payload = {
+      sub: slotId, tenant_id: tenantId, role, type, email,
+      tenant_type: tenantType ?? 'BRANCH',
+      platform_admin: platformAdmin ?? false,
+    };
 
     return {
       access_token: this.jwt.sign(payload, {
@@ -214,7 +222,7 @@ export class AuthService {
         secret: this.config.get<string>('JWT_REFRESH_SECRET'),
         expiresIn: '30d',
       }),
-      user: { slot_id: slotId, tenant_id: tenantId, role, type, email, name: name ?? null, tenant_type: tenantType ?? 'BRANCH' },
+      user: { slot_id: slotId, tenant_id: tenantId, role, type, email, name: name ?? null, tenant_type: tenantType ?? 'BRANCH', platform_admin: platformAdmin ?? false },
     };
   }
 
