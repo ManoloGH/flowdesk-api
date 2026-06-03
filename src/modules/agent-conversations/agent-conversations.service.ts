@@ -663,7 +663,13 @@ export class AgentConversationsService {
       try {
         // CEO Agent usa loop agéntico con tool_use y prompt caching
         if (agent.agent_role === 'ceo') {
-          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile);
+          // Primera respuesta de conversación: inyectar estado de configuración en el prompt
+          // para que Atlas sepa sin necesidad de llamar el tool primero
+          let configStatus: any = null;
+          if (historyMessages.length === 0) {
+            configStatus = await this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {});
+          }
+          const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus);
           const result = await this.chatWithTools(
             tenantId, humanSlotId, agent, systemBlocks, historyMessages, dto.message,
           );
@@ -1507,6 +1513,7 @@ Responde siempre en español. Sé cálido, concreto y humano — actúa como un 
     config: any,
     memoryContext: string,
     voiceProfile?: any,
+    configStatus?: any,
   ): Anthropic.TextBlockParam[] {
     const voiceBlock = this.buildVoiceBlock(voiceProfile);
     const staticText = `Eres ${agent.name}, CEO Agent — socio estratégico ejecutivo con acceso completo al sistema en FlowDesk.
@@ -1614,10 +1621,22 @@ REGLAS DE CONDUCTA — LEE ESTO COMPLETO ANTES DE RESPONDER
 
 Responde siempre en español. Sé conciso pero completo. Actúa como un socio estratégico de confianza — no como un chatbot que espera instrucciones.`;
 
+    // Bloque de estado de configuración — solo presente en el primer mensaje
+    const configBlock = configStatus ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTADO DE CONFIGURACIÓN (calculado automáticamente):
+Score: ${configStatus.score}/100 ${configStatus.score < 60 ? '⚠️ INCOMPLETO — aplica el flujo de bienvenida y configuración' : '✅ bien configurado'}
+CEO Digital: ${configStatus.ceo_agent?.name ?? 'sin nombre propio'} | Calibrado: ${configStatus.ceo_agent?.calibrated ? 'sí' : 'NO'}
+Founder DNA: ${configStatus.founder_dna?.filled ?? 0}/${configStatus.founder_dna?.total ?? 11} campos | Faltan: ${(configStatus.founder_dna?.missing_fields ?? []).join(', ') || 'ninguno'}
+Voz de empresa: ${configStatus.communication_voice?.configured ? 'configurada' : 'NO configurada'}
+Blueprint cultural: ${configStatus.culture_blueprint?.configured ? 'configurado' : 'NO configurado'}
+Pendientes: ${(configStatus.suggestions ?? []).join(' · ') || 'ninguno'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
+
     const dynamicText = `CONTEXTO DEL USUARIO:
 - Nombre: ${human.name}
 - Rol: ${human.role}
-${memoryContext}
+${memoryContext}${configBlock}
 MI PROPIO ID (para rename_agent cuando el CEO me quiera renombrar): ${agent.id}
 FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`;
 
