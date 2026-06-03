@@ -6,6 +6,8 @@ import { AirtableService } from '../airtable/airtable.service';
 import { KsfService } from '../goals/services/ksf.service';
 import { CultureService } from '../culture/culture.service';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { BrainService } from '../brain/brain.service';
+import { SalesService } from '../sales/sales.service';
 import { INDUSTRY_TEMPLATES, UNIVERSAL_CAMPUS, DEFAULT_OWNER_DESK, MENTORIA_OWNER_DESK } from './onboarding.templates';
 import {
   OnboardingStartDto,
@@ -27,6 +29,8 @@ export class OnboardingService {
     private ksf: KsfService,
     private culture: CultureService,
     private integrations: IntegrationsService,
+    private brain: BrainService,
+    private salesService: SalesService,
   ) {}
 
   // Listar templates disponibles
@@ -435,6 +439,12 @@ export class OnboardingService {
 
     // Registrar cliente en ERP MentorIA + crear base Airtable propia (fire & forget, no bloquea)
     void this.provisionAirtableERP(tenant.id, tenant.name, tenant.campus_config as any, erpTableNames);
+
+    // Pipeline de ventas por defecto (fire & forget)
+    void this.createDefaultPipeline(tenantId);
+
+    // Alimentar el Brain con el conocimiento base de la empresa (fire & forget)
+    void this.populateBrainFromOnboarding(tenantId);
 
     const stats = await this.getCompanyStats(tenantId);
 
@@ -1105,5 +1115,114 @@ Máximo 5 procesos. Si no hay procesos claros, devuelve { "processes": [], "summ
       where: { id: tenantId },
       data: { campus_config: { ...current, account_type: accountType } },
     });
+  }
+
+  private async createDefaultPipeline(tenantId: string): Promise<void> {
+    const existing = await this.prisma.pipeline.findFirst({ where: { tenant_id: tenantId } });
+    if (existing) return;
+
+    const pipeline = await this.prisma.pipeline.create({
+      data: {
+        tenant_id:     tenantId,
+        name:          'Pipeline de Ventas',
+        pipeline_type: 'sales',
+        is_active:     true,
+      },
+    });
+
+    const stages = [
+      { name: 'Prospecto',     color: '#6B7280', order_index: 0 },
+      { name: 'Contactado',    color: '#3B82F6', order_index: 1 },
+      { name: 'Diagnóstico',   color: '#8B5CF6', order_index: 2 },
+      { name: 'Propuesta',     color: '#F59E0B', order_index: 3 },
+      { name: 'Negociación',   color: '#EF4444', order_index: 4 },
+      { name: 'Cerrado',       color: '#10B981', order_index: 5 },
+    ];
+
+    await this.prisma.pipelineStage.createMany({
+      data: stages.map(s => ({ ...s, pipeline_id: pipeline.id, tenant_id: tenantId })),
+    });
+  }
+
+  private async populateBrainFromOnboarding(tenantId: string): Promise<void> {
+    try {
+      const [tenant, purpose, culture, ksfs] = await Promise.all([
+        this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { name: true, mission: true, vision: true, tagline: true, industry: true },
+        }),
+        this.prisma.strategicPurpose.findUnique({ where: { tenant_id: tenantId } }),
+        this.prisma.cultureConfig.findUnique({ where: { tenant_id: tenantId } }),
+        this.prisma.keySuccessFactor.findMany({
+          where: { tenant_id: tenantId },
+          select: { name: true, unit: true, level: true, satisfactory_level: true, outstanding_level: true },
+          take: 20,
+        }),
+      ]);
+
+      if (!tenant) return;
+
+      const docs: { source_type: string; source_id: string; title: string; content: string }[] = [];
+
+      // Identidad de la empresa
+      docs.push({
+        source_type: 'onboarding',
+        source_id:   'identity',
+        title:       `Identidad — ${tenant.name}`,
+        content:     [
+          `Empresa: ${tenant.name}`,
+          `Industria: ${tenant.industry ?? 'No definida'}`,
+          `Tagline: ${tenant.tagline ?? ''}`,
+          `Misión: ${tenant.mission ?? ''}`,
+          `Visión: ${tenant.vision ?? ''}`,
+        ].join('\n'),
+      });
+
+      // Propósito estratégico
+      if (purpose) {
+        docs.push({
+          source_type: 'onboarding',
+          source_id:   'purpose',
+          title:       `Propósito Estratégico — ${tenant.name}`,
+          content:     [
+            `Visión: ${purpose.vision}`,
+            `Misión: ${purpose.mission ?? ''}`,
+            `Valores: ${(purpose.values as string[]).join(', ')}`,
+          ].join('\n'),
+        });
+      }
+
+      // Cultura
+      if (culture?.purpose) {
+        docs.push({
+          source_type: 'culture',
+          source_id:   'culture_config',
+          title:       `Cultura Operativa — ${tenant.name}`,
+          content:     [
+            `Propósito: ${culture.purpose}`,
+            `Problema que combatimos: ${culture.problem_statement ?? ''}`,
+            `Impacto deseado: ${culture.desired_impact ?? ''}`,
+          ].join('\n'),
+        });
+      }
+
+      // KSFs
+      if (ksfs.length > 0) {
+        docs.push({
+          source_type: 'goal',
+          source_id:   'ksfs_summary',
+          title:       `Factores Clave de Éxito — ${tenant.name}`,
+          content:     ksfs.map(k =>
+            `${k.name} (${k.level}): meta satisfactoria ${k.satisfactory_level} ${k.unit}, outstanding ${k.outstanding_level} ${k.unit}`
+          ).join('\n'),
+        });
+      }
+
+      if (docs.length > 0) {
+        await this.brain.addBatch(tenantId, docs);
+      }
+    } catch {
+      // Fire & forget — no bloquea el launch
+    }
   }
 }

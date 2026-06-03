@@ -8,9 +8,11 @@ import { GoalsModule } from '../goals/goals.module';
 import { CultureModule } from '../culture/culture.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { SecretaryModule } from '../secretary/secretary.module';
+import { BrainModule } from '../brain/brain.module';
+import { SalesModule } from '../sales/sales.module';
 
 @Module({
-  imports: [AirtableModule, GoalsModule, CultureModule, IntegrationsModule, SecretaryModule],
+  imports: [AirtableModule, GoalsModule, CultureModule, IntegrationsModule, SecretaryModule, BrainModule, SalesModule],
   controllers: [OnboardingController],
   providers: [OnboardingService, OnboardingAgentService, DocumentParserService],
   exports: [OnboardingService, OnboardingAgentService, DocumentParserService],

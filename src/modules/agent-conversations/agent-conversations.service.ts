@@ -10,6 +10,9 @@ import { ReportGeneratorService } from '../goals/services/report-generator.servi
 import { GoalAlignmentService } from '../goals/services/goal-alignment.service';
 import { RecognitionService } from '../goals/services/recognition.service';
 import { CultureEngineService } from '../culture/culture-engine.service';
+import { BrainService } from '../brain/brain.service';
+import { SalesService } from '../sales/sales.service';
+import { SecretaryService } from '../secretary/secretary.service';
 import { KsfLevel } from '@prisma/client';
 import { startOfWeek, subDays, startOfMonth } from 'date-fns';
 
@@ -473,6 +476,30 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
       },
     },
   },
+
+  // ── Brain, Sales, Approvals ──────────────────────────────────────────────
+  {
+    name: 'search_company_brain',
+    description: 'Busca información en la base de conocimiento de la empresa (SOPs, cultura, metas, onboarding, decisiones).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query:       { type: 'string', description: 'Qué buscar' },
+        source_type: { type: 'string', description: 'Filtrar: sop, culture, goal, onboarding, document, decision' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_sales_summary',
+    description: 'Resumen del pipeline de ventas: deals abiertos, valor, ganados, estancados.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'get_pending_approvals',
+    description: 'Lista las aprobaciones pendientes que esperan decisión del Founder.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -491,6 +518,9 @@ export class AgentConversationsService {
     private goalAlignment: GoalAlignmentService,
     private recognition: RecognitionService,
     private cultureEngine: CultureEngineService,
+    private brain: BrainService,
+    private sales: SalesService,
+    private secretary: SecretaryService,
   ) {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -1051,6 +1081,22 @@ INSTRUCCIONES:
           key_processes:   input.key_processes,
           pain_points:     input.pain_points,
         });
+      }
+
+      case 'search_company_brain': {
+        return await this.brain.search(tenantId, input.query as string, {
+          limit: 5,
+          source_type: input.source_type as string | undefined,
+          threshold: 0.25,
+        });
+      }
+
+      case 'get_sales_summary': {
+        return await this.sales.getSummary(tenantId);
+      }
+
+      case 'get_pending_approvals': {
+        return await this.secretary.getPendingApprovals(tenantId);
       }
 
       default:

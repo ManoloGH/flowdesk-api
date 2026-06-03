@@ -311,24 +311,30 @@ async function upsertAccount(
 
   // Owner humano (si aplica)
   if (config.owner_email) {
-    const existingOwner = await prisma.teamSlot.findFirst({
-      where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
-    });
-    if (!existingOwner) {
-      const hash = await bcrypt.hash('1234567890', 10);
-      await prisma.teamSlot.create({
-        data: {
-          tenant_id:     tenantId,
-          name:          config.owner_name!,
-          email:         config.owner_email,
-          password_hash: hash,
-          type:          'HUMAN',
-          role:          'owner',
-          status:        'OFFLINE',
-          desk_access:   'FULL',
-        },
+    const existingByEmail = await prisma.teamSlot.findFirst({ where: { email: config.owner_email } });
+    if (existingByEmail) {
+      // Si el slot ya existe en otro tenant, no duplicamos — solo actualizamos tenant si no tiene
+      console.log(`    ↻ Owner ${config.owner_email} ya existe (slot ${existingByEmail.id})`);
+    } else {
+      const existingOwner = await prisma.teamSlot.findFirst({
+        where: { tenant_id: tenantId, role: 'owner', type: 'HUMAN' },
       });
-      console.log(`    ✅ Owner: ${config.owner_email}`);
+      if (!existingOwner) {
+        const hash = await bcrypt.hash('1234567890', 10);
+        await prisma.teamSlot.create({
+          data: {
+            tenant_id:     tenantId,
+            name:          config.owner_name!,
+            email:         config.owner_email,
+            password_hash: hash,
+            type:          'HUMAN',
+            role:          'owner',
+            status:        'OFFLINE',
+            desk_access:   'FULL',
+          },
+        });
+        console.log(`    ✅ Owner: ${config.owner_email}`);
+      }
     }
   }
 
