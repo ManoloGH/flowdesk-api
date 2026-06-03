@@ -4,8 +4,6 @@ import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlatformService } from './platform.service';
 
-// ─── DTOs inline ─────────────────────────────────────────────────────────────
-
 class ProvisionTenantDto {
   @IsString()  name: string;
   @IsString()  slug: string;
@@ -30,7 +28,13 @@ class SetAccessDto {
   @IsIn(['FULL', 'LIGHT', 'NONE']) access: 'FULL' | 'LIGHT' | 'NONE';
 }
 
-// ─── Controller ──────────────────────────────────────────────────────────────
+class UpdateStatusDto {
+  @IsIn(['active', 'suspended', 'cancelled']) status: 'active' | 'suspended' | 'cancelled';
+}
+
+class UpdatePlanDto {
+  @IsIn(['starter', 'professional', 'enterprise', 'internal']) plan: string;
+}
 
 @ApiTags('Platform & Network')
 @ApiBearerAuth()
@@ -39,7 +43,13 @@ export class PlatformController {
   private readonly logger = new Logger(PlatformController.name);
   constructor(private service: PlatformService) {}
 
-  // ── PLATFORM endpoints (solo tenant_type = PLATFORM) ──────────────────────
+  // ── PLATFORM endpoints ─────────────────────────────────────────────────────
+
+  @Get('platform/stats')
+  @ApiOperation({ summary: '[PLATFORM] Estadísticas globales de la red' })
+  getStats(@Request() req: any) {
+    return this.service.getNetworkStats(req.user.tenant_id);
+  }
 
   @Get('platform/network')
   @ApiOperation({ summary: '[PLATFORM] Vista global de toda la red de desks' })
@@ -48,26 +58,38 @@ export class PlatformController {
   }
 
   @Get('platform/network/:tenantId')
-  @ApiOperation({ summary: '[PLATFORM] Detalle y health de un desk específico' })
+  @ApiOperation({ summary: '[PLATFORM] Detalle completo de un tenant' })
   getTenantDetail(@Param('tenantId') tenantId: string, @Request() req: any) {
     return this.service.getTenantDetail(req.user.tenant_id, tenantId);
   }
 
   @Post('platform/network')
-  @ApiOperation({ summary: '[PLATFORM] Provisionar un nuevo tenant (NETWORK o BRANCH)' })
+  @ApiOperation({ summary: '[PLATFORM] Provisionar un nuevo tenant' })
   async provisionTenant(@Body() dto: ProvisionTenantDto, @Request() req: any) {
     try {
       return await this.service.provisionTenant(req.user.tenant_id, dto);
     } catch (err: any) {
-      this.logger.error('provisionTenant failed', err?.message, err?.stack);
+      this.logger.error('provisionTenant failed', err?.message);
       throw new BadRequestException(err?.message ?? 'Error al provisionar tenant');
     }
   }
 
-  // ── NETWORK endpoints (tenant_type = NETWORK o PLATFORM) ──────────────────
+  @Patch('platform/network/:tenantId/status')
+  @ApiOperation({ summary: '[PLATFORM] Activar / suspender un tenant' })
+  updateStatus(@Param('tenantId') tenantId: string, @Body() dto: UpdateStatusDto, @Request() req: any) {
+    return this.service.updateStatus(req.user.tenant_id, tenantId, dto.status);
+  }
+
+  @Patch('platform/network/:tenantId/plan')
+  @ApiOperation({ summary: '[PLATFORM] Cambiar plan de un tenant' })
+  updatePlan(@Param('tenantId') tenantId: string, @Body() dto: UpdatePlanDto, @Request() req: any) {
+    return this.service.updatePlan(req.user.tenant_id, tenantId, dto.plan);
+  }
+
+  // ── NETWORK endpoints ──────────────────────────────────────────────────────
 
   @Get('network/branches')
-  @ApiOperation({ summary: '[NETWORK] Lista de sucursales propias con health scores' })
+  @ApiOperation({ summary: '[NETWORK] Lista de sucursales propias' })
   getMyBranches(@Request() req: any) {
     return this.service.getMyBranches(req.user.tenant_id);
   }
@@ -78,10 +100,10 @@ export class PlatformController {
     return this.service.provisionBranch(req.user.tenant_id, dto);
   }
 
-  // ── EMPLOYEE ACCESS endpoints ──────────────────────────────────────────────
+  // ── EMPLOYEE ACCESS ────────────────────────────────────────────────────────
 
   @Patch('team-slots/:slotId/desk-access')
-  @ApiOperation({ summary: 'Configurar nivel de acceso al desk de un empleado (FULL/LIGHT/NONE)' })
+  @ApiOperation({ summary: 'Configurar nivel de acceso al desk de un empleado' })
   setAccess(@Param('slotId') slotId: string, @Body() dto: SetAccessDto, @Request() req: any) {
     return this.service.setEmployeeAccess(req.user.tenant_id, slotId, dto.access);
   }

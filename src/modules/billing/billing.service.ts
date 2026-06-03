@@ -121,24 +121,32 @@ export class BillingService {
   async adminOverview() {
     const tenants = await this.prisma.tenant.findMany({
       where: { tenant_type: { not: 'PLATFORM' } },
-      select: { id: true, name: true, plan: true, status: true, created_at: true },
+      select: {
+        id: true, name: true, plan: true, status: true, created_at: true,
+        team_slots: { where: { role: 'owner', type: 'HUMAN' }, select: { email: true }, take: 1 },
+        billing_config: { select: { enabled: true, rfc: true, facturapi_org_id: true, stripe_account_id: true } },
+      },
       orderBy: { created_at: 'desc' },
     });
 
-    const PLAN_PRICE: Record<string, number> = {
-      starter: 49,
-      professional: 149,
-      enterprise: 399,
-    };
-
+    const PLAN_PRICE: Record<string, number> = { starter: 49, professional: 149, enterprise: 399, internal: 0 };
     const active = tenants.filter(t => t.status === 'active');
     const mrr = active.reduce((sum, t) => sum + (PLAN_PRICE[t.plan] ?? 0), 0);
-    const plans_breakdown = { starter: 0, professional: 0, enterprise: 0 };
+    const plans_breakdown = { starter: 0, professional: 0, enterprise: 0, internal: 0 };
     for (const t of active) {
       if (t.plan in plans_breakdown) plans_breakdown[t.plan as keyof typeof plans_breakdown]++;
     }
 
-    return { mrr, total: tenants.length, active: active.length, past_due: 0, plans_breakdown, tenants };
+    const billing_configured = tenants.filter(t => t.billing_config?.enabled).length;
+
+    const enriched = tenants.map(t => ({
+      id: t.id, name: t.name, plan: t.plan, status: t.status, created_at: t.created_at,
+      billing_email: t.team_slots[0]?.email ?? null,
+      billing_config: t.billing_config,
+      mrr: t.status === 'active' ? (PLAN_PRICE[t.plan] ?? 0) : 0,
+    }));
+
+    return { mrr, total: tenants.length, active: active.length, past_due: 0, billing_configured, plans_breakdown, tenants: enriched };
   }
 
   private planToPrice(plan: string): string | null {
