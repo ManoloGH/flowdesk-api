@@ -5,6 +5,7 @@ import { IsOptional, IsString } from 'class-validator';
 import { OnboardingService } from './onboarding.service';
 import { OnboardingAgentService } from './onboarding-agent.service';
 import { DocumentParserService } from './document-parser.service';
+import { BrandService } from '../brand/brand.service';
 import {
   OnboardingStartDto,
   OnboardingDepartmentsDto,
@@ -34,6 +35,7 @@ export class OnboardingController {
     private onboarding: OnboardingService,
     private onboardingAgent: OnboardingAgentService,
     private documentParser: DocumentParserService,
+    private brandService: BrandService,
   ) {}
 
   @Get('templates')
@@ -123,6 +125,27 @@ export class OnboardingController {
     throw new BadRequestException('Se requiere un archivo o texto');
   }
 
+  @Post('upload-logo')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiOperation({ summary: '[Autenticado] Sube el logo del cliente → Claude extrae colores de marca automáticamente' })
+  async uploadLogo(
+    @TenantId() tenantId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('logo_url') logoUrl?: string,
+  ) {
+    if (!file) throw new BadRequestException('Se requiere el archivo del logo (campo: file)');
+
+    const mimeType = file.mimetype;
+    const allowed  = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+    if (!allowed.includes(mimeType.toLowerCase())) {
+      throw new BadRequestException('Formato no soportado. Usa PNG, JPG, WEBP o GIF.');
+    }
+
+    return this.brandService.extractAndSaveBrand(tenantId, file.buffer, mimeType, logoUrl);
+  }
+
   @Get('chat')
   @Public()
   @ApiOperation({ summary: '[Público] Marco saluda y crea la sesión de onboarding' })
@@ -136,5 +159,33 @@ export class OnboardingController {
   @ApiOperation({ summary: '[Público] Marco guía el onboarding completo en modo conversacional' })
   chat(@Body() dto: OnboardingChatDto) {
     return this.onboardingAgent.chat(dto.session_id, dto.message);
+  }
+
+  // ─── Pasos post-onboarding (públicos — usuario aún no ha hecho login) ──────
+
+  @Post('ai-config')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Público] Paso 7 — Guardar motor de IA elegido durante el onboarding' })
+  saveAiConfig(@Body() body: {
+    tenantId: string;
+    ai_provider: string; model?: string; api_key?: string; base_url?: string; deployment?: string;
+  }) {
+    const { tenantId, ...config } = body;
+    return this.onboarding.saveAiConfig(tenantId, config);
+  }
+
+  @Post('conmutador')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Público] Paso 8 — Guardar configuración del Agente Conmutador durante el onboarding' })
+  saveConmutador(@Body() body: {
+    tenantId: string;
+    enabled?: boolean; main_number?: string; greeting_text?: string;
+    stt_provider?: string; tts_provider?: string; deployment?: string;
+    asterisk_url?: string;
+  }) {
+    const { tenantId, ...config } = body;
+    return this.onboarding.saveConmutador(tenantId, config);
   }
 }

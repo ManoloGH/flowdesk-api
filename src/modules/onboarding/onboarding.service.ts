@@ -455,6 +455,7 @@ export class OnboardingService {
 
     return {
       launched: true,
+      tenant_id: tenantId,
       stats,
       message: `🚀 ¡FlowDesk activado! La empresa está lista. Los empleados ya pueden hacer login.`,
     };
@@ -562,6 +563,63 @@ export class OnboardingService {
   // PASO OPCIONAL — Registrar integraciones deseadas
   async setupIntegrations(tenantId: string, items: { provider: string; priority?: string; notes?: string }[]) {
     return this.integrations.registerWishlist(tenantId, items);
+  }
+
+  // PASO 7 (opcional) — Configurar motor de IA desde el onboarding (antes del primer login)
+  async saveAiConfig(tenantId: string, body: {
+    ai_provider: string; model?: string; api_key?: string; base_url?: string; deployment?: string;
+  }) {
+    const existing = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'ai_config' },
+    });
+    const config = {
+      ai_provider: body.ai_provider,
+      model:       body.model ?? null,
+      deployment:  body.deployment ?? (body.ai_provider === 'ollama' ? 'local' : 'cloud'),
+      base_url:    body.base_url ?? null,
+    };
+    const data: any = {
+      tenant_id: tenantId, provider: 'ai_config', integration_scope: 'tenant',
+      status: 'connected', config, connected_at: new Date(),
+    };
+    if (body.api_key) data.credentials_enc = body.api_key; // cifrado en endpoint
+    if (existing) {
+      await this.prisma.integration.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.integration.create({ data });
+    }
+    return { ok: true, ai_provider: body.ai_provider };
+  }
+
+  // PASO 8 (opcional) — Configurar conmutador desde el onboarding
+  async saveConmutador(tenantId: string, body: {
+    enabled?: boolean; main_number?: string; greeting_text?: string;
+    stt_provider?: string; tts_provider?: string; deployment?: string;
+    asterisk_url?: string;
+  }) {
+    const existing = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'conmutador' },
+    });
+    const config = {
+      enabled:       body.enabled ?? false,
+      main_number:   body.main_number ?? null,
+      greeting_text: body.greeting_text ?? null,
+      stt_provider:  body.stt_provider ?? 'whisper',
+      tts_provider:  body.tts_provider ?? 'piper',
+      deployment:    body.deployment ?? 'local',
+      asterisk_url:  body.asterisk_url ?? null,
+      asterisk_user: 'flowdesk',
+    };
+    const data: any = {
+      tenant_id: tenantId, provider: 'conmutador', integration_scope: 'tenant',
+      status: body.enabled ? 'connected' : 'disconnected', config,
+    };
+    if (existing) {
+      await this.prisma.integration.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.integration.create({ data });
+    }
+    return { ok: true, enabled: body.enabled ?? false };
   }
 
   // PASO OPCIONAL — Configurar metas AUP (después de launch, llamado desde el agente de onboarding)

@@ -117,6 +117,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get recognitionEvent() { return this.prisma.recognitionEvent; }
   get goalSetupStatus() { return this.prisma.goalSetupStatus; }
 
+  // ── PBX Conmutador ────────────────────────────────────────────────────────
+  get phoneCall() { return this.prisma.phoneCall; }
+
   // Transacción estándar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $transaction(...args: any[]): any {

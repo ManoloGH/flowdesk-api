@@ -40,6 +40,21 @@ Devuelve qué falta en el Founder DNA, si el CEO Agent tiene nombre, si la voz e
     input_schema: { type: 'object' as const, properties: {} },
   },
   {
+    name: 'update_agent_ai',
+    description: `Cambia el motor de IA de un agente existente.
+Úsalo cuando el CEO quiera que un agente específico use una IA diferente.
+Ejemplos: "que el agente de soporte use OpenRouter gratis", "el agente de ventas que use GPT-4o", "que Sofia use Ollama".`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        agent_id:    { type: 'string', description: 'ID del agente a modificar' },
+        ai_provider: { type: 'string', enum: ['anthropic', 'openrouter', 'ollama', 'openai'], description: 'Proveedor de IA' },
+        model:       { type: 'string', description: 'Modelo específico. Ej: claude-haiku-4-5-20251001, meta-llama/llama-3.3-70b-instruct:free, gpt-4o-mini, qwen2.5:7b' },
+      },
+      required: ['agent_id', 'ai_provider'],
+    },
+  },
+  {
     name: 'rename_agent',
     description: 'Cambia el nombre de un agente IA. Úsalo cuando el CEO quiera poner un nombre personalizado a su CEO Digital u otro agente.',
     input_schema: {
@@ -69,13 +84,16 @@ Requiere que el nombre ya esté confirmado por el CEO.`,
   {
     name: 'confirm_agent_creation',
     description: `Crea el agente con las instrucciones ya revisadas y aprobadas por el CEO.
-Úsalo SOLO después de haber mostrado el preview con preview_agent_design y el CEO haya dado su OK (con o sin ajustes).`,
+Úsalo SOLO después de haber mostrado el preview con preview_agent_design y el CEO haya dado su OK (con o sin ajustes).
+Si el CEO especifica qué IA quiere para el agente (Claude, OpenRouter, GPT, Ollama), inclúyela en ai_provider.`,
     input_schema: {
       type: 'object' as const,
       properties: {
         agent_name:   { type: 'string', description: 'Nombre del agente' },
         instructions: { type: 'string', description: 'Instrucciones finales, tal como el CEO las aprobó (ajustadas si pidió cambios)' },
         agent_role:   { type: 'string', description: 'Rol opcional: focus_agent, daily_assistant, department_agent, company_agent' },
+        ai_provider:  { type: 'string', enum: ['anthropic', 'openrouter', 'ollama', 'openai'], description: 'IA para este agente. Si no se especifica, usa el proveedor por defecto de la empresa.' },
+        model:        { type: 'string', description: 'Modelo específico. Ej: claude-haiku-4-5-20251001, meta-llama/llama-3.3-70b-instruct:free, gpt-4o-mini' },
       },
       required: ['agent_name', 'instructions'],
     },
@@ -88,6 +106,8 @@ Requiere que el nombre ya esté confirmado por el CEO.`,
       properties: {
         name:         { type: 'string', description: 'Nombre del agente' },
         instructions: { type: 'string', description: 'Instrucciones del agente (ya aprobadas)' },
+        ai_provider:  { type: 'string', enum: ['anthropic', 'openrouter', 'ollama', 'openai'], description: 'IA para este agente (opcional)' },
+        model:        { type: 'string', description: 'Modelo específico (opcional)' },
       },
       required: ['name', 'instructions'],
     },
@@ -637,6 +657,13 @@ export class AgentConversationsService {
           const result = await this.aiProvider.chat({
             tenantId,
             agentRole: agent.agent_role ?? undefined,
+            // Config específica del agente tiene prioridad sobre la del tenant
+            agentAiConfig: agentConfig.ai_provider ? {
+              ai_provider: agentConfig.ai_provider,
+              model:       agentConfig.model,
+              ai_api_key:  agentConfig.ai_api_key,
+              ai_base_url: agentConfig.ai_base_url,
+            } : undefined,
             modelOverride: agentConfig.model ?? DEFAULT_MODEL,
             systemPrompt,
             messages: [...historyMessages, { role: 'user', content: dto.message }],
@@ -848,6 +875,31 @@ export class AgentConversationsService {
         };
       }
 
+      case 'update_agent_ai': {
+        const agentToUpdate = await this.prisma.teamSlot.findFirst({
+          where: { id: input.agent_id, tenant_id: tenantId, type: 'AI_AGENT' },
+        });
+        if (!agentToUpdate) return { error: 'Agente no encontrado' };
+        const currentConfig = (agentToUpdate.agent_config as any) ?? {};
+        await this.prisma.teamSlot.update({
+          where: { id: input.agent_id },
+          data: {
+            agent_config: {
+              ...currentConfig,
+              ai_provider: input.ai_provider,
+              model: input.model ?? currentConfig.model,
+            },
+          },
+        });
+        return {
+          ok: true,
+          agent: agentToUpdate.name,
+          ai_provider: input.ai_provider,
+          model: input.model ?? currentConfig.model,
+          message: `Motor de IA de ${agentToUpdate.name} actualizado a ${input.ai_provider}${input.model ? ` (${input.model})` : ''}.`,
+        };
+      }
+
       case 'rename_agent': {
         const agentToRename = await this.prisma.teamSlot.findFirst({
           where: { id: input.agent_id, tenant_id: tenantId, type: 'AI_AGENT' },
@@ -902,7 +954,8 @@ REGLAS:
             role: 'employee',
             status: 'ONLINE',
             agent_config: {
-              model: DEFAULT_MODEL,
+              model: input.model ?? DEFAULT_MODEL,
+              ...(input.ai_provider ? { ai_provider: input.ai_provider } : {}),
               instructions: input.instructions,
               tools: [],
               calibrated_at: new Date().toISOString(),
@@ -911,7 +964,8 @@ REGLAS:
           },
           select: { id: true, name: true, type: true },
         });
-        return { ...confirmed, message: `✅ Agente "${input.agent_name}" creado y listo para usar.` };
+        const aiLabel = input.ai_provider ? ` usando ${input.ai_provider}` : '';
+        return { ...confirmed, message: `✅ Agente "${input.agent_name}" creado y listo para usar${aiLabel}.` };
       }
 
       case 'create_agent': {
@@ -923,7 +977,8 @@ REGLAS:
             role: 'employee',
             status: 'ONLINE',
             agent_config: {
-              model: DEFAULT_MODEL,
+              model: input.model ?? DEFAULT_MODEL,
+              ...(input.ai_provider ? { ai_provider: input.ai_provider } : {}),
               instructions: input.instructions,
               tools: [],
             },

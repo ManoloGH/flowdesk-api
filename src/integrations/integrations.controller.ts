@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Request, Query, Redirect } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Request, Query, Redirect, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { Roles } from '../modules/auth/decorators/roles.decorator';
 import { Public } from '../modules/auth/decorators/public.decorator';
@@ -147,7 +147,7 @@ export class IntegrationsController {
   @Redirect('', 302)
   @ApiOperation({ summary: 'Callback OAuth Google — intercambia código y guarda tokens' })
   async googleCallback(@Query('code') code: string, @Query('state') state: string) {
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3001').trim();
     try {
       const { tenantId, slotId } = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
       const tokens = await this.google.exchangeCode(code);
@@ -224,7 +224,7 @@ export class IntegrationsController {
   @Redirect('', 302)
   @ApiOperation({ summary: 'Callback OAuth Microsoft — intercambia código y guarda tokens' })
   async microsoftCallback(@Query('code') code: string, @Query('state') state: string) {
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const frontendUrl = (process.env.FRONTEND_URL ?? 'http://localhost:3001').trim();
     try {
       const { tenantId, slotId } = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
       const tokens = await this.m365.exchangeCode(code);
@@ -275,6 +275,144 @@ export class IntegrationsController {
     const end = new Date(now.setHours(23, 59, 59, 999)).toISOString();
     const events = await this.m365.getCalendarEvents(accessToken, start, end);
     return { ok: true, email: creds.email, today_events: events.value?.length ?? 0 };
+  }
+
+  // ─── Motor de IA (AI Config por tenant) ───────────────────────────────────
+
+  @Get('ai-config')
+  @ApiOperation({ summary: 'Obtener configuración de IA del tenant' })
+  async getAiConfig(@Request() req: any) {
+    const tenantId = req.user.tenant_id;
+    const integration = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'ai_config' },
+      select: { id: true, status: true, config: true, credentials_enc: true, updated_at: true },
+    });
+    if (!integration) return { configured: false };
+    const cfg = (integration.config as any) ?? {};
+    return {
+      configured: true,
+      ai_provider: cfg.ai_provider ?? 'anthropic',
+      model:       cfg.model ?? null,
+      deployment:  cfg.deployment ?? 'cloud',
+      base_url:    cfg.base_url ?? null,
+      has_api_key: !!integration.credentials_enc,
+      updated_at:  integration.updated_at,
+    };
+  }
+
+  @Post('ai-config')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: 'Guardar configuración de IA del tenant' })
+  async saveAiConfig(
+    @Body() body: { ai_provider: string; model?: string; api_key?: string; base_url?: string; deployment?: string },
+    @Request() req: any,
+  ) {
+    const tenantId = req.user.tenant_id;
+    const existing = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'ai_config' },
+    });
+
+    const config = {
+      ai_provider: body.ai_provider,
+      model:       body.model ?? null,
+      deployment:  body.deployment ?? (body.ai_provider === 'ollama' ? 'local' : 'cloud'),
+      base_url:    body.base_url ?? null,
+    };
+    const credentials_enc = body.api_key ? this.enc.encrypt(body.api_key) : (existing?.credentials_enc ?? null);
+
+    const data = {
+      tenant_id:         tenantId,
+      provider:          'ai_config',
+      integration_scope: 'tenant',
+      status:            'connected',
+      config,
+      credentials_enc,
+      connected_at:      new Date(),
+    };
+
+    if (existing) {
+      await this.prisma.integration.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.integration.create({ data });
+    }
+
+    return { ok: true, ai_provider: body.ai_provider, model: body.model };
+  }
+
+  // ─── Agente Conmutador ─────────────────────────────────────────────────────
+
+  @Get('conmutador')
+  @ApiOperation({ summary: 'Obtener configuración del Agente Conmutador' })
+  async getConmutador(@Request() req: any) {
+    const tenantId = req.user.tenant_id;
+    const integration = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'conmutador' },
+      select: { id: true, status: true, config: true, credentials_enc: true, updated_at: true },
+    });
+    if (!integration) return { configured: false, enabled: false };
+    const cfg = (integration.config as any) ?? {};
+    return {
+      configured:     true,
+      enabled:        cfg.enabled ?? false,
+      main_number:    cfg.main_number ?? null,
+      greeting_text:  cfg.greeting_text ?? null,
+      stt_provider:   cfg.stt_provider ?? 'whisper',
+      tts_provider:   cfg.tts_provider ?? 'piper',
+      deployment:     cfg.deployment ?? 'local',
+      asterisk_url:   cfg.asterisk_url ?? null,
+      asterisk_user:  cfg.asterisk_user ?? 'flowdesk',
+      has_password:   !!integration.credentials_enc,
+      updated_at:     integration.updated_at,
+    };
+  }
+
+  @Post('conmutador')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: 'Guardar configuración del Agente Conmutador' })
+  async saveConmutador(
+    @Body() body: {
+      enabled?: boolean; main_number?: string; greeting_text?: string;
+      stt_provider?: string; tts_provider?: string; deployment?: string;
+      asterisk_url?: string; asterisk_user?: string; asterisk_password?: string;
+    },
+    @Request() req: any,
+  ) {
+    const tenantId = req.user.tenant_id;
+    const existing = await this.prisma.integration.findFirst({
+      where: { tenant_id: tenantId, provider: 'conmutador' },
+    });
+
+    const config = {
+      enabled:       body.enabled ?? false,
+      main_number:   body.main_number ?? null,
+      greeting_text: body.greeting_text ?? null,
+      stt_provider:  body.stt_provider ?? 'whisper',
+      tts_provider:  body.tts_provider ?? 'piper',
+      deployment:    body.deployment ?? 'local',
+      asterisk_url:  body.asterisk_url ?? null,
+      asterisk_user: body.asterisk_user ?? 'flowdesk',
+    };
+    const credentials_enc = body.asterisk_password
+      ? this.enc.encrypt(body.asterisk_password)
+      : (existing?.credentials_enc ?? null);
+
+    const data = {
+      tenant_id:         tenantId,
+      provider:          'conmutador',
+      integration_scope: 'tenant',
+      status:            body.enabled ? 'connected' : 'disconnected',
+      config,
+      credentials_enc,
+      connected_at:      body.enabled ? new Date() : null,
+    };
+
+    if (existing) {
+      await this.prisma.integration.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.integration.create({ data });
+    }
+
+    return { ok: true, enabled: body.enabled ?? false };
   }
 
   // ─── Disconnect ────────────────────────────────────────────────────────────

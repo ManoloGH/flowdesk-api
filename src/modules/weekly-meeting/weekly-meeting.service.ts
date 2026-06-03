@@ -87,7 +87,7 @@ export class WeeklyMeetingService {
     // Notificación in-app como respaldo
     await this.prisma.notification.create({
       data: {
-        tenant_id: tenantId, recipient_slot_id: owner.id,
+        tenant_id: tenantId, slot_id: owner.id,
         type: 'weekly_meeting',
         title: `${ceoAgent?.name ?? 'CEO Digital'} quiere charlar 👋`,
         content: 'Tiene los pendientes de la semana listos y quiere platicarlos contigo.',
@@ -114,7 +114,7 @@ export class WeeklyMeetingService {
     const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0);
     await this.prisma.pendingApproval.updateMany({
       where: { tenant_id: tenantId, status: 'pending', created_at: { gte: weekStart }, context: { path: ['type'], equals: 'weekly_meeting' } },
-      data: { status: 'approved', resolved_at: new Date() },
+      data: { status: 'approved', decided_at: new Date() },
     }).catch(() => {});
   }
 
@@ -141,7 +141,7 @@ export class WeeklyMeetingService {
       this.prisma.managementReport.findMany({ where: { tenant_id: tenantId }, orderBy: { week_start: 'desc' }, take: 5 }),
       this.prisma.feedbackReport.findMany({ where: { tenant_id: tenantId }, orderBy: { week_start: 'desc' }, take: 10 }),
       this.prisma.pendingApproval.findMany({ where: { tenant_id: tenantId, status: 'pending' }, orderBy: { created_at: 'desc' } }),
-      this.prisma.deal.findMany({ where: { tenant_id: tenantId, status: { notIn: ['won', 'lost'] } }, select: { title: true, value: true, stage_name: true, updated_at: true }, take: 20 }),
+      this.prisma.deal.findMany({ where: { tenant_id: tenantId, status: { notIn: ['won', 'lost'] } }, select: { title: true, value: true, updated_at: true, stage: { select: { name: true } } }, take: 20 }),
       this.prisma.empresaBrainDocument.count({ where: { tenant_id: tenantId } }),
       this.prisma.agentConversation.count({ where: { agent: { tenant_id: tenantId }, started_at: { gte: weekAgo } } }),
     ]);
@@ -184,10 +184,10 @@ export class WeeklyMeetingService {
       onboarding: { complete: !!onboarding?.completed_at, step: onboarding?.current_step ?? 0 },
       config: { dna_missing: missingDna.length, ceo_calibrated: !!(ceoAgent?.agent_config as any)?.calibrated_at, has_voice: !!voice?.voice_summary, has_blueprint: !!(blueprint?.philosophy_statements as any[])?.length, departments: departments.length, integrations: integrations.map(i => i.provider) },
       journey: { gaps: journeyGaps, processes_documented: processes.length },
-      management_reports: managementReports.slice(0, 3).map(r => ({ manager: r.manager_slot_id, zone1: (r.zone_breakdown as any)?.zone1 ?? 0, zone3: (r.zone_breakdown as any)?.zone3 ?? 0, zone4: (r.zone_breakdown as any)?.zone4 ?? 0 })),
-      feedback_reports: feedbackReports.slice(0, 5).map(r => ({ slot: r.team_slot_id, exceptions_above: (r.exceptions_above as any[])?.length ?? 0, exceptions_below: (r.exceptions_below as any[])?.length ?? 0 })),
+      management_reports: managementReports.slice(0, 3).map(r => ({ manager: r.manager_slot_id, zone1: (r.zone1_outstanding as any[])?.length ?? 0, zone3: (r.zone3_chronic as any[])?.length ?? 0, zone4: (r.zone4_negatives as any[])?.length ?? 0 })),
+      feedback_reports: feedbackReports.slice(0, 5).map(r => ({ slot: r.team_slot_id, positives: (r.positive_results as any[])?.length ?? 0, negatives: (r.negative_results as any[])?.length ?? 0 })),
       pending_approvals: { total: pendingApprovals.length, agent_evolutions: evolutionApprovals.length, weekly_meetings: weeklyMeetingApprovals.length, other: pendingApprovals.length - evolutionApprovals.length - weeklyMeetingApprovals.length },
-      sales: { open_deals: openDeals.length, total_value: openDeals.reduce((s, d) => s + (d.value ?? 0), 0), pipeline: openDeals.slice(0, 5).map(d => ({ title: d.title, stage: d.stage_name, value: d.value })) },
+      sales: { open_deals: openDeals.length, total_value: openDeals.reduce((s, d) => s + (d.value ?? 0), 0), pipeline: openDeals.slice(0, 5).map(d => ({ title: d.title, stage: (d as any).stage?.name ?? '', value: d.value })) },
       brain_docs: brainDocs,
       agent_conversations_this_week: agentConversations,
     };
@@ -269,14 +269,14 @@ Máximo 300 palabras.`;
   private async sendWhatsAppInvitation(tenantId: string, owner: { id: string; name: string }, agentName: string): Promise<void> {
     const secretaryConfig = await this.prisma.secretaryConfig.findUnique({
       where: { tenant_id: tenantId },
-      select: { evolution_instance: true, owner_phone: true, evolution_url: true },
+      select: { evolution_instance: true, owner_phone: true },
     });
     if (!secretaryConfig?.evolution_instance || !secretaryConfig?.owner_phone) return;
 
     const ownerFirstName = owner.name.split(' ')[0];
     const message = `Oye ${ownerFirstName} 👋\n\nTu CEO Digital (${agentName}) tiene unos temas que quiere platicar contigo — revisó cómo va el equipo, vio unos huecos en los procesos y trae ideas nuevas.\n\n¿Tienes unos minutos para la charla semanal? Puedes encontrarlo en la app o decirme aquí "pásame con ${agentName}" 🙌`;
 
-    const evolutionUrl = secretaryConfig.evolution_url ?? process.env.EVOLUTION_API_URL;
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
     if (!evolutionUrl || !process.env.EVOLUTION_API_KEY) return;
 
     await fetch(`${evolutionUrl}/message/sendText/${secretaryConfig.evolution_instance}`, {
@@ -286,8 +286,6 @@ Máximo 300 palabras.`;
         number: `${secretaryConfig.owner_phone}@s.whatsapp.net`,
         text: message,
       }),
-    }).catch(() => {});
-  }
     }).catch(() => {});
   }
 }

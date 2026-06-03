@@ -6,12 +6,16 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto, UpdateTenantStatusDto, UpdateTenantTypeDto } from './dto/update-tenant.dto';
 import { CurrentUser, TenantId } from '../../common/decorators/tenant.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { BrandService } from '../brand/brand.service';
 
 @ApiTags('Tenants (Empresas)')
 @ApiBearerAuth()
 @Controller('tenants')
 export class TenantsController {
-  constructor(private tenantsService: TenantsService) {}
+  constructor(
+    private tenantsService: TenantsService,
+    private brandService: BrandService,
+  ) {}
 
   @Get()
   @Roles('superadmin')
@@ -42,6 +46,12 @@ export class TenantsController {
   @ApiOperation({ summary: 'Procesos y SOPs documentados de mi empresa' })
   mySops(@TenantId() tenantId: string) {
     return this.tenantsService.getSops(tenantId);
+  }
+
+  @Get('mine/brand')
+  @ApiOperation({ summary: 'Configuración de marca del tenant: logo, colores, estado' })
+  getBrand(@TenantId() tenantId: string) {
+    return this.brandService.getBrandConfig(tenantId);
   }
 
   @Get('mine/focus-brief')

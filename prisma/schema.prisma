@@ -81,6 +81,7 @@ model Tenant {
   pending_approvals      PendingApproval[]
   delegation_history     DelegationHistory[]
   work_reports           WorkReport[]
+  calls                  PhoneCall[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -137,13 +138,14 @@ model TeamSlot {
   position_y    Int?
 
   // Solo humanos
-  email         String?   @unique
-  password_hash String?
-  access_token  String?   @unique
-  schedule_id   String?
-  schedule      Schedule? @relation(fields: [schedule_id], references: [id])
-  desk_config   Json?   // widget layout / personal desk configuration
-  desk_access   String? @default("FULL") // FULL | LIGHT | NONE
+  email           String?   @unique
+  password_hash   String?
+  access_token    String?   @unique
+  whatsapp_phone  String?   // número registrado para acceso al agente vía WhatsApp (ej. "5215512345678")
+  schedule_id     String?
+  schedule        Schedule? @relation(fields: [schedule_id], references: [id])
+  desk_config     Json?   // widget layout / personal desk configuration
+  desk_access     String? @default("FULL") // FULL | LIGHT | NONE
 
   // Solo agentes IA
   agent_config  Json? // { model, instructions, tools[], limits, personality }
@@ -154,6 +156,9 @@ model TeamSlot {
   owned_agents  TeamSlot[] @relation("AgentOwner")
 
   secretary_config Json?   // { connected_tools[], workflow_templates[], delegation_preferences }
+  // PBX Conmutador
+  pbx_extension    String?   // extensión SIP Asterisk (ej. "101")
+  pbx_sip_password String?   // contraseña SIP cifrada con EncryptionService
   permissions Json?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
@@ -187,6 +192,7 @@ model TeamSlot {
   recognitions_given     RecognitionEvent[]  @relation("RecognizerSlot")
   recognitions_received  RecognitionEvent[]  @relation("RecognizedSlot")
   goal_setup_status      GoalSetupStatus?
+  calls_handled          PhoneCall[]
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -1637,4 +1643,36 @@ model Meeting {
   updated_at    DateTime  @updatedAt
 
   @@index([tenant_id])
+}
+
+// ─────────────────────────────────────────────
+// PBX — REGISTRO DE LLAMADAS
+// ─────────────────────────────────────────────
+model PhoneCall {
+  id              String     @id @default(cuid())
+  tenant_id       String
+  tenant          Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  from_number     String
+  to_extension    String?
+  handled_by_id   String?
+  handled_by      TeamSlot?  @relation(fields: [handled_by_id], references: [id])
+  status          CallStatus @default(INCOMING)
+  duration_sec    Int?
+  ai_transcript   String?
+  started_at      DateTime   @default(now())
+  answered_at     DateTime?
+  ended_at        DateTime?
+
+  @@index([tenant_id])
+  @@index([tenant_id, status])
+  @@map("calls")
+}
+
+enum CallStatus {
+  INCOMING
+  ANSWERED_BY_AI
+  TRANSFERRED
+  COMPLETED
+  MISSED
+  VOICEMAIL
 }

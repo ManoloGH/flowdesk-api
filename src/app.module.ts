@@ -8,6 +8,7 @@ import Redis from 'ioredis';
 import { AiModule } from './ai/ai.module';
 import { WhatsAppChannelModule } from './modules/whatsapp-channel/whatsapp-channel.module';
 import { PbxModule } from './modules/pbx/pbx.module';
+import { InstallationAgentModule } from './modules/installation-agent/installation-agent.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
 import { AuditModule } from './common/audit/audit.module';
 import { PrismaModule } from './database/prisma.module';
@@ -106,6 +107,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     WhatsAppChannelModule,
     // PBX Conmutador — Asterisk ARI + IA en llamadas
     PbxModule,
+    // Agente Instalador — guía técnica para el equipo de MentorIA
+    InstallationAgentModule,
     // Sales — Pipeline + Agente Comercial
     SalesModule,
     // Agent Intelligence — Calibración y Evolución autónoma

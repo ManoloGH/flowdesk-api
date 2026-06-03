@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { OnboardingService } from './onboarding.service';
 import { AirtableService } from '../airtable/airtable.service';
 import { SecretaryService } from '../secretary/secretary.service';
+import { PrismaService } from '../../database/prisma.service';
 
 const MODEL = 'claude-sonnet-4-6';
 const MAX_TOOL_ITERATIONS = 15;
@@ -169,6 +170,21 @@ Regla: outstanding ≥ satisfactory × 1.4.`,
         },
       },
       required: ['tenant_id', 'dept_map'],
+    },
+  },
+
+  {
+    name: 'record_local_install_intent',
+    description: `Registra que el cliente quiere instalar FlowDesk en su propio servidor (on-premise/local).
+Llámalo cuando el usuario mencione: "servidor propio", "local", "on-premise", "en mi empresa", "instalación física", "hardware propio".
+Esto activa recordatorios automáticos en Atlas hasta completar la instalación.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenant_id: { type: 'string', description: 'ID del tenant' },
+        modules:   { type: 'string', description: 'Qué quiere instalar: todo, solo FlowDesk, FlowDesk+Asterisk, etc.' },
+      },
+      required: ['tenant_id'],
     },
   },
 
@@ -736,6 +752,7 @@ Equipo:
 Herramientas (top 5 más usadas):
   - Para cada una: nombre, categoría, qué hace con ella, frecuencia
   - → record_integration_wishlist para integraciones pendientes
+  - → record_local_install_intent si mencionan "servidor propio", "local", "on-premise", "instalación física"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SECCIÓN 3 — METAS Y PLATAFORMA (Bloques 5-6)
@@ -855,6 +872,7 @@ export class OnboardingAgentService {
     private onboarding: OnboardingService,
     private airtable: AirtableService,
     private secretary: SecretaryService,
+    private prisma: PrismaService,
   ) {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -1070,6 +1088,35 @@ export class OnboardingAgentService {
             owner_ksfs:   input.owner_ksfs,
           });
           return result;
+        } catch (err: any) {
+          return { ok: false, error: err.message };
+        }
+      }
+
+      case 'record_local_install_intent': {
+        try {
+          const tenantId = input.tenant_id ?? sessionTenantId;
+          if (!tenantId) return { ok: false, error: 'tenant_id no disponible' };
+          // Guardar en Integration table — Atlas lo verá y recordará hasta completar
+          const existing = await this.prisma.integration.findFirst({
+            where: { tenant_id: tenantId, provider: 'local_install' },
+          });
+          const data = {
+            tenant_id: tenantId,
+            provider: 'local_install',
+            integration_scope: 'tenant',
+            status: 'disconnected', // pendiente
+            config: {
+              modules: input.modules ?? 'FlowDesk completo + Asterisk + WhatsApp',
+              requested_at: new Date().toISOString(),
+            },
+          };
+          if (existing) {
+            await this.prisma.integration.update({ where: { id: existing.id }, data });
+          } else {
+            await this.prisma.integration.create({ data });
+          }
+          return { ok: true, message: 'Instalación local registrada. Atlas recordará al CEO hasta que esté completa.' };
         } catch (err: any) {
           return { ok: false, error: err.message };
         }

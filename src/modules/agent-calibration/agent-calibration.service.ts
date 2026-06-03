@@ -99,9 +99,9 @@ Máximo 700 palabras. Solo las instrucciones, sin explicaciones adicionales. En 
         where: { id: ownerSlotId, tenant_id: tenantId },
         select: { name: true, role: true, department: { select: { name: true } } },
       }),
-      this.prisma.kSF.findMany({
-        where: { tenant_id: tenantId, slot_id: ownerSlotId },
-        select: { name: true, description: true, category: true, level: true },
+      this.prisma.keySuccessFactor.findMany({
+        where: { tenant_id: tenantId, team_slot_id: ownerSlotId },
+        select: { name: true, description: true, level: true },
         take: 10,
       }),
       this.prisma.communicationProfile.findUnique({ where: { tenant_id: tenantId } }),
@@ -110,7 +110,7 @@ Máximo 700 palabras. Solo las instrucciones, sin explicaciones adicionales. En 
 
     if (!employee) return;
 
-    const ksfList = ksfs.map(k => `- ${k.name}: ${k.description ?? ''} (${k.category})`).join('\n');
+    const ksfList = ksfs.map(k => `- ${k.name}: ${k.description ?? ''} (${k.level})`).join('\n');
     const voiceDesc = voice?.voice_summary ?? '';
     const companyValues = (founder?.loved_behaviors as string[] | null)?.join(', ') ?? '';
 

@@ -183,7 +183,7 @@ export class AgentEvolutionService {
       }),
       this.prisma.pendingApproval.update({
         where: { id: approvalId },
-        data: { status: 'approved', resolved_at: new Date() },
+        data: { status: 'approved', decided_at: new Date() },
       }),
     ]);
 
@@ -195,7 +195,7 @@ export class AgentEvolutionService {
   async rejectEvolution(tenantId: string, approvalId: string): Promise<void> {
     await this.prisma.pendingApproval.update({
       where: { id: approvalId, tenant_id: tenantId },
-      data: { status: 'rejected', resolved_at: new Date() },
+      data: { status: 'rejected', decided_at: new Date() },
     });
   }
 
