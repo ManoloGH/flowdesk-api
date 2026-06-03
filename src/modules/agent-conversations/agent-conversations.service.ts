@@ -477,6 +477,13 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
     },
   },
 
+  // ── Métricas de plataforma (solo para FlowDesk empresa) ─────────────────
+  {
+    name: 'get_platform_metrics',
+    description: 'Métricas globales de FlowDesk como plataforma: tenants activos, MRR total, uso de Brain, conversaciones. Solo disponible para el negocio de FlowDesk.',
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+
   // ── Brain, Sales, Approvals ──────────────────────────────────────────────
   {
     name: 'search_company_brain',
@@ -1081,6 +1088,38 @@ INSTRUCCIONES:
           key_processes:   input.key_processes,
           pain_points:     input.pain_points,
         });
+      }
+
+      case 'get_platform_metrics': {
+        // Solo disponible si el tenant tiene include_platform_metrics: true en campus_config
+        const tenant = await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { campus_config: true },
+        });
+        const cfg = (tenant?.campus_config as Record<string, unknown>) ?? {};
+        if (!cfg.include_platform_metrics) {
+          return { error: 'Métricas de plataforma no disponibles para este tenant' };
+        }
+
+        const [totalTenants, activeTenants, byPlan, brainDocs, conversations] = await Promise.all([
+          this.prisma.tenant.count({ where: { tenant_type: { in: ['NETWORK', 'BRANCH'] } } }),
+          this.prisma.tenant.count({ where: { tenant_type: { in: ['NETWORK', 'BRANCH'] }, status: 'active' } }),
+          this.prisma.tenant.groupBy({ by: ['plan'], where: { tenant_type: { in: ['NETWORK', 'BRANCH'] }, status: 'active' }, _count: true }),
+          this.prisma.empresaBrainDocument.count(),
+          this.prisma.agentConversation.count(),
+        ]);
+
+        const PLAN_PRICE: Record<string, number> = { starter: 49, professional: 149, enterprise: 399, internal: 0 };
+        const mrr = byPlan.reduce((s, p) => s + p._count * (PLAN_PRICE[p.plan] ?? 0), 0);
+
+        return {
+          tenants_total: totalTenants,
+          tenants_activos: activeTenants,
+          mrr_usd: mrr,
+          brain_documents: brainDocs,
+          agent_conversations: conversations,
+          plans: Object.fromEntries(byPlan.map(p => [p.plan, p._count])),
+        };
       }
 
       case 'search_company_brain': {
