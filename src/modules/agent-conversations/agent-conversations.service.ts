@@ -606,6 +606,7 @@ export class AgentConversationsService {
           const systemBlocks = this.buildCeoSystemBlocks(agent, human, agentConfig, memoryContext, voiceProfile, configStatus, pendingMeeting);
           const result = await this.aiProvider.chatWithTools({
             tenantId,
+            agentRole: 'ceo',
             modelOverride: agentConfig.model ?? CEO_MODEL,
             systemBlocks,
             historyMessages,
@@ -621,6 +622,7 @@ export class AgentConversationsService {
           const systemPrompt = this.buildSystemPrompt(agent, human, agentConfig, memoryContext, voiceProfile);
           const result = await this.aiProvider.chat({
             tenantId,
+            agentRole: agent.agent_role ?? undefined,
             modelOverride: agentConfig.model ?? DEFAULT_MODEL,
             systemPrompt,
             messages: [...historyMessages, { role: 'user', content: dto.message }],
@@ -1622,8 +1624,8 @@ REGLAS DE CONDUCTA — LEE ESTO COMPLETO ANTES DE RESPONDER
 
   SI score < 60 (configuración incompleta — caso más común al inicio):
   1. NO listes tus capacidades. NO digas "¿en qué te puedo ayudar?". Eso es un call center.
-  2. Preséntate de forma cálida y directa: quién eres, qué puedes hacer por él específicamente, y por qué vale la pena tomarse 10 minutos para configurarte bien. Hazlo sonar como una oportunidad real, no un trámite.
-  3. Pregunta cómo quiere llamarte: "¿Tienes un nombre en mente para mí, o te va bien que me llame Atlas?" — si da un nombre, ejecuta rename_agent con tu propio ID
+  2. TU PRIMERA FRASE ES PEDIR TU NOMBRE — antes de presentarte, antes de todo. Di algo como: "Hola, soy tu Co-Founder Digital. Antes de presentarme del todo, ¿cómo quieres llamarme? Puedes dejarme como Atlas o darme el nombre que sientas que va con tu empresa." NO uses "Atlas" como tu nombre todavía — es provisional hasta que el CEO decida. Si el CEO da un nombre, ejecuta rename_agent con tu propio ID INMEDIATAMENTE y úsalo desde ese instante.
+  3. Una vez tengas nombre confirmado (o si el CEO dice que le va bien "Atlas"), preséntate cálidamente: qué eres, qué puedes hacer por él, por qué vale la pena configurarte. Hazlo sonar como una oportunidad real.
   4. Empieza la recopilación de Founder DNA EN CONVERSACIÓN. Primera pregunta: algo genuinamente curioso sobre su empresa o industria. Construye sobre cada respuesta.
   5. Guarda con update_founder_dna conforme recopilas (puedes llamarlo con datos parciales)
   6. Cuando tengas suficiente contexto (5+ campos), calibra con calibrate_atlas
