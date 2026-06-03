@@ -7,7 +7,6 @@ import { EncryptionService } from '../../common/encryption/encryption.service';
 import { GoogleAdapter } from '../../integrations/google/google.adapter';
 import { M365Adapter } from '../../integrations/m365/m365.adapter';
 import { ChatDto } from './dto/agent-conversations.dto';
-import { ReportGeneratorService } from '../goals/services/report-generator.service';
 import { GoalAlignmentService } from '../goals/services/goal-alignment.service';
 import { RecognitionService } from '../goals/services/recognition.service';
 import { CultureEngineService } from '../culture/culture-engine.service';
@@ -16,8 +15,7 @@ import { SalesService } from '../sales/sales.service';
 import { SecretaryService } from '../secretary/secretary.service';
 import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
 import { AgentEvolutionService } from '../agent-evolution/agent-evolution.service';
-import { KsfLevel } from '@prisma/client';
-import { startOfWeek, subDays, startOfMonth } from 'date-fns';
+import { WeeklyMeetingService } from '../weekly-meeting/weekly-meeting.service';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const CEO_MODEL = 'claude-sonnet-4-6';
@@ -448,6 +446,15 @@ Con 2 muestras (low) → detecta patrones básicos. Con 5 (medium) → captura t
     input_schema: { type: 'object' as const, properties: {} },
   },
   {
+    name: 'prepare_weekly_meeting',
+    description: `Genera la agenda completa de la junta semanal CEO Digital ↔ CEO Humano.
+Recopila el estado de toda la empresa, investiga qué están haciendo otras empresas similares esta semana,
+y devuelve una agenda estructurada con: estado empresa, equipo, journey del cliente, configuración pendiente,
+insights de industria, propuestas concretas y compromisos.
+Úsalo cuando el CEO pida preparar la junta semanal, o invócalo proactivamente si detectas que no se ha hecho esta semana.`,
+    input_schema: { type: 'object' as const, properties: {} },
+  },
+  {
     name: 'get_customer_journey_status',
     description: `Revisa qué etapas del journey del cliente están documentadas en los procesos de la empresa y cuáles faltan.
 Cubre todo el ciclo: atracción, ventas, onboarding, entrega, soporte, postventa, fidelización, facturación, legal, contabilidad.
@@ -517,7 +524,6 @@ export class AgentConversationsService {
     private enc: EncryptionService,
     private google: GoogleAdapter,
     private m365: M365Adapter,
-    private reportGenerator: ReportGeneratorService,
     private goalAlignment: GoalAlignmentService,
     private recognition: RecognitionService,
     private cultureEngine: CultureEngineService,
@@ -526,6 +532,7 @@ export class AgentConversationsService {
     private secretary: SecretaryService,
     private calibration: AgentCalibrationService,
     private evolution: AgentEvolutionService,
+    private weeklyMeeting: WeeklyMeetingService,
     private aiProvider: AiProviderService,
   ) {}
 
@@ -1389,6 +1396,16 @@ INSTRUCCIONES:
         return { ok: true, message: `✅ Instrucciones de ${result.agent_name} actualizadas con la versión evolucionada.` };
       }
 
+      case 'prepare_weekly_meeting': {
+        const meeting = await this.weeklyMeeting.generateWeeklyMeeting(tenantId);
+        if (!meeting.created) return { ok: false, message: 'No se pudo generar la junta semanal.' };
+        return {
+          ok: true,
+          summary: meeting.summary,
+          message: '✅ Junta semanal generada y guardada en aprobaciones pendientes. Puedes verla ahí con la agenda completa.',
+        };
+      }
+
       default:
         return { error: `Herramienta desconocida: ${toolName}` };
     }
@@ -1579,6 +1596,7 @@ CAPACIDADES (herramientas disponibles):
 - Objetivos estratégicos: get_company_goals, create_company_goal
 - Equipo IA: get_agents, preview_agent_design, confirm_agent_creation, recalibrate_agent, evolve_agent, apply_agent_evolution
 - Cultura y procesos: get_culture_engine, get_culture_health, update_founder_dna, calibrate_atlas, update_culture_blueprint, translate_philosophy_to_rules, update_operating_map, add_communication_sample, calibrate_communication_voice
+- Junta semanal: prepare_weekly_meeting (genera agenda completa + investigación de industria)
 - Journey del cliente: get_customer_journey_status, document_journey_stage
 - Conocimiento empresa: search_company_brain, create_strategy_doc
 - Aprobaciones: get_pending_approvals

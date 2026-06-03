@@ -5,6 +5,9 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
+import { AiModule } from './ai/ai.module';
+import { WhatsAppChannelModule } from './modules/whatsapp-channel/whatsapp-channel.module';
+import { PbxModule } from './modules/pbx/pbx.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
 import { AuditModule } from './common/audit/audit.module';
 import { PrismaModule } from './database/prisma.module';
@@ -38,6 +41,7 @@ import { SecretaryModule } from './modules/secretary/secretary.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
+import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -57,6 +61,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     EncryptionModule,
     AuditModule,
     PrismaModule,
+    // IA — proveedor unificado (Ollama, OpenRouter, Anthropic, OpenAI)
+    AiModule,
     // Integraciones externas (global — disponible en todos los módulos)
     IntegrationsModule,
     // Core
@@ -96,11 +102,16 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     BrainModule,
     // Secretary — Atlas Secretario Personal
     SecretaryModule,
+    // WhatsApp Channel — routing inteligente (owner/empleado/cliente)
+    WhatsAppChannelModule,
+    // PBX Conmutador — Asterisk ARI + IA en llamadas
+    PbxModule,
     // Sales — Pipeline + Agente Comercial
     SalesModule,
     // Agent Intelligence — Calibración y Evolución autónoma
     AgentCalibrationModule,
     AgentEvolutionModule,
+    WeeklyMeetingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -9,9 +9,10 @@ import { SalesModule } from '../sales/sales.module';
 import { SecretaryModule } from '../secretary/secretary.module';
 import { AgentCalibrationModule } from '../agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from '../agent-evolution/agent-evolution.module';
+import { WeeklyMeetingModule } from '../weekly-meeting/weekly-meeting.module';
 
 @Module({
-  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, SecretaryModule, AgentCalibrationModule, AgentEvolutionModule],
+  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, SecretaryModule, AgentCalibrationModule, AgentEvolutionModule, WeeklyMeetingModule],
   controllers: [AgentConversationsController],
   providers: [AgentConversationsService],
   exports: [AgentConversationsService],
