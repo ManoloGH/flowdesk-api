@@ -6,9 +6,11 @@ export class SearchService {
   // ── Búsqueda web ─────────────────────────────────────────────────────────────
 
   async webSearch(query: string, count = 5): Promise<{
-    results: Array<{ title: string; url: string; description: string }>;
+    results: Array<{ title: string; url: string; description: string; content?: string }>;
     source: string;
   }> {
+    const firecrawlKey = process.env.FIRECRAWL_API_KEY;
+    if (firecrawlKey) return this.firecrawlSearch(query, count, firecrawlKey);
     const braveKey = process.env.BRAVE_SEARCH_API_KEY;
     if (braveKey) return this.braveSearch(query, count, braveKey);
     return this.duckDuckGoSearch(query, count);
@@ -80,8 +82,38 @@ export class SearchService {
     }
   }
 
+  private async firecrawlSearch(query: string, count: number, apiKey: string) {
+    const resp = await fetch('https://api.firecrawl.dev/v2/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        limit: Math.min(count, 10),
+        lang: 'es',
+        country: 'mx',
+        scrapeOptions: { formats: ['markdown'] },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) throw new Error(`Firecrawl Search: ${resp.status}`);
+    const data = await resp.json() as any;
+
+    const results = (data.data ?? []).map((r: any) => ({
+      title: r.title ?? r.url ?? '',
+      url: r.url ?? '',
+      description: r.description ?? '',
+      content: r.markdown ? (r.markdown as string).slice(0, 3000) : undefined,
+    }));
+
+    return { results, source: 'firecrawl' };
+  }
+
   private async firecrawlRead(url: string, apiKey: string) {
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    const resp = await fetch('https://api.firecrawl.dev/v2/scrape', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
