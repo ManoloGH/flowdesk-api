@@ -48,6 +48,12 @@ export class BrainController {
     return this.brain.getStats(req.user.tenant_id);
   }
 
+  @Post('reindex')
+  @Roles('owner', 'admin')
+  reindex(@Request() req: any) {
+    return this.brain.reindex(req.user.tenant_id);
+  }
+
   @Delete('documents/:sourceType/:sourceId')
   @Roles('owner', 'admin')
   remove(@Request() req: any, @Param('sourceType') sourceType: string, @Param('sourceId') sourceId: string) {

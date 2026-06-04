@@ -168,6 +168,33 @@ export class BrainService {
     });
   }
 
+  async reindex(tenantId: string): Promise<{ total: number; reindexed: number; errors: number }> {
+    const docs = await this.prisma.empresaBrainDocument.findMany({
+      where: { tenant_id: tenantId },
+      select: { id: true, content: true },
+    });
+
+    let reindexed = 0;
+    let errors = 0;
+
+    for (const doc of docs) {
+      try {
+        const vector = await this.embedding.embed(doc.content);
+        const vectorSql = this.embedding.vectorToSql(vector);
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "EmpresaBrainDocument" SET embedding = $1::vector, updated_at = NOW() WHERE id = $2`,
+          vectorSql,
+          doc.id,
+        );
+        reindexed++;
+      } catch {
+        errors++;
+      }
+    }
+
+    return { total: docs.length, reindexed, errors };
+  }
+
   async getStats(tenantId: string) {
     const rows = await this.prisma.$queryRaw<{ source_type: string; count: bigint }[]>`
       SELECT source_type, COUNT(*) as count
