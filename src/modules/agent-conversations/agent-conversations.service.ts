@@ -16,6 +16,7 @@ import { SecretaryService } from '../secretary/secretary.service';
 import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
 import { AgentEvolutionService } from '../agent-evolution/agent-evolution.service';
 import { WeeklyMeetingService } from '../weekly-meeting/weekly-meeting.service';
+import { SearchService } from '../../integrations/search/search.service';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const CEO_MODEL = 'claude-sonnet-4-6';
@@ -541,6 +542,88 @@ La propuesta se envía como aprobación pendiente para que el CEO la revise ante
       required: ['approval_id'],
     },
   },
+
+  // ── Búsqueda web e investigación ─────────────────────────────────────────────
+  {
+    name: 'web_search',
+    description: `Busca información en internet en tiempo real. Usa esto para:
+- Investigar tendencias de la industria antes de la junta semanal
+- Buscar noticias sobre el mercado o competidores de la empresa
+- Investigar la empresa de un lead antes de contactarlo
+- Encontrar benchmarks, estadísticas o casos de uso
+- Verificar información que no está en el Brain interno
+Siempre menciona las fuentes que encontraste.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Qué buscar. Sé específico: incluye industria, país o contexto relevante.' },
+        count: { type: 'number', description: 'Número de resultados (1-10, default 5)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_url',
+    description: `Lee el contenido completo de una URL: artículo, página web, blog post, perfil de empresa o post de redes sociales.
+Usa esto para:
+- Leer en detalle un resultado de web_search que parece relevante
+- Analizar el sitio web de un lead antes de una reunión
+- Leer el contenido de un competidor o referente de la industria
+- Extraer información específica de una página`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        url: { type: 'string', description: 'URL completa a leer (https://...)' },
+      },
+      required: ['url'],
+    },
+  },
+];
+
+// ── Herramientas comunes para agentes regulares (no-CEO) ─────────────────────
+// Subconjunto que tienen disponible todos los agentes de la empresa
+
+const AGENT_COMMON_TOOLS: AiTool[] = [
+  {
+    name: 'web_search',
+    description: `Busca información en internet en tiempo real. Usa esto para:
+- Investigar tendencias o noticias relevantes para tu área
+- Buscar datos, estadísticas o benchmarks
+- Investigar competidores o referencias de la industria
+- Verificar información antes de responder
+Menciona siempre las fuentes encontradas.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Qué buscar. Sé específico e incluye contexto (industria, país, etc.).' },
+        count: { type: 'number', description: 'Número de resultados (1-10, default 5)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_url',
+    description: 'Lee el contenido de una URL. Útil para analizar un artículo, perfil de empresa, página de competidor o cualquier recurso web.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        url: { type: 'string', description: 'URL completa a leer (https://...)' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'search_company_brain',
+    description: 'Busca en la base de conocimiento interna de la empresa: SOPs, cultura, procesos, decisiones pasadas.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query:       { type: 'string', description: 'Qué buscar' },
+        source_type: { type: 'string', description: 'Filtrar por tipo: sop, culture, goal, onboarding, document, decision' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -563,6 +646,7 @@ export class AgentConversationsService {
     private evolution: AgentEvolutionService,
     private weeklyMeeting: WeeklyMeetingService,
     private aiProvider: AiProviderService,
+    private search: SearchService,
   ) {}
 
   async chat(tenantId: string, humanSlotId: string, agentId: string, dto: ChatDto) {
@@ -654,21 +738,26 @@ export class AgentConversationsService {
           agentResponse = result.response;
           tokensUsed = result.tokensUsed;
         } else {
+          // Agentes regulares: usan chatWithTools con herramientas comunes (web_search, read_url, brain)
           const systemPrompt = this.buildSystemPrompt(agent, human, agentConfig, memoryContext, voiceProfile);
-          const result = await this.aiProvider.chat({
+          const agentAiConfig = agentConfig.ai_provider ? {
+            ai_provider: agentConfig.ai_provider,
+            model:       agentConfig.model,
+            ai_api_key:  agentConfig.ai_api_key,
+            ai_base_url: agentConfig.ai_base_url,
+          } : undefined;
+          const result = await this.aiProvider.chatWithTools({
             tenantId,
             agentRole: agent.agent_role ?? undefined,
-            // Config específica del agente tiene prioridad sobre la del tenant
-            agentAiConfig: agentConfig.ai_provider ? {
-              ai_provider: agentConfig.ai_provider,
-              model:       agentConfig.model,
-              ai_api_key:  agentConfig.ai_api_key,
-              ai_base_url: agentConfig.ai_base_url,
-            } : undefined,
+            agentAiConfig,
             modelOverride: agentConfig.model ?? DEFAULT_MODEL,
-            systemPrompt,
-            messages: [...historyMessages, { role: 'user', content: dto.message }],
+            systemBlocks: [{ type: 'text', text: systemPrompt }],
+            historyMessages,
+            userMessage: dto.message,
+            tools: AGENT_COMMON_TOOLS,
             maxTokens: MAX_RESPONSE_TOKENS,
+            maxIterations: 4,
+            toolExecutor: (name, input) => this.executeTool(tenantId, humanSlotId, name, input),
           });
           agentResponse = result.response;
           tokensUsed = result.tokensUsed;
@@ -1496,6 +1585,36 @@ INSTRUCCIONES:
           summary: meeting.summary,
           message: '✅ Junta semanal generada y guardada en aprobaciones pendientes. Puedes verla ahí con la agenda completa.',
         };
+      }
+
+      case 'web_search': {
+        try {
+          const result = await this.search.webSearch(
+            input.query as string,
+            (input.count as number | undefined) ?? 5,
+          );
+          return {
+            query: input.query,
+            source: result.source,
+            results: result.results,
+            tip: 'Usa read_url para leer el contenido completo de cualquier resultado.',
+          };
+        } catch (err: any) {
+          return { error: `No se pudo buscar: ${err.message}` };
+        }
+      }
+
+      case 'read_url': {
+        try {
+          const result = await this.search.readUrl(input.url as string);
+          return {
+            url: input.url,
+            title: result.title,
+            content: result.content,
+          };
+        } catch (err: any) {
+          return { error: `No se pudo leer la URL: ${err.message}` };
+        }
       }
 
       default:

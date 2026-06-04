@@ -10,9 +10,10 @@ import { SecretaryModule } from '../secretary/secretary.module';
 import { AgentCalibrationModule } from '../agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from '../agent-evolution/agent-evolution.module';
 import { WeeklyMeetingModule } from '../weekly-meeting/weekly-meeting.module';
+import { SearchModule } from '../../integrations/search/search.module';
 
 @Module({
-  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, forwardRef(() => SecretaryModule), AgentCalibrationModule, AgentEvolutionModule, WeeklyMeetingModule],
+  imports: [AgentMemoryModule, GoalsModule, CultureModule, BrainModule, SalesModule, forwardRef(() => SecretaryModule), AgentCalibrationModule, AgentEvolutionModule, WeeklyMeetingModule, SearchModule],
   controllers: [AgentConversationsController],
   providers: [AgentConversationsService],
   exports: [AgentConversationsService],

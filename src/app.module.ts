@@ -6,6 +6,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
 import { AiModule } from './ai/ai.module';
+import { SearchModule } from './integrations/search/search.module';
 import { WhatsAppChannelModule } from './modules/whatsapp-channel/whatsapp-channel.module';
 import { PbxModule } from './modules/pbx/pbx.module';
 import { InstallationAgentModule } from './modules/installation-agent/installation-agent.module';
@@ -64,6 +65,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     PrismaModule,
     // IA — proveedor unificado (Ollama, OpenRouter, Anthropic, OpenAI)
     AiModule,
+    // Búsqueda web — Brave Search + Firecrawl con fallbacks gratuitos
+    SearchModule,
     // Integraciones externas (global — disponible en todos los módulos)
     IntegrationsModule,
     // Core
