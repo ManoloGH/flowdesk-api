@@ -80,8 +80,8 @@ export class AiProviderService {
     });
   }
 
-  async isConfigured(tenantId: string): Promise<boolean> {
-    const config = await this.getConfig(tenantId);
+  async isConfigured(tenantId: string, agentRole?: string): Promise<boolean> {
+    const config = await this.getConfig(tenantId, agentRole);
     if (config.provider === 'ollama') return true;
     return !!config.apiKey;
   }

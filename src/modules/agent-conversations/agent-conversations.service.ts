@@ -19,7 +19,7 @@ import { WeeklyMeetingService } from '../weekly-meeting/weekly-meeting.service';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const CEO_MODEL = 'claude-sonnet-4-6';
-const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGES = 40;
 const MAX_RESPONSE_TOKENS = 2000;
 const MAX_TOOL_ITERATIONS = 6;
 
@@ -615,19 +615,20 @@ export class AgentConversationsService {
     let agentResponse = 'Lo siento, no pude generar una respuesta en este momento.';
     let tokensUsed = 0;
 
-    if (await this.aiProvider.isConfigured(tenantId)) {
+    if (await this.aiProvider.isConfigured(tenantId, agent.agent_role ?? undefined)) {
       try {
         if (agent.agent_role === 'ceo') {
-          // Primera respuesta de conversación: inyectar estado de configuración en el prompt
-          // para que Atlas sepa sin necesidad de llamar el tool primero
-          let configStatus: any = null;
+          // Inyectar siempre el estado de configuración en el prompt del CEO para que Atlas
+          // sepa qué campos ya están guardados sin necesidad de preguntar de nuevo.
+          // La junta semanal solo se marca como atendida en la primera respuesta.
+          const isFirstMessage = historyMessages.length === 0;
           let pendingMeeting: any = null;
-          if (historyMessages.length === 0) {
-            [configStatus, pendingMeeting] = await Promise.all([
-              this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {}),
-              this.weeklyMeeting.getPendingWeeklyMeeting(tenantId),
-            ]);
-            // Si el CEO abre el chat y hay junta pendiente, marcarla como atendida
+          const [configStatus, pendingMeetingResult] = await Promise.all([
+            this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {}),
+            isFirstMessage ? this.weeklyMeeting.getPendingWeeklyMeeting(tenantId) : Promise.resolve(null),
+          ]);
+          if (isFirstMessage) {
+            pendingMeeting = pendingMeetingResult;
             if (pendingMeeting) {
               this.weeklyMeeting.markMeetingAttended(tenantId).catch(() => {});
             }
@@ -1715,6 +1716,13 @@ REGLAS DE CONDUCTA — LEE ESTO COMPLETO ANTES DE RESPONDER
   SI score >= 60 (bien configurado):
   Abre con un rompehielo según el momento del día + datos de su contexto. Nunca "¿en qué te puedo ayudar?"
 
+▸ REGLA ABSOLUTA — NO REPETIR PREGUNTAS:
+  El ESTADO DE CONFIGURACIÓN que ves más abajo muestra exactamente qué campos ya están guardados.
+  Si un campo ya tiene valor → JAMÁS lo preguntes de nuevo. Si el CEO ya respondió algo en esta
+  conversación → no lo pidas otra vez aunque no lo veas en el estado guardado. Antes de hacer
+  cualquier pregunta, verifica mentalmente: "¿Ya hablamos de esto? ¿Está en el estado guardado?"
+  Si la respuesta a cualquiera de las dos es sí → no preguntes, avanza.
+
 ▸ RECOPILACIÓN CONVERSACIONAL DEL FOUNDER DNA:
   - Nunca presentes un formulario ni lista de preguntas de golpe
   - Haz 1-2 preguntas por turno, escucha, responde al contenido, luego sigue con la siguiente
@@ -1764,15 +1772,16 @@ Estás en una CONVERSACIÓN, no escribiendo un reporte. Siempre:
 
 Responde siempre en español. Co-founder en conversación real, no sistema generando reportes.`;
 
-    // Bloque de estado de configuración — solo presente en el primer mensaje
+    // Bloque de estado de configuración — siempre presente para que el CEO Agent
+    // sepa qué ya está guardado y NO repita preguntas sobre esos campos.
     const configBlock = configStatus ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTADO DE CONFIGURACIÓN (calculado automáticamente):
-Score: ${configStatus.score}/100 ${configStatus.score < 60 ? '⚠️ INCOMPLETO — aplica el flujo de bienvenida y configuración' : '✅ bien configurado'}
+ESTADO DE CONFIGURACIÓN — LO QUE YA ESTÁ GUARDADO (NO preguntes por esto):
+Score: ${configStatus.score}/100 ${configStatus.score < 60 ? '⚠️ INCOMPLETO' : '✅ bien configurado'}
 CEO Digital: ${configStatus.ceo_agent?.name ?? 'sin nombre propio'} | Calibrado: ${configStatus.ceo_agent?.calibrated ? 'sí' : 'NO'}
-Founder DNA: ${configStatus.founder_dna?.filled ?? 0}/${configStatus.founder_dna?.total ?? 11} campos | Faltan: ${(configStatus.founder_dna?.missing_fields ?? []).join(', ') || 'ninguno'}
-Voz de empresa: ${configStatus.communication_voice?.configured ? 'configurada' : 'NO configurada'}
-Blueprint cultural: ${configStatus.culture_blueprint?.configured ? 'configurado' : 'NO configurado'}
+Founder DNA: ${configStatus.founder_dna?.filled ?? 0}/${configStatus.founder_dna?.total ?? 11} campos guardados | Campos PENDIENTES (sí preguntar): ${(configStatus.founder_dna?.missing_fields ?? []).join(', ') || 'ninguno — DNA completo'}
+Voz de empresa: ${configStatus.communication_voice?.configured ? 'configurada — NO pedir muestras de comunicación' : 'NO configurada — puedes pedir muestras'}
+Blueprint cultural: ${configStatus.culture_blueprint?.configured ? 'configurado — NO preguntar sobre filosofía' : 'NO configurado'}
 Pendientes: ${(configStatus.suggestions ?? []).join(' · ') || 'ninguno'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
 
