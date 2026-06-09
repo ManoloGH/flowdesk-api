@@ -702,13 +702,16 @@ export class AgentConversationsService {
     if (await this.aiProvider.isConfigured(tenantId, agent.agent_role ?? undefined)) {
       try {
         if (agent.agent_role === 'ceo') {
-          // Inyectar siempre el estado de configuración en el prompt del CEO para que Atlas
-          // sepa qué campos ya están guardados sin necesidad de preguntar de nuevo.
+          // configStatus: primer mensaje + cada 8 mensajes (balance anti-repetición vs latencia).
+          // Siempre en el primer mensaje para que Atlas sepa qué campos ya están guardados.
           // La junta semanal solo se marca como atendida en la primera respuesta.
           const isFirstMessage = historyMessages.length === 0;
+          const shouldRefreshConfig = isFirstMessage || historyMessages.length % 8 === 0;
           let pendingMeeting: any = null;
           const [configStatus, pendingMeetingResult] = await Promise.all([
-            this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {}),
+            shouldRefreshConfig
+              ? this.executeTool(tenantId, humanSlotId, 'get_configuration_progress', {})
+              : Promise.resolve(null),
             isFirstMessage ? this.weeklyMeeting.getPendingWeeklyMeeting(tenantId) : Promise.resolve(null),
           ]);
           if (isFirstMessage) {
