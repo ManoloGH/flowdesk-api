@@ -1,12 +1,17 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { TenantExportService } from './tenant-export.service';
+
 import { randomBytes } from 'crypto';
 
 const PLAN_PRICE: Record<string, number> = { starter: 49, professional: 149, enterprise: 399, internal: 0 };
 
 @Injectable()
 export class PlatformService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private tenantExport: TenantExportService,
+  ) {}
 
   private async assertPlatform(tenantId: string) {
     const t = await this.prisma.tenant.findUnique({
@@ -152,6 +157,11 @@ export class PlatformService {
     const slug = tenant.slug;
     const owner = tenant.team_slots[0];
 
+    // Export all tenant data + decrypt vault for real .env values
+    const { sql: dataSql, vault, stats } = await this.tenantExport.exportTenant(targetId);
+
+    const encryptionKey = process.env.ENCRYPTION_KEY ?? 'REEMPLAZAR_CON_TU_ENCRYPTION_KEY_ACTUAL';
+
     const dockerCompose = `version: '3.8'
 services:
   api:
@@ -162,16 +172,20 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   desk:
     image: ghcr.io/mentoria/flowdesk-desk:latest
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:3001/api/v1
+      - NEXT_PUBLIC_API_URL=\${FRONTEND_API_URL:-http://localhost:3001/api/v1}
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -182,72 +196,263 @@ services:
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowdesk -d flowdesk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    volumes:
+      - redisdata:/data
 
 volumes:
   pgdata:
+  redisdata:
 `;
 
-    const envTemplate = `# ── Base de datos ────────────────────────────────────────────
+    // Build .env with REAL values from the vault
+    const vaultLines = Object.entries(vault).map(([k, v]) => `${k}=${v}`).join('\n');
+
+    const envContent = `# ════════════════════════════════════════════════════════
+# FlowDesk — Configuración de servidor propio
+# Cliente: ${tenant.name} (${slug})
+# Generado: ${new Date().toISOString()}
+#
+# ⚠️  AVISO DE SEGURIDAD:
+#   - Cambia POSTGRES_PASSWORD y JWT_SECRET antes de levantar
+#   - Guarda este archivo con permisos 600 (chmod 600 .env)
+#   - Después de verificar que todo funciona, rota ENCRYPTION_KEY
+# ════════════════════════════════════════════════════════
+
+# ── Base de datos ─────────────────────────────────────────
 DATABASE_URL=postgresql://flowdesk:\${POSTGRES_PASSWORD}@postgres:5432/flowdesk?schema=public
-POSTGRES_PASSWORD=CAMBIAR_ESTO_POR_CONTRASEÑA_SEGURA
+POSTGRES_PASSWORD=CAMBIAR_POR_CONTRASEÑA_SEGURA_16+_CHARS
 
-# ── JWT ──────────────────────────────────────────────────────
-JWT_SECRET=CAMBIAR_ESTO_POR_SECRET_DE_AL_MENOS_64_CARACTERES
+# ── Seguridad ─────────────────────────────────────────────
+JWT_SECRET=GENERAR_CON: openssl rand -hex 32
 
-# ── Supabase Storage (o usar almacenamiento propio) ──────────
-SUPABASE_URL=https://TU_PROYECTO.supabase.co
-SUPABASE_SERVICE_KEY=TU_SUPABASE_SERVICE_KEY
+# ── Cifrado (CRÍTICO — igual al original para descifrar datos del Vault) ──
+# Después de migrar y verificar, puedes rotar esta clave con el comando:
+#   docker compose exec api npx ts-node scripts/rotate-encryption-key.ts
+ENCRYPTION_KEY=${encryptionKey}
 
-# ── OpenAI / Proveedor de IA ─────────────────────────────────
-OPENAI_API_KEY=TU_OPENAI_API_KEY
-ANTHROPIC_API_KEY=TU_ANTHROPIC_API_KEY
-
-# ── Evolution API (WhatsApp) ──────────────────────────────────
-EVOLUTION_API_URL=http://evolution:8080
-EVOLUTION_API_KEY=TU_EVOLUTION_KEY
-EVOLUTION_INSTANCE=${tenant.secretary_config?.evolution_instance ?? slug + '-instance'}
-
-# ── Tenant raíz (se crea automáticamente en primer boot) ────
-ROOT_TENANT_SLUG=${slug}
-ROOT_OWNER_EMAIL=${owner?.email ?? 'admin@' + slug + '.com'}
-ROOT_OWNER_NAME=${owner?.name ?? 'Administrador'}
-
-# ── App ──────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────
 NODE_ENV=production
 PORT=3001
 FRONTEND_URL=http://localhost:3000
+FRONTEND_API_URL=http://localhost:3001/api/v1
+
+# ── Supabase Storage (necesitas tu propio proyecto Supabase) ─
+SUPABASE_URL=https://TU_PROYECTO.supabase.co
+SUPABASE_SERVICE_KEY=TU_SUPABASE_SERVICE_KEY
+SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
+
+# ── IA ────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=${vault['ANTHROPIC_API_KEY'] ?? 'TU_ANTHROPIC_API_KEY'}
+OPENAI_API_KEY=${vault['OPENAI_API_KEY'] ?? vault['OPENAI_KEY'] ?? 'TU_OPENAI_API_KEY'}
+
+# ── WhatsApp / Evolution API ──────────────────────────────
+EVOLUTION_API_URL=${vault['EVOLUTION_API_URL'] ?? 'http://evolution:8080'}
+EVOLUTION_API_KEY=${vault['EVOLUTION_API_KEY'] ?? vault['EVOLUTION_KEY'] ?? 'TU_EVOLUTION_KEY'}
+EVOLUTION_INSTANCE=${tenant.secretary_config?.evolution_instance ?? slug + '-wa'}
+
+# ── Búsqueda web ─────────────────────────────────────────
+BRAVE_SEARCH_API_KEY=${vault['BRAVE_SEARCH_API_KEY'] ?? vault['BRAVE_API_KEY'] ?? ''}
+FIRECRAWL_API_KEY=${vault['FIRECRAWL_API_KEY'] ?? ''}
+
+# ── Otras credenciales del Vault (extraídas automáticamente) ──
+${vaultLines}
+
+# ── Tenant raíz ──────────────────────────────────────────
+ROOT_TENANT_SLUG=${slug}
+ROOT_OWNER_EMAIL=${owner?.email ?? 'admin@' + slug + '.com'}
+ROOT_OWNER_NAME=${owner?.name ?? 'Administrador'}
 `;
 
-    const instructions = `# Guía de instalación — FlowDesk Self-Hosted
+    const setupSh = `#!/bin/bash
+# ════════════════════════════════════════════════════════
+# FlowDesk — Script de instalación en servidor propio
+# Cliente: ${tenant.name}
+# ════════════════════════════════════════════════════════
+set -e
 
-## Requisitos
-- Docker + Docker Compose v2
-- 4 GB RAM mínimo (8 GB recomendado)
-- Dominio propio (opcional pero recomendado)
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║   FlowDesk — Instalación Self-Hosted      ║"
+echo "║   Cliente: ${(tenant.name + ' ').padEnd(27).slice(0, 27)}  ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
 
-## Pasos
+# ── Verificar dependencias ────────────────────────────────
+command -v docker &>/dev/null || { echo "❌ Docker no encontrado. Instala desde https://docs.docker.com/get-docker/"; exit 1; }
+command -v docker &>/dev/null && docker compose version &>/dev/null || { echo "❌ Docker Compose v2 no encontrado."; exit 1; }
 
-1. Copia los archivos docker-compose.yml y .env en un directorio vacío
-2. Edita .env con tus valores reales
-3. Levanta los servicios:
-   \`\`\`
-   docker compose up -d
-   \`\`\`
-4. Crea la base de datos (primera vez):
-   \`\`\`
-   docker compose exec api npx prisma migrate deploy
-   \`\`\`
-5. Importa los datos exportados desde FlowDesk Cloud:
-   \`\`\`
-   docker compose exec -i postgres psql -U flowdesk flowdesk < flowdesk-export.sql
-   \`\`\`
+if [ ! -f .env ]; then
+  echo "❌ Falta el archivo .env"
+  echo "   Copia .env.example a .env y configura los valores"
+  exit 1
+fi
 
-## Soporte
-Para soporte de instalación: soporte@flowdesk.mx
+echo "✓ Docker encontrado"
+echo "✓ Archivo .env encontrado"
+echo ""
+
+# ── Cargar variables ──────────────────────────────────────
+set -a; source .env; set +a
+
+# ── Levantar base de datos y Redis ────────────────────────
+echo "▶ Levantando PostgreSQL y Redis..."
+docker compose up -d postgres redis
+
+echo "⏳ Esperando que PostgreSQL esté lista..."
+until docker compose exec -T postgres pg_isready -U flowdesk -d flowdesk 2>/dev/null; do
+  printf "."
+  sleep 2
+done
+echo ""
+echo "✓ PostgreSQL lista"
+
+# ── Habilitar pgvector ────────────────────────────────────
+echo "▶ Habilitando extensión pgvector..."
+docker compose exec -T postgres psql -U flowdesk -d flowdesk \\
+  -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
+
+# ── Aplicar schema de Prisma ──────────────────────────────
+echo "▶ Aplicando schema de base de datos..."
+docker compose run --rm api npx prisma migrate deploy
+echo "✓ Schema aplicado"
+
+# ── Importar datos del tenant ─────────────────────────────
+if [ -f "data.sql" ]; then
+  echo "▶ Importando datos (puede tardar según el volumen)..."
+  docker compose exec -T postgres psql -U flowdesk -d flowdesk < data.sql
+  echo "✓ Datos importados correctamente"
+else
+  echo "⚠️  data.sql no encontrado — la instancia arrancará sin datos históricos"
+  echo "   Descárgalo desde FlowDesk Admin → Clientes → Exportar datos"
+fi
+
+# ── Levantar todos los servicios ──────────────────────────
+echo "▶ Iniciando FlowDesk..."
+docker compose up -d
+echo ""
+echo "══════════════════════════════════════════"
+echo "  ✅  FlowDesk instalado correctamente"
+echo ""
+echo "  API:   http://localhost:3001"
+echo "  App:   http://localhost:3000"
+echo ""
+echo "  ⚠️  Pendientes antes de producción:"
+echo "     1. Configurar tu dominio en el DNS"
+echo "     2. Actualizar FRONTEND_URL y FRONTEND_API_URL en .env"
+echo "     3. Cambiar POSTGRES_PASSWORD y JWT_SECRET"
+echo "     4. Verificar que el Vault funciona correctamente"
+echo "     5. Cambiar ENCRYPTION_KEY (después de verificar)"
+echo "══════════════════════════════════════════"
+`;
+
+    const instructions = `# FlowDesk Self-Hosted — Guía de instalación
+## Cliente: ${tenant.name}
+
+---
+
+## Archivos incluidos en este paquete
+
+| Archivo | Descripción |
+|---------|-------------|
+| \`docker-compose.yml\` | Stack completo: API, Frontend, PostgreSQL + pgvector, Redis |
+| \`.env\` | Variables de entorno con tus valores reales |
+| \`setup.sh\` | Script automatizado de instalación (recomendado) |
+| \`data.sql\` | Exportación completa de tu base de datos |
+| \`INSTALL.md\` | Esta guía |
+
+---
+
+## Requisitos del servidor
+
+- **SO**: Ubuntu 22.04 LTS o Debian 12 (recomendado)
+- **RAM**: 4 GB mínimo, 8 GB recomendado
+- **Disco**: 20 GB mínimo
+- **Docker**: v24+ con Docker Compose v2
+- **Puertos abiertos**: 80, 443 (y 3000/3001 para pruebas locales)
+
+---
+
+## Instalación rápida (script automatizado)
+
+\`\`\`bash
+chmod +x setup.sh
+./setup.sh
+\`\`\`
+
+---
+
+## Instalación manual paso a paso
+
+### 1. Configurar variables de entorno
+
+\`\`\`bash
+# Edita los valores marcados como CAMBIAR en .env
+nano .env
+\`\`\`
+
+**Variables críticas a cambiar:**
+- \`POSTGRES_PASSWORD\` — contraseña de la base de datos
+- \`JWT_SECRET\` — genera con: \`openssl rand -hex 32\`
+
+**Variables críticas a NO cambiar (por ahora):**
+- \`ENCRYPTION_KEY\` — necesaria para descifrar tus datos del Vault
+
+### 2. Levantar servicios
+
+\`\`\`bash
+docker compose up -d
+\`\`\`
+
+### 3. Aplicar schema
+
+\`\`\`bash
+docker compose run --rm api npx prisma migrate deploy
+\`\`\`
+
+### 4. Importar tus datos
+
+\`\`\`bash
+docker compose exec -T postgres psql -U flowdesk -d flowdesk < data.sql
+\`\`\`
+
+### 5. Verificar
+
+Abre \`http://localhost:3000\` en tu navegador. Inicia sesión con tus credenciales habituales.
+
+---
+
+## Configurar dominio propio
+
+1. Apunta tu dominio a la IP del servidor (registro A en DNS)
+2. Instala un reverse proxy (Nginx/Caddy) con SSL
+3. Actualiza en \`.env\`:
+   \`\`\`
+   FRONTEND_URL=https://tudominio.com
+   FRONTEND_API_URL=https://api.tudominio.com/api/v1
+   \`\`\`
+4. Reinicia: \`docker compose restart\`
+
+---
+
+## Resumen de datos exportados
+
+${stats.filter(s => s.count > 0).map(s => `- **${s.table}**: ${s.count} registros`).join('\n')}
+
+---
+
+## Soporte post-migración
+
+- Email: soporte@flowdesk.mx
+- Horario: Lunes a Viernes, 9:00 - 18:00 CST
 `;
 
     // Marcar tenant como bundle_generated
@@ -260,8 +465,11 @@ Para soporte de instalación: soporte@flowdesk.mx
       tenant_name: tenant.name,
       tenant_slug: slug,
       docker_compose: dockerCompose,
-      env_template: envTemplate,
-      instructions,
+      env_content: envContent,
+      setup_sh: setupSh,
+      install_md: instructions,
+      data_sql: dataSql,
+      export_stats: stats.filter(s => s.count > 0),
       generated_at: new Date().toISOString(),
     };
   }

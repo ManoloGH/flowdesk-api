@@ -88,6 +88,7 @@ model Tenant {
   delegation_history     DelegationHistory[]
   work_reports           WorkReport[]
   calls                  PhoneCall[]
+  web_proyectos          WebProyecto[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -1713,4 +1714,42 @@ model AgentLearningProposal {
   @@index([tenant_id, status])
   @@index([agent_id])
   @@index([tenant_id, week_start])
+}
+
+// ═════════════════════════════════════════════
+// WEB BUILDER — Proyectos de webs de clientes
+// ═════════════════════════════════════════════
+
+model WebProyecto {
+  id             String   @id @default(cuid())
+  tenant_id      String
+  tenant         Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  nombre_cliente String
+  slug           String   // kebab-case, ej: "valenciana-mudanzas"
+  dominio        String?  // dominio final, ej: "valencianamudanzas.com"
+  sector         String?  // mudanzas, fontanería, restaurante, etc.
+
+  // Fase actual del proyecto
+  // setup → assets → video → construccion → scroll → seo → publicado → entregado
+  fase           String   @default("setup")
+
+  vercel_url        String?
+  vercel_project_id String?
+
+  html_original  String?  // HTML original del cliente
+  logo_url       String?  // URL del logo subido
+  files          Json?    // { 'index.html': '...', 'servicios.html': '...', ... }
+  build_log      Json?    // Array de { phase, message, status, ts }
+  assets         Json?    // { logo_url, video_url, poster_url }
+
+  notas          String?
+  created_by_id  String?
+
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([tenant_id])
+  @@index([tenant_id, fase])
+  @@unique([tenant_id, slug])
 }

@@ -120,6 +120,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── PBX Conmutador ────────────────────────────────────────────────────────
   get phoneCall() { return this.prisma.phoneCall; }
 
+  // ── Aprendizaje de agentes ────────────────────────────────────────────────
+  get agentLearningProposal() { return this.prisma.agentLearningProposal; }
+
+  // ── Web Builder ───────────────────────────────────────────────────────────
+  get webProyecto() { return this.prisma.webProyecto; }
+
   // Transacción estándar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $transaction(...args: any[]): any {

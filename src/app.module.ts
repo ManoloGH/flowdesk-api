@@ -45,6 +45,8 @@ import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibr
 import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
 import { AgentLearningModule } from './modules/agent-learning/agent-learning.module';
 import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
+import { WebProyectosModule } from './modules/web-proyectos/web-proyectos.module';
+import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-agent.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -120,6 +122,9 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     AgentEvolutionModule,
     AgentLearningModule,
     WeeklyMeetingModule,
+    // Web Builder — construcción y seguimiento de webs de clientes
+    WebProyectosModule,
+    WebBuilderAgentModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

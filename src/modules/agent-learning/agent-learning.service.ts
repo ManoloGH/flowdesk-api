@@ -38,7 +38,7 @@ export class AgentLearningService {
         const newConfig = { ...currentConfig, ...proposed };
         await this.prisma.teamSlot.update({
           where: { id: proposal.agent_id },
-          data: { agent_config: newConfig },
+          data: { agent_config: newConfig as any },
         });
       }
     }
