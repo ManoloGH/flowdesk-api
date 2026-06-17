@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Header, Res, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { IsString } from 'class-validator';
 import type { Response } from 'express';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
@@ -7,6 +8,11 @@ import { UpdateTenantDto, UpdateTenantStatusDto, UpdateTenantTypeDto } from './d
 import { CurrentUser, TenantId } from '../../common/decorators/tenant.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandService } from '../brand/brand.service';
+import { PlatformService } from '../platform/platform.service';
+import { MigrationAuditService } from '../platform/migration-audit.service';
+
+class MinePingDto { @IsString() self_hosted_url: string; }
+class MineMarkMigratedDto { @IsString() self_hosted_url: string; }
 
 @ApiTags('Tenants (Empresas)')
 @ApiBearerAuth()
@@ -15,6 +21,8 @@ export class TenantsController {
   constructor(
     private tenantsService: TenantsService,
     private brandService: BrandService,
+    private platformService: PlatformService,
+    private migrationAudit: MigrationAuditService,
   ) {}
 
   @Get()
@@ -148,5 +156,37 @@ export class TenantsController {
   @ApiOperation({ summary: '[Super-admin] Restaurar datos de una empresa desde un export JSON' })
   restoreTenant(@Param('id') id: string, @Body() exportData: any) {
     return this.tenantsService.restoreTenant(id, exportData);
+  }
+
+  // ── MIGRACIÓN A SERVIDOR PROPIO (accesible por owner/admin de cualquier cuenta) ──
+
+  @Get('mine/migration/audit')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: 'Auditoría pre-migración de mi empresa' })
+  runMyMigrationAudit(@TenantId() tenantId: string) {
+    return this.migrationAudit.runPreMigrationAudit(tenantId);
+  }
+
+  @Post('mine/migration/bundle')
+  @Roles('owner')
+  @ApiOperation({ summary: 'Generar bundle de migración a servidor propio (solo owner)' })
+  generateMyMigrationBundle(@TenantId() tenantId: string) {
+    return this.platformService.generateBundleForTenant(tenantId);
+  }
+
+  @Post('mine/migration/ping')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: 'Verificar que el servidor destino responde' })
+  async pingMyRemote(@TenantId() tenantId: string, @Body() dto: MinePingDto) {
+    const result = await this.migrationAudit.pingRemoteInstance(dto.self_hosted_url);
+    if (result.reachable) await this.platformService.setMigratedUrl(tenantId, dto.self_hosted_url);
+    return result;
+  }
+
+  @Patch('mine/migration/status')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: 'Marcar mi empresa como migrada al servidor propio' })
+  markMyMigrated(@TenantId() tenantId: string, @Body() dto: MineMarkMigratedDto) {
+    return this.platformService.setMigratedUrl(tenantId, dto.self_hosted_url);
   }
 }

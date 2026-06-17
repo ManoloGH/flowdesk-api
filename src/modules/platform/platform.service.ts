@@ -157,11 +157,19 @@ export class PlatformService {
 
   async generateMigrationBundle(callerTenantId: string, targetId: string) {
     await this.assertPlatform(callerTenantId);
+    return this.buildBundle(targetId);
+  }
 
+  // Accesible desde cualquier cuenta: genera el bundle del propio tenant
+  async generateBundleForTenant(tenantId: string) {
+    return this.buildBundle(tenantId);
+  }
+
+  private async buildBundle(targetId: string) {
     const tenant = await this.prisma.tenant.findUnique({
-      where: { id: targetId },
+      where:   { id: targetId },
       include: {
-        team_slots: { where: { role: 'owner', type: 'HUMAN' }, select: { name: true, email: true }, take: 1 },
+        team_slots:       { where: { role: 'owner', type: 'HUMAN' }, select: { name: true, email: true }, take: 1 },
         secretary_config: { select: { evolution_instance: true } },
       },
     });
