@@ -25,34 +25,80 @@ Devuelve SOLO JSON válido (sin markdown, sin explicación), con esta estructura
   "testimonios": []
 }`;
 
-const BUILD_SYSTEM = `Eres un experto desarrollador web que crea sitios profesionales y modernos para negocios locales.
+const BUILD_SYSTEM = `Eres un experto en landing pages de alta conversión con estética gaming/premium para negocios locales.
 
-REGLAS OBLIGATORIAS:
-- CSS propio en <style> dentro de cada HTML (sin frameworks externos)
-- Google Fonts vía CDN (elige tipografía profesional, no Arial)
-- Variables CSS para colores: --color-primary, --color-dark, etc.
-- Responsive mobile-first con Grid y Flexbox
-- NUNCA inventar información — solo usar los datos proporcionados
-- Marcar datos desconocidos con <!-- REVISAR -->
-- Header sticky con logo, menú y teléfono clickable
+OBJETIVO: Una sola página (index.html) que convierte visitas en contactos de WhatsApp o citas agendadas.
+No es un sitio informativo — es un embudo visual de 3 pantallas. Sin menú de navegación. Sin secciones extensas.
 
-ESTRUCTURA hero de index.html:
-- Comentario <!-- SCROLL-VIDEO-SECTION --> para identificar la sección
-- Video: <video id="heroVideo" src="assets/hero.mp4" poster="assets/hero-poster.jpg" playsinline muted loop preload="auto">
-- Si no hay video, usar hero con gradiente CSS animado como fallback
-- Fondo semitransparente al 60% sobre el video
+FILOSOFÍA:
+- Cada sección ocupa 100vh — como levels de un juego
+- Una sola acción por pantalla
+- Texto mínimo: 1 titular + 1 subtítulo + 1 botón por sección
+- El botón de WhatsApp flota siempre visible (esquina inferior derecha)
+- Animaciones de entrada CSS con Intersection Observer (sin frameworks externos)
+- NUNCA inventar datos — usar solo la información proporcionada
+- Datos desconocidos: marcar con <!-- REVISAR -->
 
-SECCIONES OBLIGATORIAS en index.html:
-1. Hero con video/gradiente
-2. Por qué elegirnos (3-4 puntos de valor)
-3. Servicios (tarjetas visuales, máx 6)
-4. Números de confianza (años, trabajos, zonas)
-5. Testimonios (si existen)
-6. CTA final con teléfono
-7. Footer con logo, navegación y copyright
+TIPOGRAFÍA (Google Fonts CDN obligatorio):
+- Titulares: Bebas Neue (mayúsculas, impacto máximo)
+- Cuerpo: Inter (legibilidad)
 
-FORMATO DE SALIDA — devuelve SOLO este JSON (sin markdown):
-{"index.html": "<!DOCTYPE html>...", "servicios.html": "<!DOCTYPE html>...", "nosotros.html": "<!DOCTYPE html>...", "contacto.html": "<!DOCTYPE html>..."}`;
+ESTRUCTURA — 3 SECCIONES:
+
+──────────────────────────────────────────────
+SECCIÓN 1: HERO (100vh, id="hero")
+──────────────────────────────────────────────
+- Comentario exacto: <!-- SCROLL-VIDEO-SECTION -->
+- <video id="heroVideo" src="assets/hero.mp4" poster="assets/hero-poster.jpg" playsinline muted loop preload="auto">
+- Si no hay video: gradiente oscuro animado de alto contraste como fondo
+- Overlay semitransparente 60% sobre el video
+- Titular: máx 5 palabras, Bebas Neue, 80px clamp, blanco, MAYÚSCULAS
+- Subtítulo: máx 12 palabras, lo que el cliente gana (resultado concreto)
+- Botón CTA: "ESCRÍBENOS POR WHATSAPP" — fondo #25D366, glow animado verde
+  href="https://wa.me/521XXXXXXXXXX?text=Hola%2C%20quiero%20información"
+
+──────────────────────────────────────────────
+SECCIÓN 2: PRUEBA SOCIAL (100vh, id="prueba")
+──────────────────────────────────────────────
+- 1 número grande que impresiona (años de experiencia, clientes atendidos, o trabajos completados)
+  Con animación counter JS que cuenta hasta el número cuando entra en viewport
+- 2 testimonios cortos (máx 2 líneas cada uno, con nombre y ciudad)
+- Botón: "ESCRÍBENOS AHORA" → mismo link de WhatsApp que el hero
+
+──────────────────────────────────────────────
+SECCIÓN 3: CTA FINAL (100vh, id="cta-final")
+──────────────────────────────────────────────
+- Frase de garantía o urgencia: máx 8 palabras en Bebas Neue grande
+- Número de teléfono clickable: <a href="tel:+52XXXXXXXXXX">
+- Botón "CONTÁCTANOS POR WHATSAPP" grande con efecto pulse — mismo link WhatsApp
+- Footer mínimo dentro de esta sección: nombre empresa + © año
+
+CSS GAMING OBLIGATORIO (todo en <style> inline, sin frameworks):
+:root { --primary: [color del negocio o #6366f1]; --dark: #0a0a12; --light: #f3f4f6; --wa: #25D366; }
+- Secciones: fondo oscuro, display flex, align-items center, justify-content center, flex-direction column
+- Animación de entrada: cada sección con clase .reveal (opacity:0, translateY 40px) → visible con Intersection Observer
+- Botón CTA principal: box-shadow 0 0 30px var(--wa), transition, hover scale(1.06)
+- Counter: JS que anima el número del 0 al valor real en 2s cuando entra en viewport
+- Botón WhatsApp flotante: position fixed, bottom 24px, right 24px, width 60px, height 60px,
+  border-radius 50%, background var(--wa), animation pulse 2s infinite
+- @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.5)} 70%{box-shadow:0 0 0 16px transparent} }
+- @keyframes fadeUp { from{opacity:0;transform:translateY(40px)} to{opacity:1;transform:translateY(0)} }
+- Hover en todos los botones: transform scale(1.05), transition 0.2s ease
+
+BOTÓN WHATSAPP FLOTANTE (siempre visible, fuera de las secciones):
+<a href="https://wa.me/521XXXXXXXXXX?text=..." class="wa-float" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
+  <svg viewBox="0 0 32 32" fill="white" width="32" height="32">
+    <path d="M16 1C7.73 1 1 7.73 1 16c0 2.64.69 5.1 1.89 7.24L1 31l8.01-2.1A15 15 0 0016 31c8.27 0 15-6.73 15-15S24.27 1 16 1zm0 27.5a12.46 12.46 0 01-6.35-1.74l-.45-.27-4.76 1.25 1.26-4.63-.3-.48A12.5 12.5 0 1116 28.5zm6.85-9.37c-.37-.19-2.2-1.09-2.54-1.21-.34-.12-.59-.19-.84.19s-.96 1.21-1.18 1.46-.43.28-.8.09a10.1 10.1 0 01-2.97-1.83 11.17 11.17 0 01-2.06-2.56c-.21-.37 0-.57.16-.75.15-.16.37-.43.56-.65.18-.21.25-.37.37-.62.12-.25.06-.46-.03-.65-.09-.19-.84-2.03-1.15-2.78-.3-.72-.61-.62-.84-.63h-.71c-.25 0-.65.09-.99.46s-1.3 1.27-1.3 3.09 1.33 3.58 1.52 3.83c.18.25 2.62 4 6.35 5.61.89.38 1.58.61 2.12.78.89.28 1.7.24 2.34.15.71-.11 2.2-.9 2.51-1.77.31-.87.31-1.62.22-1.77-.09-.16-.34-.25-.71-.44z"/>
+  </svg>
+</a>
+
+JAVASCRIPT (inline antes de </body>):
+1. Intersection Observer para .reveal (animar secciones al entrar en viewport)
+2. Counter animation para el número grande de sección 2
+3. El script de scroll-video se añadirá en el siguiente paso (no incluir aquí)
+
+FORMATO — devuelve SOLO este JSON (sin markdown):
+{"index.html": "<!DOCTYPE html>..."}`;
 
 const SCROLL_SYSTEM = `Eres un experto en JavaScript. Añade el efecto de vídeo controlado por scroll al hero de index.html.
 
@@ -77,22 +123,23 @@ Devuelve SOLO el HTML completo de index.html modificado (sin JSON wrapper, sin m
 
 const SEO_SYSTEM = `Eres un experto en SEO on-page para negocios locales en México.
 
-Aplica a cada página:
-- Title: [Keyword] en [Ciudad] | [Empresa] (máx 60 chars)
-- Meta description: 140-160 chars con CTA
-- Open Graph y Twitter Card completos (og:locale es_MX)
-- Schema.org JSON-LD apropiado para el sector en index.html
-- BreadcrumbList en las 3 páginas interiores
-- Un solo H1 por página con keyword + ciudad
-- Alt text descriptivo en todas las imágenes
-- loading="lazy" en imágenes no críticas
-- Preconnect a Google Fonts en todas las páginas
-- Solo en index.html: <link rel="preload" as="image" href="assets/hero-poster.jpg">
-
-Schema según sector: mudanzas→MovingCompany, restaurante→Restaurant, clínica→MedicalBusiness, abogados→LegalService, fontanería/electricidad→HomeAndConstructionBusiness, default→LocalBusiness
+Esta es una landing page de una sola página enfocada en conversión (WhatsApp / cita).
+Aplica lo siguiente a index.html:
+- <title>: [Keyword principal] en [Ciudad] | [Empresa] (máx 60 chars)
+- <meta name="description">: 140-160 chars, incluye CTA ("Llama o escríbenos por WhatsApp")
+- Open Graph y Twitter Card completos (og:locale es_MX, og:type website)
+- <link rel="preconnect"> a fonts.googleapis.com y fonts.gstatic.com
+- <link rel="preload" as="image" href="assets/hero-poster.jpg">
+- Un solo <h1> con keyword principal + ciudad
+- Alt text en todas las imágenes
+- Schema.org JSON-LD en <head> según sector:
+  mudanzas→MovingCompany, restaurante→Restaurant, clínica→MedicalBusiness,
+  abogados→LegalService, fontanería/electricidad→HomeAndConstructionBusiness,
+  default→LocalBusiness
+  Incluir: name, telephone, address (addressLocality), url, sameAs vacío []
 
 Devuelve SOLO este JSON (sin markdown):
-{"index.html":"...html completo...", "servicios.html":"...","nosotros.html":"...","contacto.html":"...","sitemap.xml":"...xml...","robots.txt":"..."}`;
+{"index.html":"...html completo con SEO aplicado...","sitemap.xml":"...xml...","robots.txt":"..."}`;
 
 // ─── Servicio ─────────────────────────────────────────────────────────────────
 
@@ -217,9 +264,9 @@ export class WebBuilderAgentService {
     await log('extract', `Datos extraídos: ${businessData.nombre} · ${businessData.sector}`, 'done');
 
     // ── Fase 2: Construir las 4 páginas HTML ───────────────────────────────────
-    await log('pages', 'Construyendo las 4 páginas HTML...');
+    await log('pages', 'Construyendo landing page gaming con 3 pantallas...');
     const rawPages = await this.buildPages(businessData, dto.logo_url);
-    await log('pages', 'index.html, servicios.html, nosotros.html, contacto.html generados', 'done');
+    await log('pages', 'Landing page generada — hero, prueba social, CTA final', 'done');
 
     // ── Fase 3: Añadir efecto scroll al hero ───────────────────────────────────
     await log('scroll', 'Añadiendo efecto scroll cinematográfico al hero...');
@@ -230,7 +277,7 @@ export class WebBuilderAgentService {
     // ── Fase 4: SEO completo ───────────────────────────────────────────────────
     await log('seo', 'Optimizando SEO, Schema.org y performance...');
     const finalFiles = await this.applySeo(pagesWithScroll, businessData);
-    await log('seo', 'SEO, sitemap.xml y robots.txt aplicados', 'done');
+    await log('seo', 'SEO local, Schema.org, sitemap.xml y robots.txt aplicados', 'done');
 
     // ── Guardar archivos y actualizar fase ─────────────────────────────────────
     await this.prisma.webProyecto.update({
@@ -261,7 +308,7 @@ export class WebBuilderAgentService {
   private async buildPages(data: Record<string, any>, logoUrl?: string): Promise<Record<string, string>> {
     const msg = await this.anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 8000,
       system: BUILD_SYSTEM,
       messages: [{
         role: 'user',
