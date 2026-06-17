@@ -33,7 +33,11 @@ class UpdateStatusDto {
 }
 
 class UpdatePlanDto {
-  @IsIn(['starter', 'professional', 'enterprise', 'internal']) plan: string;
+  @IsIn(['nano', 'small', 'medium', 'large', 'enterprise', 'starter', 'professional', 'internal']) plan: string;
+}
+
+class UpdateAccountTypeDto {
+  @IsString() account_type: string;
 }
 
 @ApiTags('Platform & Network')
@@ -84,6 +88,18 @@ export class PlatformController {
   @ApiOperation({ summary: '[PLATFORM] Cambiar plan de un tenant' })
   updatePlan(@Param('tenantId') tenantId: string, @Body() dto: UpdatePlanDto, @Request() req: any) {
     return this.service.updatePlan(req.user.tenant_id, tenantId, dto.plan);
+  }
+
+  @Patch('platform/network/:tenantId/account-type')
+  @ApiOperation({ summary: '[PLATFORM] Cambiar tipo de cuenta de un tenant' })
+  updateAccountType(@Param('tenantId') tenantId: string, @Body() dto: UpdateAccountTypeDto, @Request() req: any) {
+    return this.service.updateAccountType(req.user.tenant_id, tenantId, dto.account_type);
+  }
+
+  @Post('platform/network/:tenantId/migration-bundle')
+  @ApiOperation({ summary: '[PLATFORM] Generar bundle de migración a servidor propio' })
+  generateMigrationBundle(@Param('tenantId') tenantId: string, @Request() req: any) {
+    return this.service.generateMigrationBundle(req.user.tenant_id, tenantId);
   }
 
   // ── NETWORK endpoints ──────────────────────────────────────────────────────

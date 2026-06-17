@@ -31,6 +31,11 @@ model Tenant {
   max_agents Int    @default(20)
   status     String @default("active")
 
+  // Migración a servidor propio
+  migration_status  String?   // null | 'bundle_generated' | 'migrated'
+  migration_at      DateTime?
+  self_hosted_url   String?
+
   campus_config Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
 
   created_at DateTime @default(now())
@@ -77,6 +82,7 @@ model Tenant {
   vault_entries          VaultEntry[]
   brain_documents        EmpresaBrainDocument[]
   secretary_config       SecretaryConfig?
+  learning_proposals     AgentLearningProposal[]
   billing_config         BillingConfig?
   pending_approvals      PendingApproval[]
   delegation_history     DelegationHistory[]
@@ -148,12 +154,16 @@ model TeamSlot {
   desk_access     String? @default("FULL") // FULL | LIGHT | NONE
 
   // Solo agentes IA
-  agent_config  Json? // { model, instructions, tools[], limits, personality }
+  agent_config  Json? // { model, instructions, tools[], limits, personality, stt_provider, stt_model, tts_provider, tts_model, tts_voice_id }
   agent_scope   String? // personal | department | company
-  agent_role    String? // focus_agent | daily_assistant | department_agent | company_agent | ceo
+  agent_role    String? // focus_agent | daily_assistant | department_agent | company_agent | ceo | comunicacion
   owner_slot_id String? // for personal agents: their human owner's slot id
   owner_slot    TeamSlot?  @relation("AgentOwner", fields: [owner_slot_id], references: [id])
   owned_agents  TeamSlot[] @relation("AgentOwner")
+
+  // Aprendizaje y templates
+  derived_from_template_id  String?   // slot_id del agente master en tenant PLATFORM
+  template_sync_at          DateTime? // última vez que se sincronizó el conocimiento del master
 
   secretary_config Json?   // { connected_tools[], workflow_templates[], delegation_preferences }
   // PBX Conmutador
@@ -193,6 +203,7 @@ model TeamSlot {
   recognitions_received  RecognitionEvent[]  @relation("RecognizedSlot")
   goal_setup_status      GoalSetupStatus?
   calls_handled          PhoneCall[]
+  learning_proposals     AgentLearningProposal[]
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -1675,4 +1686,31 @@ enum CallStatus {
   COMPLETED
   MISSED
   VOICEMAIL
+}
+
+// ═════════════════════════════════════════════
+// APRENDIZAJE DE AGENTES — Propuestas semanales
+// ═════════════════════════════════════════════
+
+model AgentLearningProposal {
+  id            String   @id @default(cuid())
+  tenant_id     String
+  tenant        Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id      String
+  agent         TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  week_start       DateTime
+  proposal_type    String   // 'pattern_detected' | 'external_best_practice' | 'master_update'
+  summary          String   // resumen legible para el supervisor humano
+  proposed_changes Json     // cambios concretos al agent_config o knowledge
+  status           String   @default("pending") // pending | approved | rejected | applied
+  reviewed_by      String?  // slot_id del supervisor humano que respondió
+  reviewed_at      DateTime?
+  source_urls      Json?    // URLs de fuentes externas (Firecrawl)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([tenant_id, status])
+  @@index([agent_id])
+  @@index([tenant_id, week_start])
 }

@@ -128,6 +128,144 @@ export class PlatformService {
     return this.prisma.tenant.update({ where: { id: targetId }, data: { plan } });
   }
 
+  async updateAccountType(callerTenantId: string, targetId: string, account_type: string) {
+    await this.assertPlatform(callerTenantId);
+    const existing = await this.prisma.tenant.findUnique({ where: { id: targetId }, select: { campus_config: true } });
+    const cfg = (existing?.campus_config as Record<string, unknown>) ?? {};
+    return this.prisma.tenant.update({ where: { id: targetId }, data: { campus_config: { ...cfg, account_type } } });
+  }
+
+  // ─── PLATFORM: migración a servidor propio ─────────────────────────────────
+
+  async generateMigrationBundle(callerTenantId: string, targetId: string) {
+    await this.assertPlatform(callerTenantId);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: targetId },
+      include: {
+        team_slots: { where: { role: 'owner', type: 'HUMAN' }, select: { name: true, email: true }, take: 1 },
+        secretary_config: { select: { evolution_instance: true } },
+      },
+    });
+    if (!tenant) throw new NotFoundException('Tenant no encontrado');
+
+    const slug = tenant.slug;
+    const owner = tenant.team_slots[0];
+
+    const dockerCompose = `version: '3.8'
+services:
+  api:
+    image: ghcr.io/mentoria/flowdesk-api:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+  desk:
+    image: ghcr.io/mentoria/flowdesk-desk:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:3001/api/v1
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flowdesk
+      POSTGRES_USER: flowdesk
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+`;
+
+    const envTemplate = `# ── Base de datos ────────────────────────────────────────────
+DATABASE_URL=postgresql://flowdesk:\${POSTGRES_PASSWORD}@postgres:5432/flowdesk?schema=public
+POSTGRES_PASSWORD=CAMBIAR_ESTO_POR_CONTRASEÑA_SEGURA
+
+# ── JWT ──────────────────────────────────────────────────────
+JWT_SECRET=CAMBIAR_ESTO_POR_SECRET_DE_AL_MENOS_64_CARACTERES
+
+# ── Supabase Storage (o usar almacenamiento propio) ──────────
+SUPABASE_URL=https://TU_PROYECTO.supabase.co
+SUPABASE_SERVICE_KEY=TU_SUPABASE_SERVICE_KEY
+
+# ── OpenAI / Proveedor de IA ─────────────────────────────────
+OPENAI_API_KEY=TU_OPENAI_API_KEY
+ANTHROPIC_API_KEY=TU_ANTHROPIC_API_KEY
+
+# ── Evolution API (WhatsApp) ──────────────────────────────────
+EVOLUTION_API_URL=http://evolution:8080
+EVOLUTION_API_KEY=TU_EVOLUTION_KEY
+EVOLUTION_INSTANCE=${tenant.secretary_config?.evolution_instance ?? slug + '-instance'}
+
+# ── Tenant raíz (se crea automáticamente en primer boot) ────
+ROOT_TENANT_SLUG=${slug}
+ROOT_OWNER_EMAIL=${owner?.email ?? 'admin@' + slug + '.com'}
+ROOT_OWNER_NAME=${owner?.name ?? 'Administrador'}
+
+# ── App ──────────────────────────────────────────────────────
+NODE_ENV=production
+PORT=3001
+FRONTEND_URL=http://localhost:3000
+`;
+
+    const instructions = `# Guía de instalación — FlowDesk Self-Hosted
+
+## Requisitos
+- Docker + Docker Compose v2
+- 4 GB RAM mínimo (8 GB recomendado)
+- Dominio propio (opcional pero recomendado)
+
+## Pasos
+
+1. Copia los archivos docker-compose.yml y .env en un directorio vacío
+2. Edita .env con tus valores reales
+3. Levanta los servicios:
+   \`\`\`
+   docker compose up -d
+   \`\`\`
+4. Crea la base de datos (primera vez):
+   \`\`\`
+   docker compose exec api npx prisma migrate deploy
+   \`\`\`
+5. Importa los datos exportados desde FlowDesk Cloud:
+   \`\`\`
+   docker compose exec -i postgres psql -U flowdesk flowdesk < flowdesk-export.sql
+   \`\`\`
+
+## Soporte
+Para soporte de instalación: soporte@flowdesk.mx
+`;
+
+    // Marcar tenant como bundle_generated
+    await this.prisma.tenant.update({
+      where: { id: targetId },
+      data: { migration_status: 'bundle_generated', migration_at: new Date() },
+    });
+
+    return {
+      tenant_name: tenant.name,
+      tenant_slug: slug,
+      docker_compose: dockerCompose,
+      env_template: envTemplate,
+      instructions,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
   // ─── PLATFORM: provisionar nuevo tenant ────────────────────────────────────
 
   async provisionTenant(callerTenantId: string, dto: {

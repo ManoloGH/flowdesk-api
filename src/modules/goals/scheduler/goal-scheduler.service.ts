@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../../database/prisma.service';
 import { ReportGeneratorService } from '../services/report-generator.service';
+import { AgentLearningService } from '../../agent-learning/agent-learning.service';
 import { startOfWeek, startOfMonth, subDays } from 'date-fns';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class GoalSchedulerService {
   constructor(
     private prisma: PrismaService,
     private reportGenerator: ReportGeneratorService,
+    private agentLearning: AgentLearningService,
   ) {}
 
   // ─── Snapshot diario (EOD — 23:00) ───────────────────────────────────────
@@ -54,6 +56,23 @@ export class GoalSchedulerService {
         this.logger.error(`Error en informes semanales (tenant ${tenant.id}): ${err.message}`);
       }
     }
+  }
+
+  // ─── Aprendizaje semanal de agentes (lunes 6:00am — antes de los informes AUP) ─
+
+  @Cron('0 6 * * 1', { name: 'weekly-agent-learning' })
+  async weeklyAgentLearning() {
+    this.logger.log('Iniciando ciclo semanal de aprendizaje de agentes...');
+    const tenants = await this.prisma.tenant.findMany({
+      where: { status: 'active' },
+      select: { id: true },
+    });
+    for (const tenant of tenants) {
+      await this.agentLearning.generateWeeklyProposals(tenant.id).catch(err =>
+        this.logger.error(`Error en aprendizaje semanal (tenant ${tenant.id}): ${err.message}`),
+      );
+    }
+    this.logger.log(`Ciclo de aprendizaje completado — ${tenants.length} tenants`);
   }
 
   // ─── Informes mensuales (día 1 de cada mes, 8:00am) ─────────────────────

@@ -1180,6 +1180,15 @@ Máximo 5 procesos. Si no hay procesos claros, devuelve { "processes": [], "summ
     });
   }
 
+  async renameCeoAgent(tenantId: string, name: string): Promise<{ ok: boolean }> {
+    const ceo = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, agent_role: 'ceo' },
+    });
+    if (!ceo) return { ok: false };
+    await this.prisma.teamSlot.update({ where: { id: ceo.id }, data: { name } });
+    return { ok: true };
+  }
+
   private async createDefaultPipeline(tenantId: string): Promise<void> {
     const existing = await this.prisma.pipeline.findFirst({ where: { tenant_id: tenantId } });
     if (existing) return;

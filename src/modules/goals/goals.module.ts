@@ -8,9 +8,11 @@ import { ReportGeneratorService } from './services/report-generator.service';
 import { RecognitionService } from './services/recognition.service';
 import { GoalAlignmentService } from './services/goal-alignment.service';
 import { GoalSchedulerService } from './scheduler/goal-scheduler.service';
+import { AgentLearningModule } from '../agent-learning/agent-learning.module';
+import { AgentLearningService } from '../agent-learning/agent-learning.service';
 
 @Module({
-  imports: [PrismaModule, ScheduleModule.forRoot()],
+  imports: [PrismaModule, ScheduleModule.forRoot(), AgentLearningModule],
   controllers: [GoalsController],
   providers: [
     KsfService,
@@ -19,6 +21,7 @@ import { GoalSchedulerService } from './scheduler/goal-scheduler.service';
     RecognitionService,
     GoalAlignmentService,
     GoalSchedulerService,
+    AgentLearningService,
   ],
   exports: [
     KsfService,

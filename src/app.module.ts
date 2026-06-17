@@ -43,6 +43,7 @@ import { SecretaryModule } from './modules/secretary/secretary.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
+import { AgentLearningModule } from './modules/agent-learning/agent-learning.module';
 import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
@@ -114,9 +115,10 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     InstallationAgentModule,
     // Sales — Pipeline + Agente Comercial
     SalesModule,
-    // Agent Intelligence — Calibración y Evolución autónoma
+    // Agent Intelligence — Calibración, Evolución y Aprendizaje semanal
     AgentCalibrationModule,
     AgentEvolutionModule,
+    AgentLearningModule,
     WeeklyMeetingModule,
   ],
   providers: [

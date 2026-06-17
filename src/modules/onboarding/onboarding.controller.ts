@@ -175,6 +175,14 @@ export class OnboardingController {
     return this.onboarding.saveAiConfig(tenantId, config);
   }
 
+  @Post('rename-ceo')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Público] Paso 7b — Ponerle nombre al CEO Digital' })
+  renameCeo(@Body() body: { tenantId: string; name: string }) {
+    return this.onboarding.renameCeoAgent(body.tenantId, body.name);
+  }
+
   @Post('conmutador')
   @Public()
   @HttpCode(HttpStatus.OK)
