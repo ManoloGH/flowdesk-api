@@ -23,6 +23,19 @@ export class PlatformService {
     if (!hasPlatformAccess) throw new ForbiddenException('Acceso restringido a la plataforma.');
   }
 
+  // Expuesto para el controller de auditoría
+  async assertPlatformAccess(tenantId: string) {
+    return this.assertPlatform(tenantId);
+  }
+
+  async setMigratedUrl(targetId: string, self_hosted_url: string) {
+    return this.prisma.tenant.update({
+      where: { id: targetId },
+      data: { migration_status: 'migrated', self_hosted_url, migration_at: new Date() },
+      select: { id: true, migration_status: true, self_hosted_url: true, migration_at: true },
+    });
+  }
+
   private async assertNetworkOrAbove(tenantId: string) {
     const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { tenant_type: true } });
     if (!t || (t.tenant_type !== 'PLATFORM' && t.tenant_type !== 'NETWORK'))
@@ -455,6 +468,483 @@ ${stats.filter(s => s.count > 0).map(s => `- **${s.table}**: ${s.count} registro
 - Horario: Lunes a Viernes, 9:00 - 18:00 CST
 `;
 
+    // Verification script with expected counts embedded
+    const expectedCountsBlock = stats
+      .filter(s => s.count > 0)
+      .map(s => `  check "${s.table}" "$(psql_count \\"${s.table}\\")" "${s.count}"`)
+      .join('\n');
+
+    const verifySh = `#!/bin/bash
+# ════════════════════════════════════════════════════════
+# FlowDesk — Script de verificación post-migración
+# Cliente: ${tenant.name} (${slug})
+# Exportado: ${new Date().toISOString()}
+# ════════════════════════════════════════════════════════
+set -e
+
+ERRORS=0
+WARNINGS=0
+
+ok()   { echo "  ✅ $1"; }
+warn() { echo "  ⚠️  $1"; WARNINGS=$((WARNINGS+1)); }
+fail() { echo "  ❌ $1"; ERRORS=$((ERRORS+1)); }
+
+psql_count() {
+  docker compose exec -T postgres psql -U flowdesk -d flowdesk -At \\
+    -c "SELECT COUNT(*) FROM \\"$1\\"" 2>/dev/null || echo "ERROR"
+}
+
+check() {
+  local name=$1 actual=$2 expected=$3
+  if [ "$actual" = "$expected" ]; then
+    ok "$name: $actual/$expected registros"
+  elif [ "$actual" = "ERROR" ]; then
+    fail "$name: tabla no accesible"
+  else
+    warn "$name: $actual registros (esperados $expected)"
+  fi
+}
+
+echo ""
+echo "╔══════════════════════════════════════════════╗"
+echo "║  FlowDesk — Verificación de migración         ║"
+echo "║  Cliente: ${(tenant.name + '                         ').slice(0, 30)} ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+
+# ── 1. Docker y servicios ─────────────────────────────
+echo "── Servicios Docker ──"
+if docker compose ps | grep -q "Up"; then
+  ok "Servicios Docker en ejecución"
+else
+  fail "Los servicios Docker no están corriendo — ejecuta: docker compose up -d"
+fi
+
+# ── 2. PostgreSQL ─────────────────────────────────────
+echo ""
+echo "── Base de datos ──"
+if docker compose exec -T postgres pg_isready -U flowdesk -d flowdesk &>/dev/null; then
+  ok "PostgreSQL responde"
+else
+  fail "PostgreSQL no responde"
+fi
+
+# Verificar extensión pgvector
+VECTOR_EXT=$(docker compose exec -T postgres psql -U flowdesk -d flowdesk -At -c "SELECT COUNT(*) FROM pg_extension WHERE extname='vector'" 2>/dev/null || echo "0")
+if [ "$VECTOR_EXT" = "1" ]; then
+  ok "Extensión pgvector instalada"
+else
+  warn "pgvector no encontrada — los embeddings del Brain no funcionarán"
+fi
+
+# ── 3. Conteo de tablas ───────────────────────────────
+echo ""
+echo "── Registros por tabla ──"
+${expectedCountsBlock}
+
+# ── 4. API ────────────────────────────────────────────
+echo ""
+echo "── API HTTP ──"
+API_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/v1/health 2>/dev/null || echo "000")
+if [ "$API_CODE" = "200" ] || [ "$API_CODE" = "204" ]; then
+  ok "API respondiendo (HTTP $API_CODE)"
+else
+  warn "API en http://localhost:3001 no responde (HTTP $API_CODE). Puede estar iniciando."
+fi
+
+DESK_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "000")
+if [ "$DESK_CODE" = "200" ] || [ "$DESK_CODE" = "304" ]; then
+  ok "Frontend respondiendo (HTTP $DESK_CODE)"
+else
+  warn "Frontend en http://localhost:3000 no responde (HTTP $DESK_CODE). Puede estar compilando."
+fi
+
+# ── 5. Resultado ──────────────────────────────────────
+echo ""
+echo "══════════════════════════════════════════════════"
+if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+  echo "  ✅ Migración verificada al 100%"
+elif [ "$ERRORS" -eq 0 ]; then
+  echo "  ⚠️  $WARNINGS advertencias — revisa los detalles arriba"
+else
+  echo "  ❌ $ERRORS errores críticos + $WARNINGS advertencias"
+  echo "     Consulta INSTALL.md sección 'Solución de problemas'"
+fi
+echo "══════════════════════════════════════════════════"
+echo ""
+`;
+
+    const migrationManual = `# Manual de Migración FlowDesk
+## De SaaS Cloud a Servidor Propio — Guía Completa
+
+**Cliente:** ${tenant.name} · **Slug:** ${slug}
+**Generado:** ${new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
+---
+
+## 1. ¿Qué significa esta migración?
+
+Al completar este proceso, la empresa **${tenant.name}** tendrá:
+
+- Una **copia exacta e idéntica** de su FlowDesk (equipo, agentes, conversaciones, datos de CRM, Brain, etc.)
+- **Propiedad perpetua** del software — sin pagos mensuales de SaaS
+- **Independencia total** de FlowDesk Cloud — pueden operar aunque MentorIA dejara de existir
+- **Datos bajo su control** en su propia infraestructura (nube propia o servidor físico)
+
+> ⚠️ Después de la migración, las actualizaciones de software se contratan por separado con MentorIA o se aplican manualmente.
+
+---
+
+## 2. Archivos del paquete de migración
+
+| Archivo | Descripción | Cuándo usar |
+|---------|-------------|-------------|
+| \`docker-compose.yml\` | Stack completo de FlowDesk | Siempre, base de todo |
+| \`.env\` | Variables de entorno con valores reales | Editar antes de instalar |
+| \`setup.sh\` | Instalación automática | Primer arranque |
+| \`${slug}-data.sql\` | Todos los datos del tenant en SQL | Import post-schema |
+| \`verify.sh\` | Verificación post-instalación | Después de importar datos |
+| \`INSTALL.md\` | Guía técnica de instalación | Referencia durante install |
+
+---
+
+## 3. Requisitos del servidor destino
+
+### Mínimo recomendado
+| Recurso | Mínimo | Recomendado |
+|---------|--------|-------------|
+| RAM | 4 GB | 8 GB |
+| CPU | 2 vCPUs | 4 vCPUs |
+| Disco | 20 GB | 60 GB SSD |
+| OS | Ubuntu 22.04 | Ubuntu 22.04 LTS |
+
+### Software requerido
+- **Docker** v24 o superior
+- **Docker Compose** v2 (incluido en Docker Desktop)
+- **curl** (para verificaciones)
+- Acceso SSH al servidor
+
+### Puertos necesarios
+| Puerto | Servicio | Acceso |
+|--------|---------|--------|
+| 22 | SSH | Solo IPs de admin |
+| 80 | HTTP → redirect HTTPS | Público |
+| 443 | HTTPS (app + API) | Público |
+| 5432 | PostgreSQL | Solo localhost |
+| 6379 | Redis | Solo localhost |
+
+---
+
+## 4. Proceso de migración paso a paso
+
+### Fase 1 — Preparación (FlowDesk Cloud)
+
+**4.1. Ejecutar auditoría pre-migración**
+En el panel de admin de FlowDesk, ve a **Admin → Clientes → ${tenant.name} → Revisar migración** y ejecuta la auditoría. Asegúrate de que todos los checks sean ✅ o ⚠️ (sin ❌).
+
+**4.2. Descargar el paquete completo**
+Descarga los 6 archivos. Guárdalos en un directorio seguro.
+
+**4.3. Revisar el archivo .env**
+Abre \`.env\` y verifica/completa:
+- \`POSTGRES_PASSWORD\` — cámbialo por una contraseña segura
+- \`JWT_SECRET\` — genera uno nuevo: \`openssl rand -hex 32\`
+- \`SUPABASE_URL\` y \`SUPABASE_SERVICE_KEY\` — tu proyecto Supabase propio
+- Las demás variables ya vienen pre-rellenadas con tus valores reales
+
+---
+
+### Fase 2 — Instalación en el servidor
+
+**4.4. Subir archivos al servidor**
+\`\`\`bash
+# Crear directorio
+ssh usuario@tu-servidor "mkdir -p /opt/flowdesk"
+
+# Subir archivos
+scp docker-compose.yml .env setup.sh ${slug}-data.sql verify.sh INSTALL.md \\
+    usuario@tu-servidor:/opt/flowdesk/
+\`\`\`
+
+**4.5. Conectarse al servidor y ejecutar setup**
+\`\`\`bash
+ssh usuario@tu-servidor
+cd /opt/flowdesk
+
+# Dar permisos de ejecución
+chmod +x setup.sh verify.sh
+
+# Ejecutar instalación automática
+./setup.sh
+\`\`\`
+
+El script hace automáticamente:
+1. Levanta PostgreSQL y Redis
+2. Espera a que PostgreSQL esté lista
+3. Habilita la extensión \`pgvector\`
+4. Aplica el schema de Prisma (\`migrate deploy\`)
+5. Importa \`${slug}-data.sql\` con todos tus datos
+6. Levanta la API y el frontend
+
+**Si prefieres instalación manual**, sigue los pasos en \`INSTALL.md\`.
+
+---
+
+### Fase 3 — Verificación
+
+**4.6. Ejecutar script de verificación**
+\`\`\`bash
+./verify.sh
+\`\`\`
+
+Resultado esperado:
+\`\`\`
+  ✅ Servicios Docker en ejecución
+  ✅ PostgreSQL responde
+  ✅ pgvector instalada
+  ✅ Tenant: 1/1 registros
+  ✅ TeamSlot: XX/XX registros
+  ... (todos los checks en verde)
+  ✅ API respondiendo
+  ✅ Migración verificada al 100%
+\`\`\`
+
+**4.7. Verificación manual — iniciar sesión**
+1. Abre \`http://localhost:3000\` (o tu dominio si ya está configurado)
+2. Inicia sesión con tus credenciales habituales
+3. Verifica que puedas ver tu equipo, agentes, conversaciones y datos
+
+**4.8. Verificar agentes de IA**
+1. Ve a **Agentes**
+2. Abre una conversación con **Atlas** (tu CEO Agent)
+3. Si Atlas responde correctamente, el Vault está bien configurado
+
+**4.9. Verificar el Brain**
+1. Ve a **Brain**
+2. Haz una búsqueda sobre un tema que sepas que está documentado
+3. Si devuelve resultados, los vectores están intactos
+
+---
+
+### Fase 4 — Configurar dominio propio
+
+**4.10. DNS**
+En tu proveedor de dominios, crea dos registros A:
+\`\`\`
+tudominio.com       → IP de tu servidor
+api.tudominio.com   → IP de tu servidor
+\`\`\`
+O usa un subdominio:
+\`\`\`
+flowdesk.tuempresa.com     → IP de tu servidor
+api.flowdesk.tuempresa.com → IP de tu servidor
+\`\`\`
+
+**4.11. Reverse proxy con Nginx + SSL (Certbot)**
+\`\`\`bash
+# Instalar Nginx y Certbot
+sudo apt install nginx certbot python3-certbot-nginx
+
+# Crear configuración para la app
+sudo tee /etc/nginx/sites-available/flowdesk << 'NGINX'
+server {
+    listen 80;
+    server_name tudominio.com;
+    location / { proxy_pass http://localhost:3000; proxy_set_header Host $host; }
+}
+server {
+    listen 80;
+    server_name api.tudominio.com;
+    location / { proxy_pass http://localhost:3001; proxy_set_header Host $host; }
+}
+NGINX
+
+sudo ln -s /etc/nginx/sites-available/flowdesk /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# Obtener certificado SSL
+sudo certbot --nginx -d tudominio.com -d api.tudominio.com
+\`\`\`
+
+**4.12. Actualizar .env con dominio real**
+\`\`\`bash
+# Editar .env
+nano /opt/flowdesk/.env
+
+# Cambiar estas líneas:
+FRONTEND_URL=https://tudominio.com
+FRONTEND_API_URL=https://api.tudominio.com/api/v1
+
+# Reiniciar
+docker compose restart
+\`\`\`
+
+---
+
+### Fase 5 — Post-migración en FlowDesk Cloud
+
+**4.13. Confirmar migración en el panel admin**
+En FlowDesk Cloud → Admin → Clientes → ${tenant.name} → **Verificar servidor propio**, ingresa la URL del nuevo servidor y haz clic en verificar. Esto marcará oficialmente la empresa como migrada.
+
+---
+
+## 5. Rotación de claves (post-verificación)
+
+Una vez que todo esté funcionando al 100%, rota las claves sensibles:
+
+### 5.1. Nueva ENCRYPTION_KEY
+La \`ENCRYPTION_KEY\` actual es la misma que la de FlowDesk Cloud — eso está bien por diseño, pero después de migrar deberías tener la tuya propia:
+
+\`\`\`bash
+# 1. Generar nueva clave
+NEW_KEY=$(openssl rand -hex 32)
+echo "Nueva clave: $NEW_KEY"
+
+# 2. Actualizar .env
+sed -i "s/^ENCRYPTION_KEY=.*/ENCRYPTION_KEY=$NEW_KEY/" /opt/flowdesk/.env
+
+# 3. Re-cifrar el Vault (el API lo hace al arrancar con la nueva clave)
+docker compose exec api npx ts-node -e "
+const { PrismaClient } = require('@prisma/client');
+// Script de rotación de clave - contactar a soporte@flowdesk.mx
+console.log('Contactar soporte para script de rotación completo')
+"
+\`\`\`
+
+> Para ayuda con la rotación de ENCRYPTION_KEY, contacta a soporte@flowdesk.mx
+
+### 5.2. Nuevo JWT_SECRET
+\`\`\`bash
+NEW_JWT=$(openssl rand -hex 32)
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$NEW_JWT/" /opt/flowdesk/.env
+docker compose restart api
+\`\`\`
+
+Esto cerrará todas las sesiones activas — los usuarios deberán volver a iniciar sesión.
+
+### 5.3. Nueva contraseña de PostgreSQL
+\`\`\`bash
+# 1. Cambiar en PostgreSQL
+docker compose exec postgres psql -U flowdesk -c "ALTER USER flowdesk PASSWORD 'nueva_contraseña_segura';"
+
+# 2. Actualizar .env
+sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=nueva_contraseña_segura/" /opt/flowdesk/.env
+sed -i "s|postgresql://flowdesk:.*@|postgresql://flowdesk:nueva_contraseña_segura@|" /opt/flowdesk/.env
+
+# 3. Reiniciar
+docker compose restart api
+\`\`\`
+
+---
+
+## 6. Backups automáticos
+
+### Backup de base de datos (recomendado: diario)
+\`\`\`bash
+# Crear script de backup
+sudo tee /opt/flowdesk/backup.sh << 'EOF'
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR=/opt/flowdesk/backups
+mkdir -p $BACKUP_DIR
+
+docker compose -f /opt/flowdesk/docker-compose.yml exec -T postgres \\
+  pg_dump -U flowdesk flowdesk | gzip > $BACKUP_DIR/flowdesk_$DATE.sql.gz
+
+# Mantener solo los últimos 30 días
+find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
+echo "Backup completado: flowdesk_$DATE.sql.gz"
+EOF
+
+chmod +x /opt/flowdesk/backup.sh
+
+# Programar en cron (diario a las 3am)
+echo "0 3 * * * /opt/flowdesk/backup.sh >> /var/log/flowdesk-backup.log 2>&1" | crontab -
+\`\`\`
+
+---
+
+## 7. Actualizaciones de FlowDesk
+
+Las actualizaciones de software se pueden contratar con MentorIA o aplicar manualmente:
+
+\`\`\`bash
+# Descargar nueva imagen
+docker compose pull
+
+# Aplicar migraciones de schema (si las hay)
+docker compose run --rm api npx prisma migrate deploy
+
+# Reiniciar con nueva versión
+docker compose up -d --force-recreate
+\`\`\`
+
+---
+
+## 8. Solución de problemas frecuentes
+
+### ❌ "no se puede conectar a la base de datos"
+\`\`\`bash
+# Verificar que postgres esté corriendo
+docker compose ps postgres
+# Verificar logs
+docker compose logs postgres --tail 20
+# Verificar DATABASE_URL en .env
+grep DATABASE_URL /opt/flowdesk/.env
+\`\`\`
+
+### ❌ "Vault entries no descifran"
+El .env incluye la ENCRYPTION_KEY original de FlowDesk Cloud. Si el descifrado falla:
+1. Verifica que \`ENCRYPTION_KEY\` en tu .env sea exactamente la que vino en el paquete
+2. No debe tener espacios ni comillas adicionales
+\`\`\`bash
+grep ENCRYPTION_KEY /opt/flowdesk/.env
+\`\`\`
+
+### ❌ "Los vectores del Brain no funcionan"
+\`\`\`bash
+# Verificar pgvector
+docker compose exec postgres psql -U flowdesk -d flowdesk -c "SELECT extname, extversion FROM pg_extension WHERE extname='vector';"
+
+# Si no está instalada:
+docker compose exec postgres psql -U flowdesk -d flowdesk -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Re-generar embeddings vacíos
+curl -X POST http://localhost:3001/api/v1/brain/reindex \\
+  -H "Authorization: Bearer TU_JWT_TOKEN"
+\`\`\`
+
+### ⚠️ "Los agentes de IA no responden"
+1. Verifica que las API keys (Anthropic/OpenAI) estén correctas en el .env
+2. Verifica la conectividad a los proveedores de IA:
+\`\`\`bash
+curl -s https://api.anthropic.com/v1/messages \\
+  -H "x-api-key: $(grep ANTHROPIC_API_KEY /opt/flowdesk/.env | cut -d= -f2)" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "content-type: application/json" \\
+  -d '{"model":"claude-haiku-4-5-20251001","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}'
+\`\`\`
+
+### ⚠️ "WhatsApp/Atlas no funciona"
+1. La instancia Evolution API debe apuntarse a tu nueva URL
+2. Actualiza \`EVOLUTION_INSTANCE\` en .env si cambiaste el nombre
+3. Contacta a MentorIA para migrar la instancia Evolution a tu servidor
+
+---
+
+## 9. Contacto y soporte
+
+| Canal | Contacto | Disponibilidad |
+|-------|---------|----------------|
+| Email | soporte@flowdesk.mx | L-V 9:00-18:00 CST |
+| WhatsApp | +52 (contacto en onboarding) | L-V 9:00-18:00 CST |
+| Urgencias | soporte@mentoria.mx | 24/7 con SLA Enterprise |
+
+---
+
+*FlowDesk es desarrollado por MentorIA · flowdesk.mx*
+`;
+
     // Marcar tenant como bundle_generated
     await this.prisma.tenant.update({
       where: { id: targetId },
@@ -467,7 +957,9 @@ ${stats.filter(s => s.count > 0).map(s => `- **${s.table}**: ${s.count} registro
       docker_compose: dockerCompose,
       env_content: envContent,
       setup_sh: setupSh,
+      verify_sh: verifySh,
       install_md: instructions,
+      migration_manual: migrationManual,
       data_sql: dataSql,
       export_stats: stats.filter(s => s.count > 0),
       generated_at: new Date().toISOString(),

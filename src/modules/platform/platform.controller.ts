@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlatformService } from './platform.service';
+import { MigrationAuditService } from './migration-audit.service';
 
 class ProvisionTenantDto {
   @IsString()  name: string;
@@ -40,12 +41,23 @@ class UpdateAccountTypeDto {
   @IsString() account_type: string;
 }
 
+class PingRemoteDto {
+  @IsString() self_hosted_url: string;
+}
+
+class MarkMigratedDto {
+  @IsString() self_hosted_url: string;
+}
+
 @ApiTags('Platform & Network')
 @ApiBearerAuth()
 @Controller()
 export class PlatformController {
   private readonly logger = new Logger(PlatformController.name);
-  constructor(private service: PlatformService) {}
+  constructor(
+    private service: PlatformService,
+    private audit: MigrationAuditService,
+  ) {}
 
   // ── PLATFORM endpoints ─────────────────────────────────────────────────────
 
@@ -100,6 +112,31 @@ export class PlatformController {
   @ApiOperation({ summary: '[PLATFORM] Generar bundle de migración a servidor propio' })
   generateMigrationBundle(@Param('tenantId') tenantId: string, @Request() req: any) {
     return this.service.generateMigrationBundle(req.user.tenant_id, tenantId);
+  }
+
+  @Get('platform/network/:tenantId/migration-audit')
+  @ApiOperation({ summary: '[PLATFORM] Auditoría pre-migración: integridad y completitud de datos' })
+  async runMigrationAudit(@Param('tenantId') tenantId: string, @Request() req: any) {
+    await this.service.assertPlatformAccess(req.user.tenant_id);
+    return this.audit.runPreMigrationAudit(tenantId);
+  }
+
+  @Post('platform/network/:tenantId/migration-ping')
+  @ApiOperation({ summary: '[PLATFORM] Verificar que el servidor destino responde' })
+  async pingRemote(@Param('tenantId') tenantId: string, @Body() dto: PingRemoteDto, @Request() req: any) {
+    await this.service.assertPlatformAccess(req.user.tenant_id);
+    const result = await this.audit.pingRemoteInstance(dto.self_hosted_url);
+    if (result.reachable) {
+      await this.service.setMigratedUrl(tenantId, dto.self_hosted_url);
+    }
+    return result;
+  }
+
+  @Patch('platform/network/:tenantId/migration-status')
+  @ApiOperation({ summary: '[PLATFORM] Marcar tenant como migrado al servidor propio' })
+  async markMigrated(@Param('tenantId') tenantId: string, @Body() dto: MarkMigratedDto, @Request() req: any) {
+    await this.service.assertPlatformAccess(req.user.tenant_id);
+    return this.service.setMigratedUrl(tenantId, dto.self_hosted_url);
   }
 
   // ── NETWORK endpoints ──────────────────────────────────────────────────────
