@@ -7,6 +7,9 @@ node_modules/
 .env.production
 .env*.local
 
+# Scripts con credenciales — nunca commitear
+reset-password.js
+
 # Build output
 dist/
 
