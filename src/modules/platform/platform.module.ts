@@ -7,6 +7,6 @@ import { MigrationAuditService } from './migration-audit.service';
 @Module({
   controllers: [PlatformController],
   providers: [PlatformService, TenantExportService, MigrationAuditService],
-  exports: [PlatformService, TenantExportService, MigrationAuditService],
+  exports: [PlatformService],
 })
 export class PlatformModule {}

@@ -160,11 +160,6 @@ export class PlatformService {
     return this.buildBundle(targetId);
   }
 
-  // Accesible desde cualquier cuenta: genera el bundle del propio tenant
-  async generateBundleForTenant(tenantId: string) {
-    return this.buildBundle(tenantId);
-  }
-
   private async buildBundle(targetId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where:   { id: targetId },
