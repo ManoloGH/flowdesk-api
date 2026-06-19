@@ -30,6 +30,21 @@ export class CreateHumanSlotDto {
   @IsOptional()
   @IsString()
   schedule_id?: string;
+
+  @ApiProperty({ required: false, example: '5215512345678', description: 'Número WhatsApp (solo dígitos, sin +)' })
+  @IsOptional()
+  @IsString()
+  whatsapp_phone?: string;
+
+  @ApiProperty({ required: false, enum: ['desk', 'operative'], description: 'desk = asistente en app+WhatsApp / operative = solo cédula de resultados por WhatsApp' })
+  @IsOptional()
+  @IsEnum(['desk', 'operative'])
+  worker_type?: 'desk' | 'operative';
+
+  @ApiProperty({ required: false, description: 'Slot ID del gerente/director al que reporta esta persona' })
+  @IsOptional()
+  @IsString()
+  reports_to_id?: string;
 }
 
 export class CreateAgentSlotDto {

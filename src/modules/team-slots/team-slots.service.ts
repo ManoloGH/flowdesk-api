@@ -132,6 +132,9 @@ export class TeamSlotsService {
     const tempPassword = this.generateTempPassword();
     const hash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
 
+    const workerType = dto.worker_type ?? 'desk';
+    const isOperative = workerType === 'operative';
+
     const slot = await this.prisma.teamSlot.create({
       data: {
         tenant_id: tenantId,
@@ -142,12 +145,59 @@ export class TeamSlotsService {
         type: 'HUMAN',
         department_id: dto.department_id,
         schedule_id: dto.schedule_id,
+        whatsapp_phone: dto.whatsapp_phone,
+        // worker_type y reports_to_id se guardan en agent_config (JSONB flexible)
+        agent_config: {
+          worker_type: workerType,
+          ...(dto.reports_to_id ? { reports_to_id: dto.reports_to_id } : {}),
+        },
       },
       select: SLOT_SELECT,
     });
 
-    // La contraseña temporal solo se devuelve aquí, nunca más se puede recuperar
-    return { slot, temp_password: tempPassword, message: 'Comparte esta contraseña con el empleado. Solo se muestra una vez.' };
+    // Los operativos no necesitan asistente IA — solo la cédula de WhatsApp
+    // Los empleados de escritorio obtienen su daily_assistant automáticamente
+    if (!isOperative) {
+      await this.provisionDailyAssistant(tenantId, slot.id as string, dto.name, dto.role ?? 'employee');
+    }
+
+    const workerLabel = isOperative ? 'Operativo (cédula vía WhatsApp)' : 'Escritorio (asistente personal)';
+    return {
+      slot,
+      temp_password: tempPassword,
+      worker_type: workerType,
+      message: `Comparte esta contraseña con el empleado. Solo se muestra una vez. Tipo: ${workerLabel}.`,
+    };
+  }
+
+  private async provisionDailyAssistant(tenantId: string, ownerSlotId: string, ownerName: string, role: string) {
+    const existing = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', owner_slot_id: ownerSlotId, agent_role: 'daily_assistant' },
+    });
+    if (existing) return existing;
+
+    const isManager  = ['manager', 'admin', 'owner'].includes(role);
+    const isDirector = ['admin', 'owner'].includes(role);
+    const level      = isDirector ? 'Director' : isManager ? 'Gerente' : 'Empleado';
+
+    return this.prisma.teamSlot.create({
+      data: {
+        tenant_id: tenantId,
+        name: `Asistente de ${ownerName}`,
+        type: 'AI_AGENT',
+        role: 'employee',
+        status: 'ONLINE',
+        agent_scope: 'personal',
+        agent_role: 'daily_assistant',
+        owner_slot_id: ownerSlotId,
+        agent_config: {
+          model: 'claude-sonnet-4-6',
+          level,
+          instructions: `Eres el asistente personal de ${ownerName} (${level}) en FlowDesk.`,
+          tools: [],
+        },
+      },
+    });
   }
 
   // Crear agente IA

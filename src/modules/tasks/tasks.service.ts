@@ -256,6 +256,28 @@ export class TasksService {
     return missionsList;
   }
 
+  // ─── WORK REPORTS (standup diario) ──────────────────────────────────────────
+
+  async upsertStandup(tenantId: string, slotId: string, dto: { hice: string; hare: string; bloqueantes?: string }) {
+    const today   = new Date().toISOString().split('T')[0];
+    const content = { hice: dto.hice, hare: dto.hare, bloqueantes: dto.bloqueantes ?? null, date: today };
+    const existing = await this.prisma.workReport.findFirst({
+      where: { tenant_id: tenantId, slot_id: slotId, period: 'daily' },
+      orderBy: { created_at: 'desc' },
+    });
+    if (existing) {
+      return this.prisma.workReport.update({ where: { id: existing.id }, data: { content } });
+    }
+    return this.prisma.workReport.create({ data: { tenant_id: tenantId, slot_id: slotId, period: 'daily', content } });
+  }
+
+  async getStandupToday(tenantId: string, slotId: string) {
+    return this.prisma.workReport.findFirst({
+      where: { tenant_id: tenantId, slot_id: slotId, period: 'daily' },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
   // Resumen de productividad del escritorio personal
   async desktopSummary(tenantId: string, slotId: string) {
     const myTasks = { tenant_id: tenantId, OR: [{ owner_id: slotId }, { assignee_id: slotId }] };

@@ -47,6 +47,8 @@ import { AgentLearningModule } from './modules/agent-learning/agent-learning.mod
 import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
 import { WebProyectosModule } from './modules/web-proyectos/web-proyectos.module';
 import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-agent.module';
+import { WidgetModule } from './modules/widget/widget.module';
+import { PersonalAssistantModule } from './modules/personal-assistant/personal-assistant.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -125,6 +127,10 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     // Web Builder — construcción y seguimiento de webs de clientes
     WebProyectosModule,
     WebBuilderAgentModule,
+    // Widget — agente conversacional embebido en landings
+    WidgetModule,
+    // Asistente Personal — empleado / gerente / director
+    PersonalAssistantModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -1,17 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
 import { EvolutionAdapter } from '../../integrations/evolution/evolution.adapter';
-import { AgentConversationsService } from '../agent-conversations/agent-conversations.service';
+import { PersonalAssistantService } from '../personal-assistant/personal-assistant.service';
 import { WhatsAppFormatterService } from './whatsapp-formatter.service';
 
 @Injectable()
 export class EmployeeWhatsAppService {
   private readonly logger = new Logger(EmployeeWhatsAppService.name);
 
+  // WhatsApp session_id persistente por empleado (sobrevive reinicios del día)
+  private readonly waSessions = new Map<string, string>();
+
   constructor(
-    private readonly prisma: PrismaService,
     private readonly evolution: EvolutionAdapter,
-    private readonly agentConversations: AgentConversationsService,
+    private readonly personalAssistant: PersonalAssistantService,
     private readonly formatter: WhatsAppFormatterService,
   ) {}
 
@@ -23,51 +24,24 @@ export class EmployeeWhatsAppService {
     instanceName: string;
   }): Promise<void> {
     const { phone, message, tenantId, teamSlot, instanceName } = params;
-
-    // Buscar el agente personal del empleado (agent_scope=personal, owner_slot_id=teamSlot.id)
-    const personalAgent = await this.prisma.teamSlot.findFirst({
-      where: {
-        tenant_id: tenantId,
-        type: 'AI_AGENT',
-        owner_slot_id: teamSlot.id,
-        agent_scope: 'personal',
-      },
-    });
-
-    // Si no tiene agente personal, buscar cualquier agente asignado
-    const agent = personalAgent ?? await this.prisma.teamSlot.findFirst({
-      where: {
-        tenant_id: tenantId,
-        type: 'AI_AGENT',
-        agent_role: { in: ['focus_agent', 'daily_assistant'] },
-      },
-    });
-
-    if (!agent) {
-      await this.evolution.sendText(instanceName, `${phone}@s.whatsapp.net`,
-        'No tienes un agente asignado aún. Configúralo en FlowDesk.');
-      return;
-    }
+    const jid = `${phone}@s.whatsapp.net`;
 
     try {
-      // Usar sesión de WhatsApp persistente (session_id basado en el canal)
-      const sessionKey = `whatsapp:${teamSlot.id}`;
-      let conversation = await this.prisma.agentConversation.findFirst({
-        where: { agent_id: agent.id, human_id: teamSlot.id, session_id: sessionKey },
+      const sessionKey = `wa:${tenantId}:${teamSlot.id}`;
+      const sessionId  = this.waSessions.get(sessionKey);
+
+      const result = await this.personalAssistant.chat(tenantId, teamSlot.id, {
+        message,
+        session_id: sessionId,
       });
 
-      const chatDto = {
-        message,
-        session_id: conversation?.id,
-      };
+      this.waSessions.set(sessionKey, result.session_id);
 
-      const result = await this.agentConversations.chat(tenantId, teamSlot.id, agent.id, chatDto as any);
-      const formatted = this.formatter.format(result.response);
-      await this.evolution.sendText(instanceName, `${phone}@s.whatsapp.net`, formatted);
+      await this.evolution.sendText(instanceName, jid, this.formatter.format(result.text));
     } catch (err: any) {
       this.logger.error(`Error respondiendo a empleado ${teamSlot.id}: ${err.message}`);
-      await this.evolution.sendText(instanceName, `${phone}@s.whatsapp.net`,
-        'Hubo un error al procesar tu mensaje. Intenta de nuevo.');
+      await this.evolution.sendText(instanceName, jid,
+        'Hubo un problema al procesar tu mensaje. Intenta de nuevo en un momento.');
     }
   }
 }

@@ -54,4 +54,19 @@ export class WebhooksController {
       throw new HttpException(err.message ?? 'Error al provisionar tenant', err.status ?? HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  @Post('migrate-employee-structure')
+  @Public()
+  @HttpCode(200)
+  @ApiOperation({ summary: '[MentorIA] Migra todos los tenants al sistema de 4 niveles de empleados (idempotente)' })
+  async migrateEmployeeStructure(
+    @Headers('x-flowdesk-secret') secret: string,
+    @Body() body: { tenant_id?: string },
+  ) {
+    try {
+      return await this.service.migrateEmployeeStructure(secret ?? '', body?.tenant_id);
+    } catch (err: any) {
+      throw new HttpException(err.message ?? 'Error en migración', err.status ?? HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
 }

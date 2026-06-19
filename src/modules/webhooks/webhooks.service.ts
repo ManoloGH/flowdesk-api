@@ -10,6 +10,7 @@ import { SecretaryAgentService } from '../secretary/secretary-agent.service';
 import { WhatsAppService } from '../secretary/whatsapp.service';
 import { WhatsAppRouterService } from '../whatsapp-channel/whatsapp-router.service';
 import { EmployeeWhatsAppService } from '../whatsapp-channel/employee-whatsapp.service';
+import { OperativeWhatsAppService } from '../whatsapp-channel/operative-whatsapp.service';
 import { CustomerWhatsAppService } from '../whatsapp-channel/customer-whatsapp.service';
 import { ChatwootBridgeService } from '../chatwoot-bridge/chatwoot-bridge.service';
 
@@ -29,6 +30,7 @@ export class WebhooksService {
     private whatsapp: WhatsAppService,
     private waRouter: WhatsAppRouterService,
     private employeeWa: EmployeeWhatsAppService,
+    private operativeWa: OperativeWhatsAppService,
     private customerWa: CustomerWhatsAppService,
     private chatwootBridge: ChatwootBridgeService,
   ) {}
@@ -106,65 +108,64 @@ export class WebhooksService {
       const parsed = this.evolution.processWebhook(payload);
 
       if (parsed.type === 'message' && parsed.from && parsed.content) {
-        // Buscar o crear contacto
-        let contact = await this.prisma.contact.findFirst({
-          where: { tenant_id: tenantId, phone: parsed.from },
-        });
+        // Identificar quién escribe ANTES de hacer cualquier otra cosa
+        const identity = await this.waRouter.identify(parsed.from, instanceName);
+        const isInternal = identity.type === 'owner' || identity.type === 'employee' || identity.type === 'operative';
 
-        if (!contact) {
-          contact = await this.prisma.contact.create({
+        // Solo crear/actualizar contacto CRM para mensajes externos (clientes, prospectos)
+        if (!isInternal) {
+          let contact = await this.prisma.contact.findFirst({
+            where: { tenant_id: tenantId, phone: parsed.from },
+          });
+
+          if (!contact) {
+            contact = await this.prisma.contact.create({
+              data: {
+                tenant_id: tenantId,
+                first_name: parsed.from,
+                phone: parsed.from,
+                status: 'lead',
+              },
+            });
+          } else {
+            await this.prisma.contact.update({
+              where: { id: contact.id },
+              data: { last_contact_at: new Date() },
+            });
+          }
+
+          await this.prisma.contactActivity.create({
             data: {
+              contact_id: contact.id,
               tenant_id: tenantId,
-              first_name: parsed.from,
-              phone: parsed.from,
-              status: 'lead',
+              activity_type: 'message',
+              content: parsed.content,
+              metadata: { channel: 'whatsapp', instance: parsed.instance },
             },
           });
-        } else {
-          await this.prisma.contact.update({
-            where: { id: contact.id },
-            data: { last_contact_at: new Date() },
+
+          // Notificar al campus solo para externos (inbox de atención)
+          messagesGateway?.deliverToTenant(tenantId, 'inbox:new_message', {
+            source: 'whatsapp',
+            channel: 'whatsapp',
+            from: parsed.from,
+            contact_id: contact.id,
+            content: parsed.content?.slice(0, 80),
           });
         }
 
-        // Registrar actividad
-        await this.prisma.contactActivity.create({
-          data: {
-            contact_id: contact.id,
-            tenant_id: tenantId,
-            activity_type: 'message',
-            content: parsed.content,
-            metadata: { channel: 'whatsapp', instance: parsed.instance },
-          },
-        });
-
-        // Notificar al campus
-        messagesGateway?.deliverToTenant(tenantId, 'inbox:new_message', {
-          source: 'whatsapp',
-          channel: 'whatsapp',
-          from: parsed.from,
-          contact_id: contact.id,
-          content: parsed.content?.slice(0, 80),
-        });
-
-        // Routing inteligente según quién escribe
-        const identity = await this.waRouter.identify(parsed.from, instanceName);
+        // ── Dispatch por identidad ──────────────────────────────────────────
 
         if (identity.type === 'owner') {
           const instance = await this.secretary.getEvolutionInstance(tenantId);
           if (instance) {
-            let reply: string;
-            // Si hay un agente activo en sesión, enrutar al agente
-            if (this.secretaryAgent.hasActiveAgent(parsed.from)) {
-              reply = await this.secretaryAgent.chatWithActiveAgent(tenantId, parsed.from, parsed.content);
-            } else {
-              // Flujo normal con el Secretario
-              reply = await this.secretaryAgent.chat(tenantId, parsed.content, parsed.from);
-            }
+            const reply = this.secretaryAgent.hasActiveAgent(parsed.from)
+              ? await this.secretaryAgent.chatWithActiveAgent(tenantId, parsed.from, parsed.content)
+              : await this.secretaryAgent.chat(tenantId, parsed.content, parsed.from);
             await this.whatsapp.send(instance, parsed.from, reply);
           }
+
         } else if (identity.type === 'employee') {
-          // Empleado → su agente personal
           await this.employeeWa.handle({
             phone: parsed.from,
             message: parsed.content,
@@ -172,8 +173,18 @@ export class WebhooksService {
             teamSlot: identity.teamSlot,
             instanceName,
           });
+
+        } else if (identity.type === 'operative') {
+          await this.operativeWa.handle({
+            phone: parsed.from,
+            message: parsed.content,
+            tenantId,
+            teamSlot: identity.teamSlot,
+            instanceName,
+          });
+
         } else {
-          // Cliente externo → Chatwoot + IA
+          // Cliente externo → bot IA + Chatwoot
           await this.customerWa.handle({
             phone: parsed.from,
             message: parsed.content,
@@ -279,9 +290,11 @@ export class WebhooksService {
           role: 'owner',
           status: 'OFFLINE',
           desk_access: 'FULL',
+          agent_config: { worker_type: 'desk' }, // nivel Director
         },
       });
 
+      // CEO Agent — estratégico
       await tx.teamSlot.create({
         data: {
           tenant_id: tenant.id,
@@ -295,6 +308,26 @@ export class WebhooksService {
           agent_config: {
             model: 'claude-sonnet-4-6',
             instructions: `Soy Atlas, CEO Agent personal de ${owner_name} en ${company_name}. Coordino tareas, agentes y objetivos para maximizar la productividad del equipo.`,
+            tools: [],
+          },
+        },
+      });
+
+      // Daily Assistant — asistente diario (nivel Director)
+      await tx.teamSlot.create({
+        data: {
+          tenant_id: tenant.id,
+          name: `Asistente de ${owner_name}`,
+          type: 'AI_AGENT',
+          role: 'employee',
+          status: 'ONLINE',
+          agent_role: 'daily_assistant',
+          agent_scope: 'personal',
+          owner_slot_id: ownerSlot.id,
+          agent_config: {
+            model: 'claude-sonnet-4-6',
+            level: 'Director',
+            instructions: `Eres el asistente personal de ${owner_name} (Director) en ${company_name}. Coordinas su día, equipo y objetivos estratégicos.`,
             tools: [],
           },
         },
@@ -322,6 +355,85 @@ export class WebhooksService {
       plan: chosenPlan,
       airtable_record_id: body.airtable_record_id,
       desk_url: `https://app.flowdesk.io/desk/${slug}`,
+    };
+  }
+
+  // ─── Migración: sistema de 4 niveles de empleados (idempotente) ──────────
+
+  async migrateEmployeeStructure(secret: string, specificTenantId?: string) {
+    const expected = this.config.get<string>('FLOWDESK_WEBHOOK_SECRET');
+    if (expected && secret !== expected) throw new ForbiddenException('Secret inválido.');
+
+    const tenants = specificTenantId
+      ? await this.prisma.tenant.findMany({ where: { id: specificTenantId, status: 'active' }, select: { id: true, name: true } })
+      : await this.prisma.tenant.findMany({ where: { status: 'active' }, select: { id: true, name: true } });
+
+    const report: Array<{ tenant: string; slots_updated: number; assistants_created: number }> = [];
+
+    for (const tenant of tenants) {
+      let slots_updated = 0;
+      let assistants_created = 0;
+
+      // 1. Todos los slots humanos sin worker_type en agent_config
+      const humanSlots = await this.prisma.teamSlot.findMany({
+        where: { tenant_id: tenant.id, type: 'HUMAN' },
+        select: { id: true, name: true, role: true, agent_config: true },
+      });
+
+      for (const slot of humanSlots) {
+        const cfg = (slot.agent_config ?? {}) as Record<string, any>;
+
+        // Solo actualizar si no tiene worker_type (idempotente)
+        if (!cfg.worker_type) {
+          await this.prisma.teamSlot.update({
+            where: { id: slot.id },
+            data: { agent_config: { ...cfg, worker_type: 'desk' } },
+          });
+          slots_updated++;
+        }
+
+        // 2. Provisionar daily_assistant si no tiene uno
+        const hasAssistant = await this.prisma.teamSlot.findFirst({
+          where: { tenant_id: tenant.id, type: 'AI_AGENT', owner_slot_id: slot.id, agent_role: 'daily_assistant' },
+          select: { id: true },
+        });
+
+        if (!hasAssistant && (cfg.worker_type !== 'operative')) {
+          const isDirector = ['owner', 'admin'].includes(slot.role);
+          const isManager  = slot.role === 'manager';
+          const level      = isDirector ? 'Director' : isManager ? 'Gerente' : 'Empleado';
+
+          await this.prisma.teamSlot.create({
+            data: {
+              tenant_id: tenant.id,
+              name: `Asistente de ${slot.name}`,
+              type: 'AI_AGENT',
+              role: 'employee',
+              status: 'ONLINE',
+              agent_role: 'daily_assistant',
+              agent_scope: 'personal',
+              owner_slot_id: slot.id,
+              agent_config: {
+                model: 'claude-sonnet-4-6',
+                level,
+                instructions: `Eres el asistente personal de ${slot.name} (${level}) en FlowDesk. Gestionas su día, tareas e indicadores.`,
+                tools: [],
+              },
+            },
+          });
+          assistants_created++;
+        }
+      }
+
+      report.push({ tenant: tenant.name, slots_updated, assistants_created });
+      this.logger.log(`Migración ${tenant.name}: ${slots_updated} slots, ${assistants_created} asistentes`);
+    }
+
+    return {
+      ok: true,
+      tenants_processed: tenants.length,
+      report,
+      message: 'Migración completada. Todos los empleados tienen worker_type y daily_assistant.',
     };
   }
 }

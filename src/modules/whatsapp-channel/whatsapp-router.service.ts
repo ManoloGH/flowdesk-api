@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 export type WhatsAppIdentity =
-  | { type: 'owner'; tenantId: string; secretaryConfig: any }
-  | { type: 'employee'; tenantId: string; teamSlot: any }
-  | { type: 'external'; tenantId: string }
+  | { type: 'owner';     tenantId: string; secretaryConfig: any }
+  | { type: 'operative'; tenantId: string; teamSlot: any }
+  | { type: 'employee';  tenantId: string; teamSlot: any }
+  | { type: 'external';  tenantId: string }
   | { type: 'unknown' };
 
 @Injectable()
@@ -53,6 +54,10 @@ export class WhatsAppRouterService {
     );
 
     if (matchedEmployee) {
+      const cfg = matchedEmployee.agent_config as any;
+      if (cfg?.worker_type === 'operative') {
+        return { type: 'operative', tenantId, teamSlot: matchedEmployee };
+      }
       return { type: 'employee', tenantId, teamSlot: matchedEmployee };
     }
 

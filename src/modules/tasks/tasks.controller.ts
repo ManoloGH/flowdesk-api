@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, Query, Request,
+  Body, Param, Query, Request, HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
@@ -70,6 +70,21 @@ export class TasksController {
   @ApiOperation({ summary: 'Eliminar una tarea' })
   deleteTask(@Param('taskId') taskId: string, @Request() req: any) {
     return this.service.deleteTask(req.user.tenant_id, req.user.slot_id, taskId);
+  }
+
+  // ─── Work Reports (standup diario) ───────────────────────────────────────────
+
+  @Post('work-reports')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Registrar o actualizar el standup del día' })
+  upsertStandup(@Body() dto: { hice: string; hare: string; bloqueantes?: string }, @Request() req: any) {
+    return this.service.upsertStandup(req.user.tenant_id, req.user.slot_id, dto);
+  }
+
+  @Get('work-reports/today')
+  @ApiOperation({ summary: 'Obtener el standup registrado hoy' })
+  getStandupToday(@Request() req: any) {
+    return this.service.getStandupToday(req.user.tenant_id, req.user.slot_id);
   }
 
   // ─── Goals ────────────────────────────────────────────────────────────────────
