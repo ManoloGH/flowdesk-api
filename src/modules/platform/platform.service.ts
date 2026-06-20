@@ -51,7 +51,7 @@ export class PlatformService {
       where: { tenant_type: { in: ['NETWORK', 'BRANCH'] } },
       select: {
         id: true, name: true, slug: true, tenant_type: true, status: true,
-        plan: true, campus_config: true, created_at: true,
+        plan: true, campus_config: true, created_at: true, web_builder_enabled: true,
         team_slots: {
           where: { role: 'owner', type: 'HUMAN' },
           select: { name: true, email: true },
@@ -144,6 +144,11 @@ export class PlatformService {
   async updatePlan(callerTenantId: string, targetId: string, plan: string) {
     await this.assertPlatform(callerTenantId);
     return this.prisma.tenant.update({ where: { id: targetId }, data: { plan } });
+  }
+
+  async toggleWebBuilder(callerTenantId: string, targetId: string, enabled: boolean) {
+    await this.assertPlatform(callerTenantId);
+    return this.prisma.tenant.update({ where: { id: targetId }, data: { web_builder_enabled: enabled } });
   }
 
   async updateAccountType(callerTenantId: string, targetId: string, account_type: string) {

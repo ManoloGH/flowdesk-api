@@ -36,7 +36,8 @@ model Tenant {
   migration_at      DateTime?
   self_hosted_url   String?
 
-  campus_config Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
+  campus_config       Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
+  web_builder_enabled Boolean @default(false)
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -1746,10 +1747,56 @@ model WebProyecto {
   notas          String?
   created_by_id  String?
 
+  widget_config  WidgetConfig?
+  widget_leads   WidgetLead[]
+
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
   @@index([tenant_id])
   @@index([tenant_id, fase])
   @@unique([tenant_id, slug])
+}
+
+model WidgetConfig {
+  id                   String      @id @default(cuid())
+  proyecto_id          String      @unique
+  proyecto             WebProyecto @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
+  tenant_id            String
+
+  nombre_agente        String      @default("Asistente")
+  saludo               String
+  objetivo             String
+  preguntas            Json        // [{id, texto}]
+  cierre_instruccion   String
+  whatsapp             String
+  mensaje_wa_template  String?
+  color_primario       String      @default("#6366f1")
+  activo               Boolean     @default(false)
+
+  created_at           DateTime    @default(now())
+  updated_at           DateTime    @updatedAt
+
+  @@index([tenant_id])
+}
+
+model WidgetLead {
+  id          String      @id @default(cuid())
+  session_id  String
+  tenant_id   String
+  proyecto_id String
+  proyecto    WebProyecto @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
+
+  nombre      String?
+  email       String?
+  telefono    String?
+  respuestas  Json?
+  diagnostico String?
+  wa_url      String?
+
+  created_at  DateTime    @default(now())
+
+  @@index([tenant_id])
+  @@index([proyecto_id])
+  @@index([session_id])
 }

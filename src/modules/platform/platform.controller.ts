@@ -102,6 +102,12 @@ export class PlatformController {
     return this.service.updatePlan(req.user.tenant_id, tenantId, dto.plan);
   }
 
+  @Patch('platform/network/:tenantId/web-builder')
+  @ApiOperation({ summary: '[PLATFORM] Activar/desactivar módulo Web Builder para un tenant' })
+  toggleWebBuilder(@Param('tenantId') tenantId: string, @Body() dto: { enabled: boolean }, @Request() req: any) {
+    return this.service.toggleWebBuilder(req.user.tenant_id, tenantId, dto.enabled);
+  }
+
   @Patch('platform/network/:tenantId/account-type')
   @ApiOperation({ summary: '[PLATFORM] Cambiar tipo de cuenta de un tenant' })
   updateAccountType(@Param('tenantId') tenantId: string, @Body() dto: UpdateAccountTypeDto, @Request() req: any) {
