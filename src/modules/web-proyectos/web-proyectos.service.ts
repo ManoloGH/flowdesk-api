@@ -8,17 +8,30 @@ const FASE_ORDER = ['setup', 'assets', 'video', 'construccion', 'scroll', 'seo',
 export class WebProyectosService {
   constructor(private prisma: PrismaService) {}
 
+  private toSlug(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 60);
+  }
+
   async create(tenantId: string, slotId: string | undefined, dto: CreateWebProyectoDto) {
+    const slug = dto.slug?.trim() || this.toSlug(dto.nombre_cliente);
+
     const existing = await this.prisma.webProyecto.findUnique({
-      where: { tenant_id_slug: { tenant_id: tenantId, slug: dto.slug } },
+      where: { tenant_id_slug: { tenant_id: tenantId, slug } },
     });
-    if (existing) throw new ConflictException(`Ya existe un proyecto con slug "${dto.slug}"`);
+    if (existing) throw new ConflictException(`Ya existe un proyecto con slug "${slug}"`);
 
     return this.prisma.webProyecto.create({
       data: {
         tenant_id: tenantId,
         created_by_id: slotId,
         ...dto,
+        slug,
       },
     });
   }

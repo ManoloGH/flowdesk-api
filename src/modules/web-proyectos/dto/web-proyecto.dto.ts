@@ -8,9 +8,9 @@ export class CreateWebProyectoDto {
   @IsString() @IsNotEmpty()
   nombre_cliente: string;
 
-  @ApiProperty({ example: 'valenciana-mudanzas' })
-  @IsString() @IsNotEmpty()
-  slug: string;
+  @ApiPropertyOptional({ example: 'valenciana-mudanzas' })
+  @IsString() @IsOptional()
+  slug?: string;
 
   @ApiPropertyOptional({ example: 'valencianamudanzas.com' })
   @IsString() @IsOptional()
