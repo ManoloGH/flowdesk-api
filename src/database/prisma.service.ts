@@ -130,7 +130,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get widgetConfig() { return this.prisma.widgetConfig; }
   get widgetLead() { return this.prisma.widgetLead; }
 
-  // ── Implementaciones ─────────────────────────────────────────────────────
+  // ── Implementaciones ──────────────────────────────────────────────────────
   get implementation() { return this.prisma.implementation; }
   get implementationCheckItem() { return this.prisma.implementationCheckItem; }
   get implementationNote() { return this.prisma.implementationNote; }
