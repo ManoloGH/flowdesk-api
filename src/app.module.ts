@@ -49,6 +49,7 @@ import { WebProyectosModule } from './modules/web-proyectos/web-proyectos.module
 import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-agent.module';
 import { WidgetModule } from './modules/widget/widget.module';
 import { PersonalAssistantModule } from './modules/personal-assistant/personal-assistant.module';
+import { ImplementationsModule } from './modules/implementations/implementations.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -131,6 +132,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     WidgetModule,
     // Asistente Personal — empleado / gerente / director
     PersonalAssistantModule,
+    // Implementaciones — protocolo de onboarding para el agente implementador de MentorIA
+    ImplementationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

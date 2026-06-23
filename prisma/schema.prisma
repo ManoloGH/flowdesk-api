@@ -90,6 +90,7 @@ model Tenant {
   work_reports           WorkReport[]
   calls                  PhoneCall[]
   web_proyectos          WebProyecto[]
+  implementations        Implementation[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -1799,4 +1800,82 @@ model WidgetLead {
   @@index([tenant_id])
   @@index([proyecto_id])
   @@index([session_id])
+}
+
+// ═════════════════════════════════════════════
+// IMPLEMENTACIONES — Protocolo FlowDesk
+// Para el agente implementador humano de MentorIA
+// ═════════════════════════════════════════════
+
+model Implementation {
+  id            String   @id @default(cuid())
+  tenant_id     String   // tenant de MentorIA
+  tenant        Tenant   @relation(fields: [tenant_id], references: [id])
+
+  client_name   String
+  client_info   Json?    // { industry, size, website, contact_name, contact_email, phone }
+  phase         Int      @default(0)   // 0-6 fase actual
+  status        String   @default("in_progress") // in_progress | completed | paused | cancelled
+
+  started_at    DateTime  @default(now())
+  completed_at  DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  check_items   ImplementationCheckItem[]
+  notes         ImplementationNote[]
+  files         ImplementationFile[]
+  messages      ImplementationMessage[]
+
+  @@index([tenant_id])
+  @@index([tenant_id, status])
+}
+
+model ImplementationCheckItem {
+  id                String         @id @default(cuid())
+  implementation_id String
+  implementation    Implementation @relation(fields: [implementation_id], references: [id], onDelete: Cascade)
+  check_id          String         // ej: "c0_1"
+  phase             Int
+  checked           Boolean        @default(false)
+  checked_at        DateTime?
+
+  @@unique([implementation_id, check_id])
+  @@index([implementation_id])
+}
+
+model ImplementationNote {
+  id                String         @id @default(cuid())
+  implementation_id String
+  implementation    Implementation @relation(fields: [implementation_id], references: [id], onDelete: Cascade)
+  phase             Int
+  content           String
+  created_by        String?        // slot_id del implementador
+  created_at        DateTime       @default(now())
+
+  @@index([implementation_id, phase])
+}
+
+model ImplementationFile {
+  id                String         @id @default(cuid())
+  implementation_id String
+  implementation    Implementation @relation(fields: [implementation_id], references: [id], onDelete: Cascade)
+  phase             Int
+  name              String
+  url               String
+  uploaded_at       DateTime       @default(now())
+
+  @@index([implementation_id])
+}
+
+model ImplementationMessage {
+  id                String         @id @default(cuid())
+  implementation_id String
+  implementation    Implementation @relation(fields: [implementation_id], references: [id], onDelete: Cascade)
+  role              String         // "user" | "assistant"
+  content           String
+  phase             Int?
+  created_at        DateTime       @default(now())
+
+  @@index([implementation_id])
 }
