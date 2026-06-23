@@ -108,6 +108,12 @@ export class PlatformController {
     return this.service.toggleWebBuilder(req.user.tenant_id, tenantId, dto.enabled);
   }
 
+  @Post('platform/network/:tenantId/impersonate')
+  @ApiOperation({ summary: '[PLATFORM] Entrar como empresa (impersonation)' })
+  impersonate(@Param('tenantId') tenantId: string, @Request() req: any) {
+    return this.service.impersonateTenant(req.user.tenant_id, tenantId);
+  }
+
   @Patch('platform/network/:tenantId/account-type')
   @ApiOperation({ summary: '[PLATFORM] Cambiar tipo de cuenta de un tenant' })
   updateAccountType(@Param('tenantId') tenantId: string, @Body() dto: UpdateAccountTypeDto, @Request() req: any) {

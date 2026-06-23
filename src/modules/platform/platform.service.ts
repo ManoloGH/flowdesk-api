@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { TenantExportService } from './tenant-export.service';
 
@@ -11,6 +13,8 @@ export class PlatformService {
   constructor(
     private prisma: PrismaService,
     private tenantExport: TenantExportService,
+    private jwt: JwtService,
+    private config: ConfigService,
   ) {}
 
   private async assertPlatform(tenantId: string) {
@@ -1072,6 +1076,53 @@ curl -s https://api.anthropic.com/v1/messages \\
   }
 
   // ─── Health score ─────────────────────────────────────────────────────────
+
+  async impersonateTenant(callerTenantId: string, targetTenantId: string) {
+    await this.assertPlatform(callerTenantId);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: targetTenantId },
+      select: { id: true, name: true, tenant_type: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant no encontrado');
+
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: targetTenantId, type: 'HUMAN' },
+      orderBy: [{ role: 'asc' }],
+      select: { id: true, email: true, name: true, role: true, type: true },
+    });
+    if (!slot) throw new NotFoundException('No hay usuarios humanos en este tenant');
+
+    const payload = {
+      sub: slot.id,
+      tenant_id: targetTenantId,
+      role: slot.role,
+      type: slot.type,
+      email: slot.email,
+      tenant_type: tenant.tenant_type,
+      platform_admin: false,
+    };
+
+    const access_token = this.jwt.sign(payload, {
+      secret: this.config.get<string>('JWT_SECRET'),
+      expiresIn: '8h',
+    });
+
+    return {
+      access_token,
+      company_name: tenant.name,
+      user: {
+        slot_id: slot.id,
+        tenant_id: targetTenantId,
+        role: slot.role,
+        type: slot.type,
+        email: slot.email ?? '',
+        name: slot.name,
+        tenant_type: tenant.tenant_type,
+        platform_admin: false,
+      },
+    };
+  }
 
   private async computeHealth(tenant: { id: string; [key: string]: any }) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
