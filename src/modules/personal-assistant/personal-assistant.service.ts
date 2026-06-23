@@ -280,7 +280,7 @@ ${approvals.map(a => `• ${a.description} (solicitado por: ${a.requested_by})`)
       const health = await this.getOrgHealthData(tenantId, slotId);
       ctx += `
 SALUD ORGANIZACIONAL: ${health.score ?? 'N/A'}/100
-${health.issues?.slice(0, 5).map((i: any) => `⚠ ${i}`).join('\n') || '  Sin alertas críticas'}
+${(health.issues as any[])?.slice(0, 5).map((i: any) => `⚠ ${i}`).join('\n') || '  Sin alertas críticas'}
 `;
     }
 
