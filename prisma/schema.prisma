@@ -91,6 +91,8 @@ model Tenant {
   calls                  PhoneCall[]
   web_proyectos          WebProyecto[]
   implementations        Implementation[]
+  mentoria_prospectos    MentoriaProspecto[]
+  mentoria_clientes      MentoriaCliente[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -1878,4 +1880,165 @@ model ImplementationMessage {
   created_at        DateTime       @default(now())
 
   @@index([implementation_id])
+}
+
+// ─────────────────────────────────────────────
+// MENTORÍA — CRM de consultoría interna
+// ─────────────────────────────────────────────
+
+model MentoriaProspecto {
+  id                   String   @id @default(cuid())
+  tenant_id            String
+  tenant               Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  empresa              String
+  contacto             String
+  email                String?
+  whatsapp             String?
+  industria            String?
+  tamano               String?  // "<10" | "10-100" | ">100"
+  etapa                String   @default("agente_ia")
+  // agente_ia | micro_diagnostico | discovery | propuesta | contrato | kickoff | diagnostico | implementacion
+  puntuacion           Int?
+  ejecutivo_asignado   String?
+  canal                String?  // "email" | "whatsapp"
+  conversacion         Json?    // respuestas del agente de prospección
+  micro_diagnostico    String?
+  hallazgos_preventa   Json?    // array de hallazgos del pre-diagnóstico
+  roi_estimado         String?
+  notas                String?
+  fecha_ultima_accion  DateTime?
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  cliente MentoriaCliente?
+
+  @@index([tenant_id])
+  @@index([etapa])
+}
+
+model MentoriaCliente {
+  id                  String   @id @default(cuid())
+  tenant_id           String
+  tenant              Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  prospecto_id        String?  @unique
+  prospecto           MentoriaProspecto? @relation(fields: [prospecto_id], references: [id])
+  empresa             String
+  contacto_nombre     String
+  contacto_cargo      String?
+  email               String?
+  whatsapp            String?
+  industria           String?
+  tamano              String?
+  status              String   @default("activo")  // activo | inactivo
+  ejecutivo_asignado  String?
+  drive_url           String?
+  fase_actual         Int      @default(0)          // 0-3
+  areas_diagnosticadas String[] @default([])
+  precio              Int      @default(0)
+  notas               String?
+  fecha_inicio        DateTime @default(now())
+  fecha_fin           DateTime?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  hallazgos  MentoriaHallazgo[]
+  plan       MentoriaAccionPlan[]
+  sesiones   MentoriaSesion[]
+  pagos      MentoriaPago[]
+  checks     MentoriaCheck[]
+  diagnosticos MentoriaDiagnostico[]
+
+  @@index([tenant_id])
+  @@index([status])
+}
+
+model MentoriaHallazgo {
+  id          String          @id @default(cuid())
+  cliente_id  String
+  cliente     MentoriaCliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  area        String
+  tipo        String          // critico | importante | positivo | oportunidad_ia
+  titulo      String
+  descripcion String?
+  impacto     String?
+  created_at  DateTime        @default(now())
+
+  acciones MentoriaAccionPlan[]
+
+  @@index([cliente_id])
+  @@index([tipo])
+}
+
+model MentoriaAccionPlan {
+  id              String           @id @default(cuid())
+  cliente_id      String
+  cliente         MentoriaCliente  @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  hallazgo_id     String?
+  hallazgo        MentoriaHallazgo? @relation(fields: [hallazgo_id], references: [id])
+  titulo          String
+  area            String
+  prioridad       String           @default("alta")  // alta | media | baja
+  status          String           @default("pendiente") // pendiente | en_progreso | completado | cancelado
+  responsable     String?
+  fecha_estimada  DateTime?
+  notas           String?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  @@index([cliente_id])
+  @@index([status])
+}
+
+model MentoriaSesion {
+  id          String          @id @default(cuid())
+  cliente_id  String
+  cliente     MentoriaCliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  fecha       DateTime
+  tipo        String          // discovery | kickoff | revision | entrega | capacitacion | otro
+  titulo      String
+  notas       String?
+  acciones    String?
+  created_at  DateTime        @default(now())
+
+  @@index([cliente_id])
+}
+
+model MentoriaPago {
+  id          String          @id @default(cuid())
+  cliente_id  String
+  cliente     MentoriaCliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  fecha       DateTime
+  monto       Int
+  concepto    String
+  status      String          @default("pendiente") // pagado | pendiente | parcial
+  created_at  DateTime        @default(now())
+
+  @@index([cliente_id])
+}
+
+model MentoriaCheck {
+  id          String          @id @default(cuid())
+  cliente_id  String
+  cliente     MentoriaCliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  check_id    String          // matches PHASES item id in frontend
+  phase       Int
+  checked     Boolean         @default(false)
+  checked_at  DateTime?
+
+  @@unique([cliente_id, check_id])
+  @@index([cliente_id])
+}
+
+model MentoriaDiagnostico {
+  id          String          @id @default(cuid())
+  cliente_id  String
+  cliente     MentoriaCliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  area        String          // marketing | ventas | operaciones | administracion | etc.
+  datos       Json            // raw form data from the HTML diagnostic form
+  procesado   Boolean         @default(false)
+  created_at  DateTime        @default(now())
+  updated_at  DateTime        @updatedAt
+
+  @@index([cliente_id])
+  @@index([area])
 }

@@ -50,6 +50,7 @@ import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-a
 import { WidgetModule } from './modules/widget/widget.module';
 import { PersonalAssistantModule } from './modules/personal-assistant/personal-assistant.module';
 import { ImplementationsModule } from './modules/implementations/implementations.module';
+import { MentoriaModule } from './modules/mentoria/mentoria.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -134,6 +135,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     PersonalAssistantModule,
     // Implementaciones — protocolo de onboarding para el agente implementador de MentorIA
     ImplementationsModule,
+    MentoriaModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
