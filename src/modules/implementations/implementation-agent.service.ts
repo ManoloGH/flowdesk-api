@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AiService } from '../../ai/ai.service';
+import { AiProviderService as AiService } from '../../ai/ai-provider.service';
 import { ImplementationsService } from './implementations.service';
 
 const SYSTEM_PROMPT = `Eres el Agente Implementador de FlowDesk — un asistente especializado que guía a los consultores de MentorIA Systems durante la implementación completa del ecosistema digital de una empresa cliente.
@@ -83,15 +83,16 @@ ${impl.notes.length > 0 ? `\nÚltimas notas:\n${impl.notes.slice(-3).map((n: any
     await this.implementations.saveMessage(implId, 'user', userMessage, impl.phase);
 
     const response = await this.ai.chat({
-      system: SYSTEM_PROMPT + '\n\n' + contextBlock,
+      tenantId,
+      systemPrompt: SYSTEM_PROMPT + '\n\n' + contextBlock,
       messages: [
         ...historyMessages,
         { role: 'user', content: userMessage },
       ],
-      model: 'google/gemini-2.0-flash-001',
+      modelOverride: 'google/gemini-2.0-flash-001',
     });
 
-    const assistantText = response.content ?? response.text ?? '';
+    const assistantText = response.response ?? '';
     await this.implementations.saveMessage(implId, 'assistant', assistantText, impl.phase);
 
     return assistantText;

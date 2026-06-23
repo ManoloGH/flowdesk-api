@@ -130,6 +130,13 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get widgetConfig() { return this.prisma.widgetConfig; }
   get widgetLead() { return this.prisma.widgetLead; }
 
+  // ── Implementaciones ─────────────────────────────────────────────────────
+  get implementation() { return this.prisma.implementation; }
+  get implementationCheckItem() { return this.prisma.implementationCheckItem; }
+  get implementationNote() { return this.prisma.implementationNote; }
+  get implementationFile() { return this.prisma.implementationFile; }
+  get implementationMessage() { return this.prisma.implementationMessage; }
+
   // Transacción estándar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $transaction(...args: any[]): any {
