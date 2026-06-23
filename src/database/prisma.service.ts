@@ -126,6 +126,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Web Builder ───────────────────────────────────────────────────────────
   get webProyecto() { return this.prisma.webProyecto; }
 
+  // ── Widget Agente Conversacional ──────────────────────────────────────────
+  get widgetConfig() { return this.prisma.widgetConfig; }
+  get widgetLead() { return this.prisma.widgetLead; }
+
   // Transacción estándar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $transaction(...args: any[]): any {
