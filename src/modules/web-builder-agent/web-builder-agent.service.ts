@@ -514,7 +514,7 @@ export class WebBuilderAgentService {
 
   async getFiles(tenantId: string, proyectoId: string) {
     const p = await this.getAndVerify(tenantId, proyectoId);
-    return { files: p.files ?? {}, fase: p.fase };
+    return { files: p.files ?? {}, fase: p.fase, build_log: p.build_log ?? [] };
   }
 
   async deployToVercel(tenantId: string, slotId: string, proyectoId: string, dto: DeployDto) {
