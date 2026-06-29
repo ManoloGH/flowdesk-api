@@ -108,6 +108,12 @@ export class PlatformController {
     return this.service.toggleWebBuilder(req.user.tenant_id, tenantId, dto.enabled);
   }
 
+  @Patch('platform/network/:tenantId/communications')
+  @ApiOperation({ summary: '[PLATFORM] Activar/desactivar Central de Comunicaciones para un tenant' })
+  toggleCommunications(@Param('tenantId') tenantId: string, @Body() dto: { enabled: boolean }, @Request() req: any) {
+    return this.service.toggleCommunications(req.user.tenant_id, tenantId, dto.enabled);
+  }
+
   @Post('platform/network/:tenantId/impersonate')
   @ApiOperation({ summary: '[PLATFORM] Entrar como empresa (impersonation)' })
   impersonate(@Param('tenantId') tenantId: string, @Request() req: any) {

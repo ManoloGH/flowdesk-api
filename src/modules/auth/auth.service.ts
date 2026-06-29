@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditService, AuditAction } from '../../common/audit/audit.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterSuperAdminDto, ChangePasswordDto } from './dto/register.dto';
+import { GoogleProfile } from './strategies/google.strategy';
 
 const SALT_ROUNDS = 12;
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -165,6 +166,55 @@ export class AuthService {
         tenant: { select: { name: true, logo_url: true, primary_color: true } },
       },
     });
+  }
+
+  async loginWithGoogle(profile: GoogleProfile) {
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: {
+        OR: [
+          { google_id: profile.googleId },
+          { email: profile.email, type: 'HUMAN' },
+        ],
+      },
+      include: { tenant: { select: { status: true, tenant_type: true, campus_config: true } } },
+    });
+
+    if (!slot) {
+      throw new UnauthorizedException(
+        'No tienes una cuenta en FlowDesk. Pide a tu administrador que te invite.',
+      );
+    }
+
+    if (slot.tenant.status !== 'active') {
+      throw new ForbiddenException('Tu empresa está inactiva. Contacta al administrador.');
+    }
+
+    // Vincula google_id si aún no está guardado
+    if (!slot.google_id) {
+      await this.prisma.teamSlot.update({
+        where: { id: slot.id },
+        data: { google_id: profile.googleId },
+      });
+    }
+
+    await this.prisma.teamSlot.update({
+      where: { id: slot.id },
+      data: { status: 'ONLINE' },
+    });
+
+    this.audit.log({
+      tenantId: slot.tenant_id,
+      actorId: slot.id,
+      action: AuditAction.AUTH_LOGIN,
+      resourceType: 'session',
+      resourceId: slot.id,
+      payload: { method: 'google' },
+    });
+
+    const cfg = (slot.tenant.campus_config as Record<string, unknown>) ?? {};
+    const platformAdmin = !!(cfg.include_platform_metrics) || slot.tenant.tenant_type === 'PLATFORM';
+
+    return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined, platformAdmin);
   }
 
   async changePassword(slotId: string, dto: ChangePasswordDto) {

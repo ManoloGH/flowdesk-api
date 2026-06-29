@@ -1,16 +1,22 @@
-import { Controller, Post, Get, Body, Req, Request, HttpCode, HttpStatus } from '@nestjs/common';
+﻿import { Controller, Post, Get, Body, Req, Request, Res, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { AuthGuard } from '@nestjs/passport';
+import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterSuperAdminDto, ChangePasswordDto } from './dto/register.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/tenant.decorator';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private config: ConfigService,
+  ) {}
 
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
@@ -59,5 +65,33 @@ export class AuthController {
   @ApiOperation({ summary: 'Cambiar contraseña' })
   changePassword(@CurrentUser() user: any, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user.slot_id, dto);
+  }
+
+  @Public()
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Iniciar login con Google' })
+  googleLogin() {
+    // Passport redirige a Google automáticamente
+  }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Callback de Google OAuth' })
+  async googleCallback(@Req() req: any, @Res() res: Response) {
+    try {
+      const tokens = await this.authService.loginWithGoogle(req.user);
+      const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+      const params = new URLSearchParams({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        user: JSON.stringify(tokens.user),
+      });
+      res.redirect(`${frontendUrl}/auth/google/success?${params.toString()}`);
+    } catch (err: any) {
+      const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+      res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(err.message)}`);
+    }
   }
 }

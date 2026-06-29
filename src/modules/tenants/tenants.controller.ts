@@ -54,6 +54,12 @@ export class TenantsController {
     return this.brandService.getBrandConfig(tenantId);
   }
 
+  @Get('mine/features')
+  @ApiOperation({ summary: 'Feature flags activos para el tenant actual' })
+  getFeatures(@TenantId() tenantId: string) {
+    return this.tenantsService.getFeatures(tenantId);
+  }
+
   @Get('mine/focus-brief')
   @ApiOperation({ summary: 'Focus Mode del día — cacheado, regenera en background si es antiguo' })
   getFocusBrief(

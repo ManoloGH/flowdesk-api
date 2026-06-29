@@ -37,7 +37,8 @@ model Tenant {
   self_hosted_url   String?
 
   campus_config       Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
-  web_builder_enabled Boolean @default(false)
+  web_builder_enabled    Boolean @default(false)
+  communications_enabled Boolean @default(false)
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -151,6 +152,7 @@ model TeamSlot {
   // Solo humanos
   email           String?   @unique
   password_hash   String?
+  google_id       String?   @unique
   access_token    String?   @unique
   whatsapp_phone  String?   // número registrado para acceso al agente vía WhatsApp (ej. "5215512345678")
   schedule_id     String?

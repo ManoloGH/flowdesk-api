@@ -712,4 +712,12 @@ JSON esperado:
       generated_at: new Date().toISOString(),
     };
   }
+
+  async getFeatures(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { communications_enabled: true },
+    });
+    return { communications_enabled: tenant?.communications_enabled ?? false };
+  }
 }
