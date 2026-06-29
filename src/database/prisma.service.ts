@@ -130,6 +130,16 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get widgetConfig() { return this.prisma.widgetConfig; }
   get widgetLead() { return this.prisma.widgetLead; }
 
+  // ── Mentoria CRM ──────────────────────────────────────────────────────────
+  get mentoriaProspecto() { return this.prisma.mentoriaProspecto; }
+  get mentoriaCliente() { return this.prisma.mentoriaCliente; }
+  get mentoriaCheck() { return this.prisma.mentoriaCheck; }
+  get mentoriaHallazgo() { return this.prisma.mentoriaHallazgo; }
+  get mentoriaAccionPlan() { return this.prisma.mentoriaAccionPlan; }
+  get mentoriaSesion() { return this.prisma.mentoriaSesion; }
+  get mentoriaPago() { return this.prisma.mentoriaPago; }
+  get mentoriaDiagnostico() { return this.prisma.mentoriaDiagnostico; }
+
   // ── Implementaciones ──────────────────────────────────────────────────────
   get implementation() { return this.prisma.implementation; }
   get implementationCheckItem() { return this.prisma.implementationCheckItem; }

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AiService } from '../../ai/ai.service';
+import { AiProviderService } from '../../ai/ai-provider.service';
 import { MentoriaService } from './mentoria.service';
 
 const SYSTEM_PROMPT = `You are the diagnostic analysis engine for MentorIA Systems, a business automation consultancy.
@@ -54,7 +54,7 @@ export class MentoriaProcesamientoService {
   private readonly logger = new Logger(MentoriaProcesamientoService.name);
 
   constructor(
-    private readonly ai: AiService,
+    private readonly ai: AiProviderService,
     private readonly mentoria: MentoriaService,
   ) {}
 
@@ -74,12 +74,13 @@ export class MentoriaProcesamientoService {
     this.logger.log(`Procesando diagnóstico de ${cliente.empresa} (${diagnosticos.length} áreas)`);
 
     const rawResponse = await this.ai.chat({
-      system: SYSTEM_PROMPT,
+      tenantId,
+      systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: ANALISIS_PROMPT(cliente.empresa, diagnosticos) }],
-      model: 'anthropic/claude-sonnet-4-6',
+      modelOverride: 'anthropic/claude-sonnet-4-6',
     });
 
-    const text = rawResponse.content ?? rawResponse.text ?? '';
+    const text = rawResponse.response;
 
     let parsed: any;
     try {
