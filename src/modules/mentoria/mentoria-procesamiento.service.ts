@@ -92,7 +92,7 @@ export class MentoriaProcesamientoService {
     }
 
     // Guardar hallazgos en BD
-    const hallazgosCreados = [];
+    const hallazgosCreados: any[] = [];
     for (const h of (parsed.hallazgos ?? [])) {
       const hallazgo = await this.mentoria.createHallazgo(tenantId, clienteId, {
         area: h.area,
@@ -105,7 +105,7 @@ export class MentoriaProcesamientoService {
     }
 
     // Guardar plan de acción en BD
-    const accionesCreadas = [];
+    const accionesCreadas: any[] = [];
     for (const a of (parsed.plan_de_accion ?? [])) {
       const semanas = a.fecha_estimada_semanas ?? 4;
       const fechaEstimada = new Date();
