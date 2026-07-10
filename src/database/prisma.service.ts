@@ -153,6 +153,19 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return (this.prisma.$transaction as any)(...args);
   }
 
+  // ── Mentoria ─────────────────────────────────────────────────
+  get mentoriaProspecto()    { return this.prisma.mentoriaProspecto; }
+  get mentoriaCliente()      { return this.prisma.mentoriaCliente; }
+  get mentoriaSesion()       { return this.prisma.mentoriaSesion; }
+  get mentoriaHallazgo()     { return this.prisma.mentoriaHallazgo; }
+  get mentoriaAccionPlan()   { return this.prisma.mentoriaAccionPlan; }
+  get mentoriaDiagnostico()  { return this.prisma.mentoriaDiagnostico; }
+  get mentoriaCheck()        { return this.prisma.mentoriaCheck; }
+  get mentoriaPago()         { return this.prisma.mentoriaPago; }
+
+  // ── Cliente Docs ────────────────────────────────────────────
+  get clienteDoc() { return this.prisma.clienteDoc; }
+
   // Raw SQL — necesario para operaciones vectoriales (pgvector)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $executeRawUnsafe(query: string, ...values: any[]): Promise<number> {

@@ -36,9 +36,9 @@ model Tenant {
   migration_at      DateTime?
   self_hosted_url   String?
 
-  campus_config       Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
-  web_builder_enabled    Boolean @default(false)
-  communications_enabled Boolean @default(false)
+  campus_config           Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
+  web_builder_enabled     Boolean @default(false)
+  communications_enabled  Boolean @default(false)
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -148,6 +148,9 @@ model TeamSlot {
   status        SlotStatus @default(OFFLINE)
   position_x    Int?
   position_y    Int?
+
+  // Google Calendar / Meet
+  google_id       String?   @unique
 
   // Solo humanos
   email           String?   @unique
@@ -2043,4 +2046,26 @@ model MentoriaDiagnostico {
 
   @@index([cliente_id])
   @@index([area])
+}
+
+// Documentos enviados a clientes: propuestas, diagnósticos, cuestionarios, contratos
+model ClienteDoc {
+  id         String   @id @default(cuid())
+  tipo       String   // propuesta | diagnostico | cuestionario | contrato
+  folio      String?
+  titulo     String?
+  nombre     String
+  cargo      String?
+  empresa    String
+  email      String
+  remitente  String?
+  nda        Boolean  @default(false)
+  datos      Json?
+  html       String   @db.Text
+  firmado_at DateTime @default(now())
+  created_at DateTime @default(now())
+
+  @@index([tipo])
+  @@index([email])
+  @@index([empresa])
 }

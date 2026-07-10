@@ -80,7 +80,7 @@ export class MentoriaProcesamientoService {
       modelOverride: 'anthropic/claude-sonnet-4-6',
     });
 
-    const text = rawResponse.response;
+    const text = rawResponse.response ?? '';
 
     let parsed: any;
     try {
