@@ -150,7 +150,6 @@ model TeamSlot {
   position_y    Int?
 
   // Google Calendar / Meet
-  google_id       String?   @unique
 
   // Solo humanos
   email           String?   @unique
