@@ -9,6 +9,13 @@ export class MentoriaController {
     private readonly procesamiento: MentoriaProcesamientoService,
   ) {}
 
+  // ── DEBUG (borrar después de verificar) ────────────────────────────────────
+
+  @Get('debug/user')
+  debugUser(@Req() req: any) {
+    return { user: req.user, ts: new Date().toISOString() };
+  }
+
   // ── PROSPECTOS ──────────────────────────────────────────────────────────────
 
   @Get('prospectos')
