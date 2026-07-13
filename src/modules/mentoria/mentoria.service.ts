@@ -93,6 +93,7 @@ export class MentoriaService {
         sesiones: { orderBy: { fecha: 'desc' } },
         pagos: { orderBy: { fecha: 'desc' } },
         checks: true,
+        diagnosticos: { orderBy: { created_at: 'desc' } },
       },
     });
     if (!c) throw new NotFoundException('Cliente no encontrado');
@@ -147,10 +148,19 @@ export class MentoriaService {
   }
 
   async createHallazgo(tenantId: string, clienteId: string, data: {
-    area: string; tipo: string; titulo: string; descripcion?: string; impacto?: string;
+    area?: string; tipo?: string; titulo: string; descripcion?: string; impacto?: string;
   }) {
     await this.getCliente(tenantId, clienteId);
-    return this.prisma.mentoriaHallazgo.create({ data: { cliente_id: clienteId, ...data } });
+    return this.prisma.mentoriaHallazgo.create({
+      data: {
+        cliente_id: clienteId,
+        area: data.area ?? 'general',
+        tipo: data.tipo ?? 'importante',
+        titulo: data.titulo,
+        descripcion: data.descripcion,
+        impacto: data.impacto,
+      },
+    });
   }
 
   async deleteHallazgo(tenantId: string, clienteId: string, id: string) {
