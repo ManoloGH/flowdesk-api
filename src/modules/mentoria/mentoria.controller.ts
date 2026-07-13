@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
 
@@ -24,8 +24,12 @@ export class MentoriaController {
   }
 
   @Post('prospectos')
-  createProspecto(@Req() req: any, @Body() body: any) {
-    return this.service.createProspecto(req.user.tenant_id, body);
+  async createProspecto(@Req() req: any, @Body() body: any) {
+    try {
+      return await this.service.createProspecto(req.user.tenant_id, body);
+    } catch (e: any) {
+      throw new HttpException({ message: e?.message ?? 'error', code: e?.code, meta: e?.meta }, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Patch('prospectos/:id/etapa')
