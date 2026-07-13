@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
@@ -52,6 +52,7 @@ import { PersonalAssistantModule } from './modules/personal-assistant/personal-a
 import { ImplementationsModule } from './modules/implementations/implementations.module';
 import { MentoriaModule } from './modules/mentoria/mentoria.module';
 import { ClienteDocsModule } from './modules/cliente-docs/cliente-docs.module';
+import { CommunicationsModule } from './modules/communications/communications.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -62,7 +63,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     ThrottlerModule.forRootAsync({
       useFactory: () => ({
         throttlers: [{ name: 'default', ttl: 60_000, limit: 200 }],
-        // Redis si está disponible, en memoria si no (dev sin Redis)
+        // Redis si estÃ¡ disponible, en memoria si no (dev sin Redis)
         storage: process.env.REDIS_URL
           ? new ThrottlerStorageRedisService(new Redis(process.env.REDIS_URL))
           : undefined,
@@ -71,11 +72,11 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     EncryptionModule,
     AuditModule,
     PrismaModule,
-    // IA — proveedor unificado (Ollama, OpenRouter, Anthropic, OpenAI)
+    // IA â€” proveedor unificado (Ollama, OpenRouter, Anthropic, OpenAI)
     AiModule,
-    // Búsqueda web — Brave Search + Firecrawl con fallbacks gratuitos
+    // BÃºsqueda web â€” Brave Search + Firecrawl con fallbacks gratuitos
     SearchModule,
-    // Integraciones externas (global — disponible en todos los módulos)
+    // Integraciones externas (global â€” disponible en todos los mÃ³dulos)
     IntegrationsModule,
     // Core
     AuthModule,
@@ -108,37 +109,38 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     SpacesModule,
     // Cultura operativa
     CultureModule,
-    // Vault — credenciales cifradas
+    // Vault â€” credenciales cifradas
     VaultModule,
-    // Empresa Brain — base de conocimiento vectorial
+    // Empresa Brain â€” base de conocimiento vectorial
     BrainModule,
-    // Secretary — Atlas Secretario Personal
+    // Secretary â€” Atlas Secretario Personal
     SecretaryModule,
-    // WhatsApp Channel — routing inteligente (owner/empleado/cliente)
+    // WhatsApp Channel â€” routing inteligente (owner/empleado/cliente)
     WhatsAppChannelModule,
-    // PBX Conmutador — Asterisk ARI + IA en llamadas
+    // PBX Conmutador â€” Asterisk ARI + IA en llamadas
     PbxModule,
-    // Agente Instalador — guía técnica para el equipo de MentorIA
+    // Agente Instalador â€” guÃ­a tÃ©cnica para el equipo de MentorIA
     InstallationAgentModule,
-    // Sales — Pipeline + Agente Comercial
+    // Sales â€” Pipeline + Agente Comercial
     SalesModule,
-    // Agent Intelligence — Calibración, Evolución y Aprendizaje semanal
+    // Agent Intelligence â€” CalibraciÃ³n, EvoluciÃ³n y Aprendizaje semanal
     AgentCalibrationModule,
     AgentEvolutionModule,
     AgentLearningModule,
     WeeklyMeetingModule,
-    // Web Builder — construcción y seguimiento de webs de clientes
+    // Web Builder â€” construcciÃ³n y seguimiento de webs de clientes
     WebProyectosModule,
     WebBuilderAgentModule,
-    // Widget — agente conversacional embebido en landings
+    // Widget â€” agente conversacional embebido en landings
     WidgetModule,
-    // Asistente Personal — empleado / gerente / director
+    // Asistente Personal â€” empleado / gerente / director
     PersonalAssistantModule,
-    // Implementaciones — protocolo de onboarding para el agente implementador de MentorIA
+    // Implementaciones â€” protocolo de onboarding para el agente implementador de MentorIA
     ImplementationsModule,
     MentoriaModule,
-    // Cliente Docs — propuestas, diagnósticos y cualquier documento enviado a clientes
+    // Cliente Docs â€” propuestas, diagnÃ³sticos y cualquier documento enviado a clientes
     ClienteDocsModule,
+    CommunicationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -147,3 +149,4 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
   ],
 })
 export class AppModule {}
+
