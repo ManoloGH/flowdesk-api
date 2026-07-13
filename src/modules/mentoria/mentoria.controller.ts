@@ -13,27 +13,27 @@ export class MentoriaController {
 
   @Get('prospectos')
   getProspectos(@Req() req: any) {
-    return this.service.getProspectos(req.user.tenantId);
+    return this.service.getProspectos(req.user.tenant_id);
   }
 
   @Post('prospectos')
   createProspecto(@Req() req: any, @Body() body: any) {
-    return this.service.createProspecto(req.user.tenantId, body);
+    return this.service.createProspecto(req.user.tenant_id, body);
   }
 
   @Patch('prospectos/:id/etapa')
   updateEtapa(@Req() req: any, @Param('id') id: string, @Body() body: { etapa: string }) {
-    return this.service.updateProspectoEtapa(req.user.tenantId, id, body.etapa);
+    return this.service.updateProspectoEtapa(req.user.tenant_id, id, body.etapa);
   }
 
   @Patch('prospectos/:id/notas')
   updateProspectoNotas(@Req() req: any, @Param('id') id: string, @Body() body: { notas: string }) {
-    return this.service.updateProspectoNotas(req.user.tenantId, id, body.notas);
+    return this.service.updateProspectoNotas(req.user.tenant_id, id, body.notas);
   }
 
   @Post('prospectos/:id/convertir')
   convertirACliente(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.convertirACliente(req.user.tenantId, id, body);
+    return this.service.convertirACliente(req.user.tenant_id, id, body);
   }
 
   // ── WEBHOOK: recibe leads del Agente de Prospección ────────────────────────
@@ -64,42 +64,42 @@ export class MentoriaController {
 
   @Get('clientes')
   getClientes(@Req() req: any, @Query('status') status?: string) {
-    return this.service.getClientes(req.user.tenantId, status);
+    return this.service.getClientes(req.user.tenant_id, status);
   }
 
   @Post('clientes')
   createCliente(@Req() req: any, @Body() body: any) {
-    return this.service.convertirACliente(req.user.tenantId, body.prospecto_id, body);
+    return this.service.convertirACliente(req.user.tenant_id, body.prospecto_id, body);
   }
 
   @Get('clientes/:id')
   getCliente(@Req() req: any, @Param('id') id: string) {
-    return this.service.getCliente(req.user.tenantId, id);
+    return this.service.getCliente(req.user.tenant_id, id);
   }
 
   @Patch('clientes/:id')
   updateCliente(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.updateCliente(req.user.tenantId, id, body);
+    return this.service.updateCliente(req.user.tenant_id, id, body);
   }
 
   @Patch('clientes/:id/fase')
   updateFase(@Req() req: any, @Param('id') id: string, @Body() body: { fase: number }) {
-    return this.service.updateFase(req.user.tenantId, id, body.fase);
+    return this.service.updateFase(req.user.tenant_id, id, body.fase);
   }
 
   @Patch('clientes/:id/status')
   updateStatus(@Req() req: any, @Param('id') id: string, @Body() body: { status: string }) {
-    return this.service.updateStatus(req.user.tenantId, id, body.status);
+    return this.service.updateStatus(req.user.tenant_id, id, body.status);
   }
 
   @Patch('clientes/:id/notas')
   updateNotas(@Req() req: any, @Param('id') id: string, @Body() body: { notas: string }) {
-    return this.service.updateCliente(req.user.tenantId, id, { notas: body.notas });
+    return this.service.updateCliente(req.user.tenant_id, id, { notas: body.notas });
   }
 
   @Patch('clientes/:id/areas')
   marcarArea(@Req() req: any, @Param('id') id: string, @Body() body: { area: string }) {
-    return this.service.marcarAreaDiagnosticada(req.user.tenantId, id, body.area);
+    return this.service.marcarAreaDiagnosticada(req.user.tenant_id, id, body.area);
   }
 
   // ── CHECKS ─────────────────────────────────────────────────────────────────
@@ -110,36 +110,36 @@ export class MentoriaController {
     @Param('id') id: string,
     @Body() body: { check_id: string; phase: number; checked: boolean },
   ) {
-    return this.service.toggleCheck(req.user.tenantId, id, body.check_id, body.phase, body.checked);
+    return this.service.toggleCheck(req.user.tenant_id, id, body.check_id, body.phase, body.checked);
   }
 
   // ── HALLAZGOS ───────────────────────────────────────────────────────────────
 
   @Get('clientes/:id/hallazgos')
   getHallazgos(@Req() req: any, @Param('id') id: string) {
-    return this.service.getHallazgos(req.user.tenantId, id);
+    return this.service.getHallazgos(req.user.tenant_id, id);
   }
 
   @Post('clientes/:id/hallazgos')
   createHallazgo(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.createHallazgo(req.user.tenantId, id, body);
+    return this.service.createHallazgo(req.user.tenant_id, id, body);
   }
 
   @Delete('clientes/:id/hallazgos/:hid')
   deleteHallazgo(@Req() req: any, @Param('id') id: string, @Param('hid') hid: string) {
-    return this.service.deleteHallazgo(req.user.tenantId, id, hid);
+    return this.service.deleteHallazgo(req.user.tenant_id, id, hid);
   }
 
   // ── PLAN DE ACCIÓN ───────────────────────────────────────────────────────────
 
   @Get('clientes/:id/plan')
   getPlan(@Req() req: any, @Param('id') id: string) {
-    return this.service.getPlan(req.user.tenantId, id);
+    return this.service.getPlan(req.user.tenant_id, id);
   }
 
   @Post('clientes/:id/plan')
   createAccion(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.createAccion(req.user.tenantId, id, body);
+    return this.service.createAccion(req.user.tenant_id, id, body);
   }
 
   @Patch('clientes/:id/plan/:aid/status')
@@ -149,43 +149,43 @@ export class MentoriaController {
     @Param('aid') aid: string,
     @Body() body: { status: string },
   ) {
-    return this.service.updateAccionStatus(req.user.tenantId, id, aid, body.status);
+    return this.service.updateAccionStatus(req.user.tenant_id, id, aid, body.status);
   }
 
   @Delete('clientes/:id/plan/:aid')
   deleteAccion(@Req() req: any, @Param('id') id: string, @Param('aid') aid: string) {
-    return this.service.deleteAccion(req.user.tenantId, id, aid);
+    return this.service.deleteAccion(req.user.tenant_id, id, aid);
   }
 
   // ── SESIONES ────────────────────────────────────────────────────────────────
 
   @Get('clientes/:id/sesiones')
   getSesiones(@Req() req: any, @Param('id') id: string) {
-    return this.service.getSesiones(req.user.tenantId, id);
+    return this.service.getSesiones(req.user.tenant_id, id);
   }
 
   @Post('clientes/:id/sesiones')
   createSesion(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.createSesion(req.user.tenantId, id, body);
+    return this.service.createSesion(req.user.tenant_id, id, body);
   }
 
   // ── PAGOS ────────────────────────────────────────────────────────────────────
 
   @Get('clientes/:id/pagos')
   getPagos(@Req() req: any, @Param('id') id: string) {
-    return this.service.getPagos(req.user.tenantId, id);
+    return this.service.getPagos(req.user.tenant_id, id);
   }
 
   @Post('clientes/:id/pagos')
   createPago(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.service.createPago(req.user.tenantId, id, body);
+    return this.service.createPago(req.user.tenant_id, id, body);
   }
 
   // ── DIAGNÓSTICOS (datos de formularios HTML) ────────────────────────────────
 
   @Get('clientes/:id/diagnosticos')
   getDiagnosticos(@Req() req: any, @Param('id') id: string) {
-    return this.service.getDiagnosticos(req.user.tenantId, id);
+    return this.service.getDiagnosticos(req.user.tenant_id, id);
   }
 
   @Post('clientes/:id/diagnosticos')
@@ -194,13 +194,13 @@ export class MentoriaController {
     @Param('id') id: string,
     @Body() body: { area: string; datos: any },
   ) {
-    return this.service.saveDiagnostico(req.user.tenantId, id, body.area, body.datos);
+    return this.service.saveDiagnostico(req.user.tenant_id, id, body.area, body.datos);
   }
 
   // ── PROCESAMIENTO AUTOMÁTICO CON IA ─────────────────────────────────────────
 
   @Post('clientes/:id/procesar')
   async procesarDiagnostico(@Req() req: any, @Param('id') id: string) {
-    return this.procesamiento.procesarDiagnostico(req.user.tenantId, id);
+    return this.procesamiento.procesarDiagnostico(req.user.tenant_id, id);
   }
 }
