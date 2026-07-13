@@ -1,5 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+﻿import { NestFactory, Reflector } from '@nestjs/core';
+import { ValidationPipe, RequestMethod } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { json, raw } from 'express';
@@ -33,8 +33,13 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Prefijo global de API
-  app.setGlobalPrefix('api/v1');
+  // Prefijo global de API (Google OAuth excluido para compatibilidad con Google Cloud Console)
+  app.setGlobalPrefix('api/v1', {
+    exclude: [
+      { path: 'auth/google', method: RequestMethod.GET },
+      { path: 'auth/google/callback', method: RequestMethod.GET },
+    ],
+  });
 
   // Validación automática de DTOs
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
