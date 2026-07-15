@@ -215,6 +215,73 @@ export class CommunicationsService {
       };
     });
   }
+
+  async getSalesAgentConfig(tenantId: string) {
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { id: true, name: true, agent_config: true },
+    });
+
+    if (!slot) {
+      return {
+        configured: false,
+        nombre: null,
+        actividad: null,
+        propuesta_valor: null,
+        preguntas_calificacion: [],
+        criterios_buen_lead: null,
+        criterios_mal_lead: null,
+        cal_booking_url: null,
+      };
+    }
+
+    const cfg = (slot.agent_config as Record<string, any>) ?? {};
+    return {
+      configured: true,
+      slotId: slot.id,
+      nombre: cfg.nombre ?? slot.name,
+      actividad: cfg.actividad ?? null,
+      propuesta_valor: cfg.propuesta_valor ?? null,
+      preguntas_calificacion: cfg.preguntas_calificacion ?? [],
+      criterios_buen_lead: cfg.criterios_buen_lead ?? null,
+      criterios_mal_lead: cfg.criterios_mal_lead ?? null,
+      cal_booking_url: cfg.cal_booking_url ?? null,
+    };
+  }
+
+  async updateSalesAgentConfig(tenantId: string, body: Record<string, any>) {
+    const existing = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { id: true },
+    });
+
+    const agentData = {
+      type: 'AI_AGENT' as const,
+      agent_role: 'sales',
+      tenant_id: tenantId,
+      name: body.nombre ?? 'Agente de Ventas',
+      agent_config: {
+        nombre: body.nombre ?? 'Agente de Ventas',
+        actividad: body.actividad ?? null,
+        propuesta_valor: body.propuesta_valor ?? null,
+        preguntas_calificacion: body.preguntas_calificacion ?? [],
+        criterios_buen_lead: body.criterios_buen_lead ?? null,
+        criterios_mal_lead: body.criterios_mal_lead ?? null,
+        cal_booking_url: body.cal_booking_url ?? null,
+      },
+    };
+
+    if (existing) {
+      await this.prisma.teamSlot.update({
+        where: { id: existing.id },
+        data: { name: agentData.name, agent_config: agentData.agent_config },
+      });
+    } else {
+      await this.prisma.teamSlot.create({ data: agentData });
+    }
+
+    return { ok: true };
+  }
 }
 
 function formatTimeAgo(date: Date): string {

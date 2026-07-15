@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Request } from '@nestjs/common';
+import { Controller, Get, Put, Body, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CommunicationsService } from './communications.service';
 
@@ -34,5 +34,17 @@ export class CommunicationsController {
   @ApiOperation({ summary: 'Bandeja: conversaciones recientes del tenant' })
   getConversations(@Request() req: any) {
     return this.service.getConversations(req.user.tenant_id);
+  }
+
+  @Get('sales-agent')
+  @ApiOperation({ summary: 'Configuración del Agente de Ventas del tenant' })
+  getSalesAgentConfig(@Request() req: any) {
+    return this.service.getSalesAgentConfig(req.user.tenant_id);
+  }
+
+  @Put('sales-agent')
+  @ApiOperation({ summary: 'Actualiza la configuración del Agente de Ventas' })
+  updateSalesAgentConfig(@Request() req: any, @Body() body: Record<string, any>) {
+    return this.service.updateSalesAgentConfig(req.user.tenant_id, body);
   }
 }
