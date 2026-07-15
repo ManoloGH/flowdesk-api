@@ -13,6 +13,7 @@ import { EmployeeWhatsAppService } from '../whatsapp-channel/employee-whatsapp.s
 import { OperativeWhatsAppService } from '../whatsapp-channel/operative-whatsapp.service';
 import { CustomerWhatsAppService } from '../whatsapp-channel/customer-whatsapp.service';
 import { ChatwootBridgeService } from '../chatwoot-bridge/chatwoot-bridge.service';
+import { SalesBotService } from '../whatsapp-channel/sales-bot.service';
 
 @Injectable()
 export class WebhooksService {
@@ -33,6 +34,7 @@ export class WebhooksService {
     private operativeWa: OperativeWhatsAppService,
     private customerWa: CustomerWhatsAppService,
     private chatwootBridge: ChatwootBridgeService,
+    private salesBot: SalesBotService,
   ) {}
 
   // Resolver el tenant a partir del identificador del webhook
@@ -103,6 +105,40 @@ export class WebhooksService {
       if (!tenantId) {
         this.logger.warn(`Evolution webhook: tenant no encontrado para instancia ${instanceName}`);
         return;
+      }
+
+      // ── Detectar instancia del Agente de Ventas ──────────────────────────
+      // Si el slot de ventas tiene evolution_instance configurada y coincide,
+      // el mensaje va al SalesBotService (con su propio historial y tools).
+      const salesSlot = await this.prisma.teamSlot.findFirst({
+        where: {
+          tenant_id: tenantId,
+          type: 'AI_AGENT',
+          agent_role: 'sales',
+          agent_config: { path: ['evolution_instance'], equals: instanceName },
+        },
+        select: { id: true },
+      });
+
+      if (salesSlot) {
+        const rawJid = payload.data?.key?.remoteJid ?? '';
+        const rawMsg = payload.event === 'messages.upsert' && !payload.data?.key?.fromMe
+          ? (payload.data?.message?.conversation ?? payload.data?.message?.extendedTextMessage?.text)
+          : null;
+
+        if (rawMsg && rawJid) {
+          const phone = rawJid.replace(/@.+$/, '');
+          const pushName = payload.data?.pushName;
+          this.salesBot.handle({
+            phone,
+            jid: rawJid,
+            message: rawMsg,
+            contactName: pushName,
+            tenantId,
+            instanceName,
+          }).catch(err => this.logger.error('SalesBot error', err));
+        }
+        return; // no continuar con routing normal
       }
 
       const parsed = this.evolution.processWebhook(payload);

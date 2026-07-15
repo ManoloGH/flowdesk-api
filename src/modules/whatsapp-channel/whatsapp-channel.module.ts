@@ -7,6 +7,7 @@ import { EmployeeWhatsAppService } from './employee-whatsapp.service';
 import { OperativeWhatsAppService } from './operative-whatsapp.service';
 import { CustomerWhatsAppService } from './customer-whatsapp.service';
 import { WhatsAppFormatterService } from './whatsapp-formatter.service';
+import { SalesBotService } from './sales-bot.service';
 
 @Module({
   imports: [PrismaModule, IntegrationsModule, PersonalAssistantModule],
@@ -16,12 +17,14 @@ import { WhatsAppFormatterService } from './whatsapp-formatter.service';
     OperativeWhatsAppService,
     CustomerWhatsAppService,
     WhatsAppFormatterService,
+    SalesBotService,
   ],
   exports: [
     WhatsAppRouterService,
     EmployeeWhatsAppService,
     OperativeWhatsAppService,
     CustomerWhatsAppService,
+    SalesBotService,
   ],
 })
 export class WhatsAppChannelModule {}

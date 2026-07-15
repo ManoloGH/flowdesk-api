@@ -94,6 +94,7 @@ model Tenant {
   implementations        Implementation[]
   mentoria_prospectos    MentoriaProspecto[]
   mentoria_clientes      MentoriaCliente[]
+  bot_conversations      BotConversation[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -2067,4 +2068,38 @@ model ClienteDoc {
   @@index([tipo])
   @@index([email])
   @@index([empresa])
+}
+
+// ─────────────────────────────────────────────
+// BOT CONVERSATIONS (Agente de Ventas WhatsApp)
+// ─────────────────────────────────────────────
+model BotConversation {
+  id              String       @id @default(cuid())
+  tenant_id       String
+  phone           String
+  jid             String
+  contact_name    String?
+  mode            String       @default("AI")
+  instance_name   String
+  last_message_at DateTime?
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  messages BotMessage[]
+
+  @@unique([tenant_id, phone])
+  @@map("bot_conversations")
+}
+
+model BotMessage {
+  id              String          @id @default(cuid())
+  conversation_id String
+  role            String
+  content         String          @db.Text
+  created_at      DateTime        @default(now())
+
+  conversation BotConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@map("bot_messages")
 }

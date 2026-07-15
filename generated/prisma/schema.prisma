@@ -66,6 +66,7 @@ model Tenant {
   management_reports  ManagementReport[]
   recognition_events  RecognitionEvent[]
   goal_setup_statuses GoalSetupStatus[]
+  bot_conversations   BotConversation[]
 }
 
 // ─────────────────────────────────────────────
@@ -1257,4 +1258,38 @@ enum RecognitionChannel {
   EMAIL
   TELEGRAM
   IN_PERSON
+}
+
+// ─────────────────────────────────────────────
+// BOT CONVERSATIONS (Agente de Ventas WhatsApp)
+// ─────────────────────────────────────────────
+model BotConversation {
+  id              String       @id @default(cuid())
+  tenant_id       String
+  phone           String       // número sin + ni @
+  jid             String       // JID completo: phone@s.whatsapp.net o @lid
+  contact_name    String?
+  mode            String       @default("AI")  // AI | HUMAN
+  instance_name   String                       // nombre de la instancia Evolution API
+  last_message_at DateTime?
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  messages BotMessage[]
+
+  @@unique([tenant_id, phone])
+  @@map("bot_conversations")
+}
+
+model BotMessage {
+  id              String          @id @default(cuid())
+  conversation_id String
+  role            String          // user | assistant | human
+  content         String          @db.Text
+  created_at      DateTime        @default(now())
+
+  conversation BotConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@map("bot_messages")
 }

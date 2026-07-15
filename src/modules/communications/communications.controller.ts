@@ -1,12 +1,16 @@
-import { Controller, Get, Put, Body, Query, Request } from '@nestjs/common';
+import { Controller, Get, Put, Post, Delete, Body, Param, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CommunicationsService } from './communications.service';
+import { BotConversationsService } from './bot-conversations.service';
 
 @ApiTags('Communications')
 @ApiBearerAuth()
 @Controller('communications')
 export class CommunicationsController {
-  constructor(private service: CommunicationsService) {}
+  constructor(
+    private service: CommunicationsService,
+    private bot: BotConversationsService,
+  ) {}
 
   @Get('channels')
   @ApiOperation({ summary: 'Estado de canales (WhatsApp + Teléfono) del tenant' })
@@ -46,5 +50,37 @@ export class CommunicationsController {
   @ApiOperation({ summary: 'Actualiza la configuración del Agente de Ventas' })
   updateSalesAgentConfig(@Request() req: any, @Body() body: Record<string, any>) {
     return this.service.updateSalesAgentConfig(req.user.tenant_id, body);
+  }
+
+  // ─── Bot Conversations (Bandeja del Agente de Ventas) ─────────────────────
+
+  @Get('bot/conversations')
+  @ApiOperation({ summary: 'Lista conversaciones del Agente de Ventas' })
+  getBotConversations(@Request() req: any) {
+    return this.bot.getConversations(req.user.tenant_id);
+  }
+
+  @Get('bot/conversations/:id/messages')
+  @ApiOperation({ summary: 'Mensajes de una conversación' })
+  getBotMessages(@Request() req: any, @Param('id') id: string) {
+    return this.bot.getMessages(req.user.tenant_id, id);
+  }
+
+  @Post('bot/conversations/:id/messages')
+  @ApiOperation({ summary: 'Agente humano envía mensaje a la conversación' })
+  sendBotMessage(@Request() req: any, @Param('id') id: string, @Body('content') content: string) {
+    return this.bot.sendHumanMessage(req.user.tenant_id, id, content);
+  }
+
+  @Post('bot/conversations/:id/mode')
+  @ApiOperation({ summary: 'Cambia modo AI/HUMAN de la conversación' })
+  setBotMode(@Request() req: any, @Param('id') id: string, @Body('mode') mode: 'AI' | 'HUMAN') {
+    return this.bot.setMode(req.user.tenant_id, id, mode);
+  }
+
+  @Delete('bot/conversations/:id')
+  @ApiOperation({ summary: 'Elimina una conversación del bot' })
+  deleteBotConversation(@Request() req: any, @Param('id') id: string) {
+    return this.bot.deleteConversation(req.user.tenant_id, id);
   }
 }
