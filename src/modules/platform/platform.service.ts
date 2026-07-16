@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
@@ -1156,5 +1157,35 @@ curl -s https://api.anthropic.com/v1/messages \\
         completed_today: completedTasks, overdue_tasks: overdueTasks, recent_conversations: recentConversations,
       },
     };
+  }
+
+  async createTenantSlot(
+    callerTenantId: string,
+    targetTenantId: string,
+    dto: { name: string; email: string; role?: string; password?: string },
+  ) {
+    await this.assertPlatform(callerTenantId);
+
+    const exists = await this.prisma.teamSlot.findFirst({ where: { email: dto.email } });
+    if (exists) throw new ConflictException(`El email ${dto.email} ya está registrado`);
+
+    const tempPassword = dto.password ?? randomBytes(5).toString('hex');
+    const hash = await bcrypt.hash(tempPassword, 12);
+
+    const slot = await this.prisma.teamSlot.create({
+      data: {
+        tenant_id:     targetTenantId,
+        name:          dto.name,
+        email:         dto.email,
+        role:          dto.role ?? 'employee',
+        type:          'HUMAN',
+        status:        'OFFLINE',
+        password_hash: hash,
+        desk_access:   'FULL',
+      },
+      select: { id: true, name: true, email: true, role: true },
+    });
+
+    return { ...slot, temp_password: tempPassword };
   }
 }

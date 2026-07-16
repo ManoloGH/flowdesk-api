@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Param, Body, Request, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { IsString, IsOptional, IsIn, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsEmail, MinLength } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
 import { PlatformService } from './platform.service';
 import { MigrationAuditService } from './migration-audit.service';
@@ -47,6 +47,13 @@ class PingRemoteDto {
 
 class MarkMigratedDto {
   @IsString() self_hosted_url: string;
+}
+
+class CreateTenantSlotDto {
+  @IsString() @MinLength(2) name: string;
+  @IsEmail() email: string;
+  @IsOptional() @IsString() role?: string;
+  @IsOptional() @IsString() password?: string;
 }
 
 @ApiTags('Platform & Network')
@@ -155,6 +162,16 @@ export class PlatformController {
   async markMigrated(@Param('tenantId') tenantId: string, @Body() dto: MarkMigratedDto, @Request() req: any) {
     await this.service.assertPlatformAccess(req.user.tenant_id);
     return this.service.setMigratedUrl(tenantId, dto.self_hosted_url);
+  }
+
+  @Post('platform/network/:tenantId/team-slots')
+  @ApiOperation({ summary: '[PLATFORM] Crear usuario para un tenant' })
+  async createTenantSlot(@Param('tenantId') tenantId: string, @Body() dto: CreateTenantSlotDto, @Request() req: any) {
+    try {
+      return await this.service.createTenantSlot(req.user.tenant_id, tenantId, dto);
+    } catch (err: any) {
+      throw new BadRequestException(err?.message ?? 'Error al crear usuario');
+    }
   }
 
   // ── NETWORK endpoints ──────────────────────────────────────────────────────
