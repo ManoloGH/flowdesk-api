@@ -39,6 +39,7 @@ model Tenant {
   campus_config           Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
   web_builder_enabled     Boolean @default(false)
   communications_enabled  Boolean @default(false)
+  modules_config          Json?   // [{key, label, enabled}] — si existe, solo muestra esos módulos en el nav
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt

@@ -8,11 +8,18 @@ export interface BrandColors {
   tertiary: string;
 }
 
+export interface ModuleConfig {
+  key:     string;  // coincide con el href sin la barra inicial (ej: 'erp-areas')
+  label:   string;
+  enabled: boolean;
+}
+
 export interface BrandConfig {
-  logo_url:    string | null;
-  tenant_name: string | null;
-  colors:      BrandColors;
-  configured:  boolean;
+  logo_url:       string | null;
+  tenant_name:    string | null;
+  colors:         BrandColors;
+  configured:     boolean;
+  modules_config: ModuleConfig[] | null;
 }
 
 const DEFAULT_COLORS: BrandColors = {
@@ -45,15 +52,16 @@ export class BrandService {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: {
-        name:           true,
-        logo_url:       true,
-        primary_color:  true,
+        name:            true,
+        logo_url:        true,
+        primary_color:   true,
         secondary_color: true,
-        campus_config:  true,
+        campus_config:   true,
+        modules_config:  true,
       },
     });
 
-    if (!tenant) return { logo_url: null, tenant_name: null, colors: DEFAULT_COLORS, configured: false };
+    if (!tenant) return { logo_url: null, tenant_name: null, colors: DEFAULT_COLORS, configured: false, modules_config: null };
 
     const cfg  = (tenant.campus_config as Record<string, any>) ?? {};
     const configured = Boolean(cfg.brand_configured);
@@ -64,7 +72,11 @@ export class BrandService {
       tertiary:  cfg.brand_tertiary     ?? DEFAULT_COLORS.tertiary,
     };
 
-    return { logo_url: tenant.logo_url ?? null, tenant_name: tenant.name ?? null, colors, configured };
+    const modules_config = Array.isArray(tenant.modules_config)
+      ? (tenant.modules_config as ModuleConfig[])
+      : null;
+
+    return { logo_url: tenant.logo_url ?? null, tenant_name: tenant.name ?? null, colors, configured, modules_config };
   }
 
   async extractAndSaveBrand(
