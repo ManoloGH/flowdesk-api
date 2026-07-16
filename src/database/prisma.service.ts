@@ -160,6 +160,19 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Cliente Docs ────────────────────────────────────────────
   get clienteDoc() { return this.prisma.clienteDoc; }
 
+  // ── ERP por Área — Requerimientos de Software Interno ────────
+  get erpRequirement() { return this.prisma.erpRequirement; }
+  get erpService() { return this.prisma.erpService; }
+  get erpFeedback() { return this.prisma.erpFeedback; }
+
+  // ── SOC OS — Sistema Operativo de la Empresa ─────────────────
+  get socService() { return this.prisma.socService; }
+  get socRequest() { return this.prisma.socRequest; }
+  get socApproval() { return this.prisma.socApproval; }
+  get socComment() { return this.prisma.socComment; }
+  get socDocument() { return this.prisma.socDocument; }
+  get socHistory() { return this.prisma.socHistory; }
+
   // Raw SQL — necesario para operaciones vectoriales (pgvector)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $executeRawUnsafe(query: string, ...values: any[]): Promise<number> {

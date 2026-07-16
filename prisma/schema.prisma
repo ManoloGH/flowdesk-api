@@ -95,6 +95,9 @@ model Tenant {
   mentoria_prospectos    MentoriaProspecto[]
   mentoria_clientes      MentoriaCliente[]
   bot_conversations      BotConversation[]
+  soc_services           SocService[]
+  soc_requests           SocRequest[]
+  erp_requirements       ErpRequirement[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -124,6 +127,8 @@ model Department {
   dashboard_configs DashboardConfig[]
   tasks             Task[]
   key_success_factors KeySuccessFactor[]
+  soc_services        SocService[]
+  erp_requirements    ErpRequirement[]
 
   @@index([tenant_id])
 }
@@ -213,7 +218,16 @@ model TeamSlot {
   recognitions_received  RecognitionEvent[]  @relation("RecognizedSlot")
   goal_setup_status      GoalSetupStatus?
   calls_handled          PhoneCall[]
-  learning_proposals     AgentLearningProposal[]
+  learning_proposals       AgentLearningProposal[]
+  soc_services_as_agent    SocService[]   @relation("SocAutoAgent")
+  soc_requests_made        SocRequest[]   @relation("SocRequester")
+  soc_requests_assigned    SocRequest[]   @relation("SocAssigned")
+  soc_approvals            SocApproval[]
+  soc_comments             SocComment[]
+  soc_documents            SocDocument[]
+  soc_history              SocHistory[]
+  erp_requirements_owned   ErpRequirement[] @relation("ErpOwner")
+  erp_feedbacks            ErpFeedback[]
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -2102,4 +2116,312 @@ model BotMessage {
   conversation BotConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
 
   @@map("bot_messages")
+}
+
+// ═════════════════════════════════════════════
+// SOC OS — Sistema Operativo de la Empresa
+// Catálogo universal de servicios internos
+// Un motor configurable por tenant para todos
+// los departamentos y tipos de solicitud
+// ═════════════════════════════════════════════
+
+enum SocRequestStatus {
+  DRAFT        // borrador — aún no enviado
+  PENDING      // enviado — esperando validación / aprobación
+  APPROVED     // aprobado — pendiente de asignación
+  IN_PROGRESS  // en proceso
+  WAITING_INFO // esperando información del solicitante
+  IN_REVIEW    // entregado — esperando aceptación
+  ACCEPTED     // aceptado por el solicitante
+  CLOSED       // cerrado completamente
+  REJECTED     // rechazado en aprobación
+  CANCELLED
+}
+
+enum SocRequestPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Catálogo de servicios — configurado por cada departamento
+model SocService {
+  id            String     @id @default(cuid())
+  tenant_id     String
+  tenant        Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  department_id String
+  department    Department @relation(fields: [department_id], references: [id], onDelete: Cascade)
+
+  name          String
+  description   String?
+  category      String?  // agrupación dentro del departamento
+  icon          String?  @default("briefcase")
+  color         String?  @default("#6366F1")
+  is_active     Boolean  @default(true)
+
+  // SLA
+  sla_hours       Int?   // tiempo esperado de resolución en horas
+  sla_warning_pct Int?   @default(80) // % del SLA al que se dispara alerta
+
+  // Flujo de aprobación configurable por servicio
+  requires_approval Boolean @default(false)
+  approval_flow     Json?   // [{step, label, role?, slot_id?}]
+
+  // Formulario dinámico — array de campos
+  // [{id, label, type, required, placeholder?, options?, helpText?}]
+  form_schema   Json?
+
+  // Visibilidad
+  visible_to    String  @default("all") // all | department | roles
+  visible_roles Json?   // ["admin","manager"] si visible_to="roles"
+
+  // Agente IA asignado (opcional)
+  auto_agent_id  String?
+  auto_agent     TeamSlot? @relation("SocAutoAgent", fields: [auto_agent_id], references: [id])
+  auto_respond   Boolean   @default(false)
+
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  requests      SocRequest[]
+
+  @@index([tenant_id])
+  @@index([department_id])
+  @@index([tenant_id, is_active])
+  @@map("soc_services")
+}
+
+// Solicitud — la transacción universal del SOC OS
+model SocRequest {
+  id             String @id @default(cuid())
+  request_number String // SOC-2026-0001 — legible para humanos
+
+  tenant_id      String
+  tenant         Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  service_id     String
+  service        SocService @relation(fields: [service_id], references: [id])
+
+  requester_id   String
+  requester      TeamSlot   @relation("SocRequester", fields: [requester_id], references: [id])
+  assigned_to_id String?
+  assigned_to    TeamSlot?  @relation("SocAssigned", fields: [assigned_to_id], references: [id])
+
+  status         SocRequestStatus   @default(PENDING)
+  priority       SocRequestPriority @default(NORMAL)
+
+  title          String
+  description    String?
+  form_data      Json?  // respuestas al formulario dinámico del servicio
+
+  // Métricas de tiempo
+  sla_hours        Int?      // snapshot del SLA al crear la solicitud
+  due_date         DateTime? // calculado: created_at + sla_hours
+  started_at       DateTime?
+  approved_at      DateTime?
+  completed_at     DateTime?
+  accepted_at      DateTime?
+  closed_at        DateTime?
+  sla_breached     Boolean   @default(false)
+  resolution_hours Float?    // horas reales de resolución
+
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  approvals      SocApproval[]
+  comments       SocComment[]
+  documents      SocDocument[]
+  history        SocHistory[]
+
+  @@index([tenant_id, status])
+  @@index([service_id])
+  @@index([requester_id])
+  @@index([assigned_to_id])
+  @@map("soc_requests")
+}
+
+// Aprobación — paso en el flujo multi-nivel
+model SocApproval {
+  id          String     @id @default(cuid())
+  request_id  String
+  request     SocRequest @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  approver_id String
+  approver    TeamSlot   @relation(fields: [approver_id], references: [id])
+  step        Int        // número de paso (1, 2, 3...)
+  status      String     @default("pending") // pending | approved | rejected
+  notes       String?
+  decided_at  DateTime?
+  created_at  DateTime   @default(now())
+
+  @@index([request_id])
+  @@index([approver_id, status])
+  @@map("soc_approvals")
+}
+
+// Comentarios — hilo de conversación en la solicitud
+model SocComment {
+  id          String     @id @default(cuid())
+  request_id  String
+  request     SocRequest @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  slot_id     String
+  slot        TeamSlot   @relation(fields: [slot_id], references: [id])
+  content     String
+  is_internal Boolean    @default(false) // nota interna vs visible al solicitante
+  created_at  DateTime   @default(now())
+
+  @@index([request_id])
+  @@map("soc_comments")
+}
+
+// Documentos adjuntos a una solicitud
+model SocDocument {
+  id          String     @id @default(cuid())
+  request_id  String
+  request     SocRequest @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  slot_id     String
+  slot        TeamSlot   @relation(fields: [slot_id], references: [id])
+  name        String
+  url         String
+  size_bytes  Int?
+  mime_type   String?
+  created_at  DateTime   @default(now())
+
+  @@index([request_id])
+  @@map("soc_documents")
+}
+
+// Historial de cambios — trazabilidad completa
+model SocHistory {
+  id          String     @id @default(cuid())
+  request_id  String
+  request     SocRequest @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  slot_id     String?
+  slot        TeamSlot?  @relation(fields: [slot_id], references: [id])
+  action      String     // status_changed | assigned | comment_added | approved | rejected | document_added
+  from_value  String?
+  to_value    String?
+  notes       String?
+  created_at  DateTime   @default(now())
+
+  @@index([request_id])
+  @@map("soc_history")
+}
+
+// ═════════════════════════════════════════════
+// ERP POR ÁREA — Requerimientos de Software Interno
+// Metodología completa para levantar, validar y
+// desplegar el sistema operativo de cada departamento
+// ═════════════════════════════════════════════
+
+enum ErpStatus {
+  LEVANTAMIENTO  // recopilando información del área
+  CONFIGURACION  // sesión en vivo configurando servicios
+  PRUEBA         // el área prueba el sistema (3-5 días)
+  AJUSTE         // ronda de retroalimentación
+  APROBADO       // área firmó aprobación
+  PRODUCCION     // desplegado en SOC OS — servicios activos
+  CANCELADO
+}
+
+// Proyecto de requerimiento por departamento
+model ErpRequirement {
+  id             String     @id @default(cuid())
+  tenant_id      String
+  tenant         Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  department_id  String
+  department     Department @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  owner_slot_id  String
+  owner_slot     TeamSlot   @relation("ErpOwner", fields: [owner_slot_id], references: [id])
+
+  name           String    // ej: "ERP Contabilidad" | "Valor SOC — RRHH"
+  status         ErpStatus @default(LEVANTAMIENTO)
+
+  // Levantamiento — contexto AS-IS
+  current_tools  String?   // herramientas que usan hoy (Excel, WhatsApp, correo...)
+  current_pain   String?   // principales dolores del proceso actual
+  monthly_volume Int?      // solicitudes aprox. por mes (total del área)
+  notes          String?   // notas generales del levantamiento
+  attachments    Json?     // [{name, url, type}] — capturas de herramientas actuales
+
+  // Fechas de cada fase
+  levantamiento_at DateTime?
+  configuracion_at DateTime?
+  prueba_at        DateTime?
+  aprobado_at      DateTime?
+  produccion_at    DateTime?
+
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  services       ErpService[]
+  feedbacks      ErpFeedback[]
+
+  @@index([tenant_id])
+  @@index([department_id])
+  @@index([tenant_id, status])
+  @@map("erp_requirements")
+}
+
+// Servicio identificado durante el levantamiento
+model ErpService {
+  id             String         @id @default(cuid())
+  requirement_id String
+  requirement    ErpRequirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+
+  // Identificación del servicio
+  name           String
+  description    String?
+  category       String?
+  icon           String?   @default("briefcase")
+  color          String?   @default("#6366F1")
+
+  // AS-IS — cómo lo hacen hoy
+  current_process String?  // descripción del proceso actual
+  pain_points     String?  // qué falla o es lento en el proceso actual
+  requester_profile String? // quién normalmente solicita este servicio
+  delivered_how   String?  // cómo notifican cuando está listo
+
+  // TO-BE — configuración del sistema
+  sla_hours         Int?
+  requires_approval Boolean @default(false)
+  approval_flow     Json?   // [{step, label, role?, slot_id?}]
+  form_schema       Json?   // [{id, label, type, required, ...}]
+  visible_to        String? @default("all")   // 'all' | 'roles' | 'department'
+  visible_roles     Json?                      // string[] — roles habilitados si visible_to = 'roles'
+  visible_dept_id   String?                    // dept habilitado si visible_to = 'department'
+  assigned_to_type  String? @default("department") // 'department' | 'person'
+  assigned_slot_id  String?                    // TeamSlot que atiende si assigned_to_type = 'person'
+  auto_agent_id     String?
+  auto_respond      Boolean @default(false)
+  monthly_volume    Int?    // solicitudes aprox. por mes para este servicio
+
+  // Estado dentro del requerimiento
+  status         String    @default("BORRADOR") // BORRADOR | REVISADO | APROBADO
+
+  // Vínculo con el SocService creado al aprobar
+  soc_service_id String?   // poblado automáticamente al pasar a PRODUCCION
+
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@index([requirement_id])
+  @@map("erp_services")
+}
+
+// Retroalimentación del área (máximo 1 ronda antes de aprobación)
+model ErpFeedback {
+  id             String         @id @default(cuid())
+  requirement_id String
+  requirement    ErpRequirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+  slot_id        String
+  slot           TeamSlot       @relation(fields: [slot_id], references: [id])
+
+  type           String         // 'feedback' | 'approval' | 'rejection'
+  content        String
+  service_refs   Json?          // [{service_id, comment}] — comentarios por servicio
+
+  created_at     DateTime       @default(now())
+
+  @@index([requirement_id])
+  @@map("erp_feedbacks")
 }

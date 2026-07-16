@@ -53,6 +53,8 @@ import { ImplementationsModule } from './modules/implementations/implementations
 import { MentoriaModule } from './modules/mentoria/mentoria.module';
 import { ClienteDocsModule } from './modules/cliente-docs/cliente-docs.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
+import { SocModule } from './modules/soc/soc.module';
+import { ErpAreasModule } from './modules/erp-areas/erp-areas.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -141,6 +143,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     // Cliente Docs â€” propuestas, diagnÃ³sticos y cualquier documento enviado a clientes
     ClienteDocsModule,
     CommunicationsModule,
+    SocModule,
+    ErpAreasModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
