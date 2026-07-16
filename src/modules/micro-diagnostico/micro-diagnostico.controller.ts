@@ -2,12 +2,12 @@ import { Controller, Get, Param, Req } from '@nestjs/common';
 import { MicroDiagnosticoService } from './micro-diagnostico.service';
 import { Public } from '../auth/decorators/public.decorator';
 
-@Controller('api/v1/micro-diagnostico')
+@Controller('micro-diagnostico')
 export class MicroDiagnosticoController {
   constructor(private readonly svc: MicroDiagnosticoService) {}
 
-  @Get(':token')
   @Public()
+  @Get(':token')
   getByToken(@Param('token') token: string) {
     return this.svc.findByToken(token);
   }

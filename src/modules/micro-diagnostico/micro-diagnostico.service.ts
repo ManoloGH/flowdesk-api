@@ -8,6 +8,16 @@ export class MicroDiagnosticoService {
   async findByToken(token: string) {
     const record = await this.prisma.microDiagnostico.findUnique({
       where: { token },
+      select: {
+        id: true,
+        token: true,
+        lead_name: true,
+        lead_company: true,
+        responses: true,
+        diagnostic_data: true,
+        cal_booking_url: true,
+        created_at: true,
+      },
     });
     if (!record) throw new NotFoundException('Micro-diagnóstico no encontrado');
     return record;

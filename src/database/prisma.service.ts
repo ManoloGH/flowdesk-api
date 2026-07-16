@@ -140,6 +140,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get mentoriaPago() { return this.prisma.mentoriaPago; }
   get mentoriaDiagnostico() { return this.prisma.mentoriaDiagnostico; }
 
+  // ── Micro-diagnóstico ────────────────────────────────────────────────────
+  get microDiagnostico() { return this.prisma.microDiagnostico; }
+
   // ── Implementaciones ──────────────────────────────────────────────────────
   get implementation() { return this.prisma.implementation; }
   get implementationCheckItem() { return this.prisma.implementationCheckItem; }
@@ -156,7 +159,6 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── WhatsApp Bot ──────────────────────────────────────────────────────────
   get botConversation() { return this.prisma.botConversation; }
   get botMessage() { return this.prisma.botMessage; }
-  get microDiagnostico() { return this.prisma.microDiagnostico; }
 
   // ── Cliente Docs ────────────────────────────────────────────
   get clienteDoc() { return this.prisma.clienteDoc; }
