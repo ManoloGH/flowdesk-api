@@ -128,15 +128,8 @@ const TOOLS = [
           deal_id:  { type: 'string', description: 'ID del deal obtenido de registrarEnCRM (puede ser vacío si no se registró)' },
           respuestas: {
             type: 'object',
-            description: 'Las 5 respuestas del micro-diagnóstico',
-            properties: {
-              actividad_y_antiguedad:  { type: 'string' },
-              empleados:               { type: 'string' },
-              herramientas_digitales:  { type: 'string' },
-              tiene_area_programacion: { type: 'string' },
-              cuello_de_botella:       { type: 'string' },
-            },
-            required: ['actividad_y_antiguedad','empleados','herramientas_digitales','tiene_area_programacion','cuello_de_botella'],
+            description: 'Objeto con las respuestas del prospecto a cada pregunta del diagnóstico. Usa el número de pregunta como llave ("1", "2", "3"…) y la respuesta como valor.',
+            additionalProperties: { type: 'string' },
           },
         },
         required: ['nombre', 'telefono', 'respuestas'],
@@ -331,6 +324,10 @@ export class SalesBotService {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model  = process.env.OPENROUTER_MODEL ?? 'anthropic/claude-haiku-4-5';
 
+    const respuestasFormateadas = Object.entries(respuestas)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
+
     const prompt = `Eres un consultor experto en automatización de procesos empresariales para MentorIA Systems, una empresa de tecnología IA First.
 Analiza estas respuestas y genera un micro-diagnóstico profesional en JSON con esta estructura EXACTA:
 {
@@ -342,12 +339,8 @@ Analiza estas respuestas y genera un micro-diagnóstico profesional en JSON con 
 
 Empresa: ${empresa || 'No especificada'}
 Contacto: ${nombre}
-Respuestas:
-1. Actividad y antigüedad: ${respuestas.actividad_y_antiguedad || ''}
-2. Empleados: ${respuestas.empleados || ''}
-3. Herramientas digitales: ${respuestas.herramientas_digitales || ''}
-4. Área de programación: ${respuestas.tiene_area_programacion || ''}
-5. Cuello de botella: ${respuestas.cuello_de_botella || ''}
+Respuestas del prospecto:
+${respuestasFormateadas}
 
 Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
 
@@ -450,13 +443,31 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
     const nombre = cfg.nombre ?? 'Leo';
-    const preguntas: string[] = cfg.preguntas_microdiagnostico ?? [
-      '¿A qué se dedica la empresa y cuántos años lleva operando?',
-      '¿Cuántos empleados tiene?',
-      '¿Qué software o herramientas digitales usan hoy en día?',
-      '¿Tienen área de programación?',
-      '¿Qué tarea o proceso les genera cuello de botella o ven que se podría agregar más valor?',
-    ];
+
+    // Normalize to Pregunta[] — handle legacy string[] format
+    type Pregunta = { text: string; type: 'open' | 'multiple'; options: string[] };
+    const preguntasRaw: Array<string | Pregunta> = cfg.preguntas_microdiagnostico ?? [];
+    const preguntas: Pregunta[] = preguntasRaw.length
+      ? preguntasRaw.map(q =>
+          typeof q === 'string' ? { text: q, type: 'open', options: [] } : q
+        )
+      : [
+          { text: '¿A qué se dedica la empresa y cuántos años lleva operando?', type: 'open', options: [] },
+          { text: '¿Cuántos empleados tiene?', type: 'multiple', options: ['Menos de 50', '50 a 200', '200 a 1000', 'Más de 1000'] },
+          { text: '¿Qué software o herramientas digitales usan hoy en día?', type: 'open', options: [] },
+          { text: '¿Tienen área de programación?', type: 'multiple', options: ['Sí, propia', 'No, outsourcing', 'No tenemos'] },
+          { text: '¿Qué tarea o proceso les genera cuello de botella?', type: 'open', options: [] },
+        ];
+
+    const preguntasStr = preguntas
+      .map((q, i) => {
+        if (q.type === 'multiple' && q.options.length > 0) {
+          const opts = q.options.map((o, j) => `   ${j + 1}. ${o}`).join('\n');
+          return `${i + 1}. [OPCIÓN MÚLTIPLE] ${q.text}\n${opts}\n   → Envía las opciones numeradas en un mensaje limpio y espera que conteste con un número o el texto de la opción.`;
+        }
+        return `${i + 1}. [ABIERTA] ${q.text}`;
+      })
+      .join('\n\n');
 
     return `Eres ${nombre}, agente comercial de MentorIA Systems que atiende mensajes de WhatsApp. Tu objetivo es guiar al prospecto a través de un journey de valor, no simplemente calificar y cerrar.
 
@@ -470,18 +481,24 @@ ${cfg.propuesta_valor ?? 'Somos una empresa de tecnología expertos en entender 
 Preséntate por nombre. Di brevemente qué hace MentorIA Systems (1 oración). Haz UNA pregunta abierta para conocer su negocio. Sin emojis.
 
 ### ETAPA 2 — Escucha
-Escucha y entiende su negocio. No más de 2 intercambios. No hagas más de una pregunta a la vez. Objetivo: saber a qué se dedican y si hay una oportunidad.
+Escucha y entiende el negocio. No más de 2 intercambios. Una pregunta a la vez. Objetivo: entender a qué se dedican. Luego pasa a pedir sus datos de contacto (Etapa 2.5) antes de ofrecer el diagnóstico.
+
+### ETAPA 2.5 — Datos de contacto (entre Escucha y Gancho)
+Antes de hacer la oferta del diagnóstico, asegúrate de conocer el nombre del prospecto y el nombre de su empresa. Si no los mencionó aún, pregúntalos en un mensaje natural antes de continuar: "Por cierto, ¿con quién tengo el gusto? ¿Y cómo se llama tu empresa?" Si ya los sabes del contexto, no los vuelvas a pedir.
 
 ### ETAPA 3 — Gancho de valor
 Una vez que tengas contexto, ofrece el micro-diagnóstico. Usa este texto como guía:
 "${cfg.gancho ?? 'Me gustaría ofrecerte algo: podemos hacerte un micro-diagnóstico gratuito de automatización para tu empresa. Solo 5 preguntas, menos de un minuto, y te mandamos un análisis personalizado aquí mismo por WhatsApp. ¿Te gustaría?'}"
 Espera confirmación antes de continuar.
 
-### ETAPA 4 — Las 5 preguntas
-Si acepta:
-1. PRIMERO llama a la herramienta registrarEnCRM con su nombre, empresa (si la sabes) y teléfono.
-2. Luego haz las preguntas UNA POR UNA, esperando respuesta entre cada una:
-${preguntas.map((q, i) => `   ${i + 1}. ${q}`).join('\n')}
+### ETAPA 4 — Las preguntas del diagnóstico
+Si el prospecto acepta:
+1. PRIMERO llama a registrarEnCRM con su nombre, empresa y teléfono.
+2. Luego haz las preguntas UNA POR UNA, en orden, esperando respuesta antes de continuar con la siguiente:
+
+${preguntasStr}
+
+Para preguntas de opción múltiple: escribe las opciones como una lista numerada en el mensaje. Acepta tanto el número como el texto de la opción como respuesta válida.
 
 ### ETAPA 5 — Entrega del micro-diagnóstico
 Cuando tengas las 5 respuestas:
