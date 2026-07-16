@@ -13,7 +13,7 @@ export class WebhooksController {
   constructor(
     private service: WebhooksService,
     private messagesGateway: MessagesGateway,
-    private evolution: EvolutionAdapter,
+    private evolutionAdapter: EvolutionAdapter,
   ) {}
 
   @Post('chatwoot')
@@ -41,7 +41,7 @@ export class WebhooksController {
   @HttpCode(200)
   @ApiOperation({ summary: '[Debug] Consulta el webhook config de una instancia Evolution' })
   async evolutionCheck(@Param('instance') instance: string) {
-    const config = await this.evolution.getWebhook(instance);
+    const config = await this.evolutionAdapter.getWebhook(instance);
     return { instance, config };
   }
 
