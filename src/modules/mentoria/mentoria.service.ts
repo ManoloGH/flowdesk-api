@@ -9,7 +9,7 @@ export class MentoriaService {
 
   async getProspectos(tenantId: string) {
     return this.prisma.mentoriaProspecto.findMany({
-      where: { tenant_id: tenantId, status: 'activo' },
+      where: { tenant_id: tenantId, status: 'activo', etapa: { not: 'implementacion' } },
       orderBy: { created_at: 'desc' },
       include: { cliente: { select: { id: true, fase_actual: true, status: true } } },
     });
