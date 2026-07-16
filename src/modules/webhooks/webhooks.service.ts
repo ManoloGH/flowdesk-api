@@ -49,6 +49,7 @@ export class WebhooksService {
         ],
       },
     });
+    this.logger.debug(`resolveTenant[${identifier}] Integration: ${integration?.tenant_id ?? 'null'}`);
     if (integration?.tenant_id) return integration.tenant_id;
 
     // Fallback 1: buscar en TeamSlot (Agente de Ventas con esta instancia Evolution)
@@ -60,6 +61,7 @@ export class WebhooksService {
       select: { tenant_id: true },
     });
     const tenantFromSlot = slot?.tenant_id ?? null;
+    this.logger.debug(`resolveTenant[${identifier}] TeamSlot JSON: ${tenantFromSlot ?? 'null'}`);
 
     // Fallback 2: buscar en SecretaryConfig (columna real, no JSON)
     const secretaryCfg = !tenantFromSlot
@@ -68,8 +70,18 @@ export class WebhooksService {
           select: { tenant_id: true },
         })
       : null;
+    this.logger.debug(`resolveTenant[${identifier}] SecretaryConfig: ${secretaryCfg?.tenant_id ?? 'null'}`);
 
-    const resolvedTenantId = tenantFromSlot ?? secretaryCfg?.tenant_id ?? null;
+    // Fallback 3: buscar SecretaryConfig con ILIKE (case-insensitive por si acaso)
+    const secretaryCfgCI = !tenantFromSlot && !secretaryCfg
+      ? await this.prisma.secretaryConfig.findFirst({
+          where: { evolution_instance: { equals: identifier, mode: 'insensitive' } },
+          select: { tenant_id: true, evolution_instance: true },
+        })
+      : null;
+    this.logger.debug(`resolveTenant[${identifier}] SecretaryConfig(CI): tenant=${secretaryCfgCI?.tenant_id ?? 'null'} instance=${secretaryCfgCI?.evolution_instance ?? 'null'}`);
+
+    const resolvedTenantId = tenantFromSlot ?? secretaryCfg?.tenant_id ?? secretaryCfgCI?.tenant_id ?? null;
     if (!resolvedTenantId) return null;
 
     // Auto-crear el Integration record para que la próxima vez funcione sin fallback
