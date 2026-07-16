@@ -156,6 +156,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── WhatsApp Bot ──────────────────────────────────────────────────────────
   get botConversation() { return this.prisma.botConversation; }
   get botMessage() { return this.prisma.botMessage; }
+  get microDiagnostico() { return this.prisma.microDiagnostico; }
 
   // ── Cliente Docs ────────────────────────────────────────────
   get clienteDoc() { return this.prisma.clienteDoc; }
