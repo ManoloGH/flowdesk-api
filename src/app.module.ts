@@ -55,6 +55,7 @@ import { ClienteDocsModule } from './modules/cliente-docs/cliente-docs.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
 import { SocModule } from './modules/soc/soc.module';
 import { ErpAreasModule } from './modules/erp-areas/erp-areas.module';
+import { EmailModule } from './modules/email/email.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -78,6 +79,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     AiModule,
     // BÃºsqueda web â€” Brave Search + Firecrawl con fallbacks gratuitos
     SearchModule,
+    // Email — Resend (global)
+    EmailModule,
     // Integraciones externas (global â€” disponible en todos los mÃ³dulos)
     IntegrationsModule,
     // Core

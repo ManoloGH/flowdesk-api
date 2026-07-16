@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { TenantExportService } from './tenant-export.service';
+import { EmailService } from '../email/email.service';
 
 import { randomBytes } from 'crypto';
 
@@ -16,6 +17,7 @@ export class PlatformService {
     private tenantExport: TenantExportService,
     private jwt: JwtService,
     private config: ConfigService,
+    private email: EmailService,
   ) {}
 
   private async assertPlatform(tenantId: string) {
@@ -1187,7 +1189,17 @@ curl -s https://api.anthropic.com/v1/messages \\
         worker_type:   workerType,
         desk_access:   deskAccess,
       },
-      select: { id: true, name: true, email: true, role: true, worker_type: true },
+      select: { id: true, name: true, email: true, role: true, worker_type: true, tenant_id: true },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: targetTenantId }, select: { name: true } });
+    const loginUrl = this.config.get<string>('APP_URL') ?? 'https://app.flowdesk.mx';
+    this.email.sendWelcome({
+      to:           dto.email,
+      name:         dto.name,
+      tempPassword,
+      tenantName:   tenant?.name ?? 'FlowDesk',
+      loginUrl,
     });
 
     return { ...slot, temp_password: tempPassword };

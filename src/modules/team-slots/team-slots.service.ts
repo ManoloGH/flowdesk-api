@@ -5,7 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+import { EmailService } from '../email/email.service';
 import { CreateHumanSlotDto, CreateAgentSlotDto } from './dto/create-slot.dto';
 import { UpdateSlotDto, UpdateStatusDto } from './dto/update-slot.dto';
 
@@ -33,7 +35,11 @@ const SLOT_SELECT = {
 
 @Injectable()
 export class TeamSlotsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+    private config: ConfigService,
+  ) {}
 
   // Listar todos los slots de la empresa (con filtros opcionales)
   async findAll(tenantId: string, filters?: { type?: string; department_id?: string; status?: string }) {
@@ -163,12 +169,22 @@ export class TeamSlotsService {
       await this.provisionDailyAssistant(tenantId, slot.id as string, dto.name, dto.role ?? 'employee');
     }
 
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+    const loginUrl = this.config.get<string>('APP_URL') ?? 'https://app.flowdesk.mx';
+    this.email.sendWelcome({
+      to:           dto.email,
+      name:         dto.name,
+      tempPassword,
+      tenantName:   tenant?.name ?? 'FlowDesk',
+      loginUrl,
+    });
+
     const workerLabel = isOperative ? 'Operativo (cédula vía WhatsApp)' : 'Escritorio (asistente personal)';
     return {
       slot,
       temp_password: tempPassword,
       worker_type: workerType,
-      message: `Comparte esta contraseña con el empleado. Solo se muestra una vez. Tipo: ${workerLabel}.`,
+      message: `Credenciales enviadas por email. Tipo: ${workerLabel}.`,
     };
   }
 
