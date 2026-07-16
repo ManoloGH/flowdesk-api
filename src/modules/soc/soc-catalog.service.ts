@@ -53,8 +53,8 @@ export class SocCatalogService {
         sla_hours: dto.sla_hours,
         sla_warning_pct: dto.sla_warning_pct,
         requires_approval: dto.requires_approval ?? false,
-        approval_flow: dto.approval_flow ?? undefined,
-        form_schema: dto.form_schema ?? undefined,
+        approval_flow: dto.approval_flow as any,
+        form_schema: dto.form_schema as any,
         visible_to: dto.visible_to ?? 'all',
         visible_roles: dto.visible_roles ?? undefined,
         auto_agent_id: dto.auto_agent_id,
@@ -80,9 +80,9 @@ export class SocCatalogService {
       where: { id: serviceId },
       data: {
         ...rest,
-        approval_flow: dto.approval_flow ?? undefined,
-        form_schema: dto.form_schema ?? undefined,
-        visible_roles: dto.visible_roles ?? undefined,
+        approval_flow: dto.approval_flow as any,
+        form_schema: dto.form_schema as any,
+        visible_roles: dto.visible_roles as any,
       },
     });
   }

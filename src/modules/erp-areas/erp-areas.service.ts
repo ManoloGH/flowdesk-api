@@ -35,8 +35,8 @@ export class ErpAreasService {
       },
       include: {
         department: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, avatar: true } },
-        erp_services: { select: { id: true, name: true, status: true } },
+        owner_slot: { select: { id: true, name: true } },
+        services: { select: { id: true, name: true, status: true } },
       },
       orderBy: { created_at: 'desc' },
     });
@@ -47,12 +47,12 @@ export class ErpAreasService {
       where: { id, tenant_id: tenantId },
       include: {
         department: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, avatar: true } },
-        erp_services: {
+        owner_slot: { select: { id: true, name: true } },
+        services: {
           orderBy: { created_at: 'asc' },
         },
-        erp_feedbacks: {
-          include: { slot: { select: { id: true, name: true, avatar: true } } },
+        feedbacks: {
+          include: { slot: { select: { id: true, name: true } } },
           orderBy: { created_at: 'desc' },
         },
       },
@@ -104,14 +104,17 @@ export class ErpAreasService {
   async deployToProduction(tenantId: string, id: string) {
     const req = await this.prisma.erpRequirement.findFirst({
       where: { id, tenant_id: tenantId },
-      include: { erp_services: true, department: true },
+      include: { services: true, department: true },
     });
     if (!req) throw new NotFoundException('Requerimiento no encontrado');
     if (req.status !== 'APROBADO') {
       throw new BadRequestException('Solo se puede desplegar un requerimiento en estado APROBADO');
     }
+    if (!req.department_id) {
+      throw new BadRequestException('El requerimiento debe tener un departamento asignado para desplegarse');
+    }
 
-    const approvedServices = req.erp_services.filter((s: any) => s.status === 'APROBADO');
+    const approvedServices = req.services.filter((s: any) => s.status === 'APROBADO');
     if (approvedServices.length === 0) {
       throw new BadRequestException('No hay servicios aprobados para desplegar');
     }
@@ -130,8 +133,8 @@ export class ErpAreasService {
           sla_hours: svc.sla_hours ?? 48,
           sla_warning_pct: 80,
           requires_approval: svc.requires_approval ?? false,
-          approval_flow: svc.approval_flow ?? [],
-          form_schema: svc.form_schema ?? [],
+          approval_flow: (svc.approval_flow ?? []) as any,
+          form_schema: (svc.form_schema ?? []) as any,
           auto_agent_id: svc.auto_agent_id,
           auto_respond: svc.auto_respond ?? false,
           visible_to: 'all',
@@ -189,8 +192,8 @@ export class ErpAreasService {
         monthly_volume: dto.monthly_volume,
         sla_hours: dto.sla_hours,
         requires_approval: dto.requires_approval ?? false,
-        approval_flow: dto.approval_flow ?? [],
-        form_schema: dto.form_schema ?? [],
+        approval_flow: (dto.approval_flow ?? []) as any,
+        form_schema: (dto.form_schema ?? []) as any,
         auto_agent_id: dto.auto_agent_id,
         auto_respond: dto.auto_respond ?? false,
         status: 'BORRADOR',
@@ -202,7 +205,14 @@ export class ErpAreasService {
     await this.assertRequirement(tenantId, requirementId);
     const svc = await this.prisma.erpService.findFirst({ where: { id: serviceId, requirement_id: requirementId } });
     if (!svc) throw new NotFoundException('Servicio no encontrado');
-    return this.prisma.erpService.update({ where: { id: serviceId }, data: dto });
+    return this.prisma.erpService.update({
+      where: { id: serviceId },
+      data: {
+        ...dto,
+        approval_flow: dto.approval_flow as any,
+        form_schema: dto.form_schema as any,
+      },
+    });
   }
 
   async deleteService(tenantId: string, requirementId: string, serviceId: string) {
@@ -217,7 +227,7 @@ export class ErpAreasService {
     await this.assertRequirement(tenantId, requirementId);
     return this.prisma.erpFeedback.findMany({
       where: { requirement_id: requirementId },
-      include: { slot: { select: { id: true, name: true, avatar: true } } },
+      include: { slot: { select: { id: true, name: true } } },
       orderBy: { created_at: 'desc' },
     });
   }

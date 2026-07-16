@@ -73,7 +73,7 @@ export class BrandService {
     };
 
     const modules_config = Array.isArray(tenant.modules_config)
-      ? (tenant.modules_config as ModuleConfig[])
+      ? (tenant.modules_config as unknown as ModuleConfig[])
       : null;
 
     return { logo_url: tenant.logo_url ?? null, tenant_name: tenant.name ?? null, colors, configured, modules_config };
