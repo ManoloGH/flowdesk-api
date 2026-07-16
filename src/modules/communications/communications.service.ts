@@ -255,6 +255,8 @@ export class CommunicationsService {
       select: { id: true },
     });
 
+    const evolutionInstance: string | null = body.evolution_instance?.trim() || null;
+
     const agentData = {
       type: 'AI_AGENT' as const,
       agent_role: 'sales',
@@ -268,6 +270,7 @@ export class CommunicationsService {
         criterios_buen_lead: body.criterios_buen_lead ?? null,
         criterios_mal_lead: body.criterios_mal_lead ?? null,
         cal_booking_url: body.cal_booking_url ?? null,
+        evolution_instance: evolutionInstance,
       },
     };
 
@@ -278,6 +281,35 @@ export class CommunicationsService {
       });
     } else {
       await this.prisma.teamSlot.create({ data: agentData });
+    }
+
+    // Upsert Integration record so resolveTenant() can find this tenant
+    // when Evolution API sends a webhook for this instance.
+    if (evolutionInstance) {
+      const existingIntegration = await this.prisma.integration.findFirst({
+        where: {
+          tenant_id: tenantId,
+          provider: 'whatsapp',
+          config: { path: ['instance_name'], equals: evolutionInstance },
+        },
+        select: { id: true },
+      });
+
+      if (existingIntegration) {
+        await this.prisma.integration.update({
+          where: { id: existingIntegration.id },
+          data: { status: 'connected', config: { instance_name: evolutionInstance } },
+        });
+      } else {
+        await this.prisma.integration.create({
+          data: {
+            tenant_id: tenantId,
+            provider: 'whatsapp',
+            status: 'connected',
+            config: { instance_name: evolutionInstance },
+          },
+        });
+      }
     }
 
     return { ok: true };
