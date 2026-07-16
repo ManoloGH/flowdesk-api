@@ -53,6 +53,7 @@ class CreateTenantSlotDto {
   @IsString() @MinLength(2) name: string;
   @IsEmail() email: string;
   @IsOptional() @IsString() role?: string;
+  @IsOptional() @IsString() worker_type?: string;
   @IsOptional() @IsString() password?: string;
 }
 

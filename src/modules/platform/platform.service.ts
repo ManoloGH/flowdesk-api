@@ -1162,7 +1162,7 @@ curl -s https://api.anthropic.com/v1/messages \\
   async createTenantSlot(
     callerTenantId: string,
     targetTenantId: string,
-    dto: { name: string; email: string; role?: string; password?: string },
+    dto: { name: string; email: string; role?: string; worker_type?: string; password?: string },
   ) {
     await this.assertPlatform(callerTenantId);
 
@@ -1171,6 +1171,9 @@ curl -s https://api.anthropic.com/v1/messages \\
 
     const tempPassword = dto.password ?? randomBytes(5).toString('hex');
     const hash = await bcrypt.hash(tempPassword, 12);
+
+    const workerType  = (dto.worker_type === 'operative') ? 'operative' : 'desk';
+    const deskAccess  = workerType === 'operative' ? 'NONE' : 'FULL';
 
     const slot = await this.prisma.teamSlot.create({
       data: {
@@ -1181,9 +1184,10 @@ curl -s https://api.anthropic.com/v1/messages \\
         type:          'HUMAN',
         status:        'OFFLINE',
         password_hash: hash,
-        desk_access:   'FULL',
+        worker_type:   workerType,
+        desk_access:   deskAccess,
       },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, worker_type: true },
     });
 
     return { ...slot, temp_password: tempPassword };
