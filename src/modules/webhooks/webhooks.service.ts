@@ -49,7 +49,29 @@ export class WebhooksService {
         ],
       },
     });
-    return integration?.tenant_id ?? null;
+    if (integration?.tenant_id) return integration.tenant_id;
+
+    // Fallback: buscar en TeamSlot (Agente de Ventas con esta instancia Evolution)
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: {
+        type: 'AI_AGENT',
+        agent_config: { path: ['evolution_instance'], equals: identifier },
+      },
+      select: { tenant_id: true },
+    });
+    if (!slot?.tenant_id) return null;
+
+    // Auto-crear el Integration record para que la próxima vez funcione sin fallback
+    await this.prisma.integration.create({
+      data: {
+        tenant_id: slot.tenant_id,
+        provider: 'whatsapp',
+        status: 'connected',
+        config: { instance_name: identifier },
+      },
+    }).catch(() => {}); // idempotente — si ya existe ignora el error de unique
+    this.logger.log(`Evolution: Integration record auto-creado para instancia ${identifier}`);
+    return slot.tenant_id;
   }
 
   // ─── Chatwoot ─────────────────────────────────────────────────────────────

@@ -246,6 +246,7 @@ export class CommunicationsService {
       criterios_buen_lead: cfg.criterios_buen_lead ?? null,
       criterios_mal_lead: cfg.criterios_mal_lead ?? null,
       cal_booking_url: cfg.cal_booking_url ?? null,
+      evolution_instance: cfg.evolution_instance ?? null,
     };
   }
 
