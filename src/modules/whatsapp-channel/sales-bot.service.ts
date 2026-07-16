@@ -118,7 +118,7 @@ const TOOLS = [
     function: {
       name: 'generarMicroDiagnostico',
       description:
-        'Genera el micro-diagnóstico con IA después de recibir las 5 respuestas. Llama esto SOLO cuando tengas todas las respuestas de las 5 preguntas. Devuelve la URL pública del micro-diagnóstico para enviar al prospecto.',
+        'Genera el micro-diagnóstico con IA después de recibir TODAS las respuestas del prospecto. Llama esto SOLO cuando hayas hecho todas las preguntas del diagnóstico y tengas todas las respuestas. Devuelve la URL pública del micro-diagnóstico para enviar al prospecto.',
       parameters: {
         type: 'object',
         properties: {
@@ -449,7 +449,9 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
     const preguntasRaw: Array<string | Pregunta> = cfg.preguntas_microdiagnostico ?? [];
     const preguntas: Pregunta[] = preguntasRaw.length
       ? preguntasRaw.map(q =>
-          typeof q === 'string' ? { text: q, type: 'open', options: [] } : q
+          typeof q === 'string'
+            ? { text: q, type: 'open', options: [] }
+            : { ...q, options: q.options ?? [] }
         )
       : [
           { text: '¿A qué se dedica la empresa y cuántos años lleva operando?', type: 'open', options: [] },
@@ -488,7 +490,7 @@ Antes de hacer la oferta del diagnóstico, asegúrate de conocer el nombre del p
 
 ### ETAPA 3 — Gancho de valor
 Una vez que tengas contexto, ofrece el micro-diagnóstico. Usa este texto como guía:
-"${cfg.gancho ?? 'Me gustaría ofrecerte algo: podemos hacerte un micro-diagnóstico gratuito de automatización para tu empresa. Solo 5 preguntas, menos de un minuto, y te mandamos un análisis personalizado aquí mismo por WhatsApp. ¿Te gustaría?'}"
+"${cfg.gancho ?? `Me gustaría ofrecerte algo: podemos hacerte un micro-diagnóstico gratuito de automatización para tu empresa. Solo ${preguntas.length} preguntas, menos de un minuto, y te mandamos un análisis personalizado aquí mismo por WhatsApp. ¿Te gustaría?`}"
 Espera confirmación antes de continuar.
 
 ### ETAPA 4 — Las preguntas del diagnóstico
@@ -501,7 +503,7 @@ ${preguntasStr}
 Para preguntas de opción múltiple: escribe las opciones como una lista numerada en el mensaje. Acepta tanto el número como el texto de la opción como respuesta válida.
 
 ### ETAPA 5 — Entrega del micro-diagnóstico
-Cuando tengas las 5 respuestas:
+Cuando hayas recibido respuesta a todas las preguntas (${preguntas.length} en total):
 1. Llama a generarMicroDiagnostico con todas las respuestas y el deal_id obtenido de registrarEnCRM.
 2. Llama a moverEnPipeline con el deal_id y stage_name "Micro Diagnóstico".
 3. Envía la URL al prospecto con un mensaje como: "Listo [nombre], aquí está tu micro-diagnóstico personalizado: [URL] — tómate un momento para revisarlo y cuéntame qué te parece."
@@ -517,7 +519,7 @@ Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50
 
 ## Cuándo usar cada herramienta
 - registrarEnCRM: cuando el prospecto acepta el micro-diagnóstico
-- generarMicroDiagnostico: SOLO cuando tienes las 5 respuestas completas
+- generarMicroDiagnostico: SOLO cuando tienes todas las respuestas completas (${preguntas.length} en total)
 - moverEnPipeline: inmediatamente después de generarMicroDiagnostico
 - calificar: después de entregar el diagnóstico para evaluar si proceder
 - agendar: SOLO si calificar() devolvió score ≥ 7
