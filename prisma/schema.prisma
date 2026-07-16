@@ -2328,20 +2328,21 @@ model ErpRequirement {
   id             String     @id @default(cuid())
   tenant_id      String
   tenant         Tenant     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
-  department_id  String
-  department     Department @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  department_id  String?
+  department     Department? @relation(fields: [department_id], references: [id])
   owner_slot_id  String
   owner_slot     TeamSlot   @relation("ErpOwner", fields: [owner_slot_id], references: [id])
 
-  name           String    // ej: "ERP Contabilidad" | "Valor SOC — RRHH"
+  name           String    // nombre del área (ej: "Contabilidad", "Recursos Humanos")
   status         ErpStatus @default(LEVANTAMIENTO)
 
   // Levantamiento — contexto AS-IS
-  current_tools  String?   // herramientas que usan hoy (Excel, WhatsApp, correo...)
-  current_pain   String?   // principales dolores del proceso actual
-  monthly_volume Int?      // solicitudes aprox. por mes (total del área)
-  notes          String?   // notas generales del levantamiento
-  attachments    Json?     // [{name, url, type}] — capturas de herramientas actuales
+  current_tools    String?  // herramientas que usan hoy (Excel, WhatsApp, correo...)
+  tools_file_url   String?  // enlace al archivo que muestra cómo trabajan hoy
+  current_usage    String?  // descripción de cómo usan la herramienta actualmente
+  requester_info   String?  // quién solicita el servicio y cómo llega la solicitud
+  notes            String?  // notas generales del levantamiento
+  attachments      Json?    // [{name, url, type}] — archivos adicionales
 
   // Fechas de cada fase
   levantamiento_at DateTime?

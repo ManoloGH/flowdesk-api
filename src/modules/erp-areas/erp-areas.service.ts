@@ -65,13 +65,14 @@ export class ErpAreasService {
     return this.prisma.erpRequirement.create({
       data: {
         tenant_id: tenantId,
-        department_id: dto.department_id,
+        department_id: dto.department_id ?? null,
         owner_slot_id: slotId,
         name: dto.name,
         status: 'LEVANTAMIENTO',
         current_tools: dto.current_tools,
-        current_pain: dto.current_pain,
-        monthly_volume: dto.monthly_volume,
+        tools_file_url: dto.tools_file_url,
+        current_usage: dto.current_usage,
+        requester_info: dto.requester_info,
         notes: dto.notes,
         levantamiento_at: new Date(),
       },

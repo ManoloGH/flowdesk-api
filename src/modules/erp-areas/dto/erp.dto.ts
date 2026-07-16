@@ -10,25 +10,29 @@ const ERP_STATUSES = ['LEVANTAMIENTO','CONFIGURACION','PRUEBA','AJUSTE','APROBAD
 // ── Requerimiento ─────────────────────────────────────────────────────────────
 
 export class CreateErpRequirementDto {
-  @ApiProperty()
-  @IsString() @IsNotEmpty()
-  department_id: string;
-
-  @ApiProperty({ example: 'ERP Contabilidad' })
+  @ApiProperty({ example: 'Contabilidad' })
   @IsString() @IsNotEmpty()
   name: string;
 
   @ApiPropertyOptional()
   @IsString() @IsOptional()
-  current_tools?: string;
+  department_id?: string;
 
   @ApiPropertyOptional()
   @IsString() @IsOptional()
-  current_pain?: string;
+  current_tools?: string;
 
-  @ApiPropertyOptional()
-  @IsInt() @IsOptional()
-  monthly_volume?: number;
+  @ApiPropertyOptional({ description: 'Enlace al archivo que muestra cómo trabajan hoy' })
+  @IsString() @IsOptional()
+  tools_file_url?: string;
+
+  @ApiPropertyOptional({ description: 'Cómo usan la herramienta actualmente' })
+  @IsString() @IsOptional()
+  current_usage?: string;
+
+  @ApiPropertyOptional({ description: 'Quién solicita el servicio y cómo llega la solicitud' })
+  @IsString() @IsOptional()
+  requester_info?: string;
 
   @ApiPropertyOptional()
   @IsString() @IsOptional()
