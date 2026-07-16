@@ -307,4 +307,86 @@ export class MentoriaService {
       data: { procesado: true },
     });
   }
+
+  // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
+
+  async getAutomatizaciones(tenantId: string, clienteId?: string) {
+    return this.prisma.mentoriaAutomatizacion.findMany({
+      where: {
+        tenant_id: tenantId,
+        ...(clienteId ? { cliente_id: clienteId } : {}),
+      },
+      include: { cliente: { select: { id: true, empresa: true } } },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async createAutomatizacion(tenantId: string, data: {
+    cliente_id?: string;
+    nombre: string;
+    area: string;
+    descripcion?: string;
+    tipo: string;
+    trigger?: string;
+    accion?: string;
+    canal?: string;
+    webhook_url?: string;
+    config?: any;
+  }) {
+    return this.prisma.mentoriaAutomatizacion.create({
+      data: { tenant_id: tenantId, ...data },
+      include: { cliente: { select: { id: true, empresa: true } } },
+    });
+  }
+
+  async updateAutomatizacion(tenantId: string, id: string, data: Partial<{
+    nombre: string; area: string; descripcion: string; tipo: string;
+    trigger: string; accion: string; canal: string; webhook_url: string;
+    config: any; status: string;
+  }>) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.update({ where: { id }, data });
+  }
+
+  async activarAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({
+      where: { id, tenant_id: tenantId },
+      include: { cliente: { select: { id: true, empresa: true } } },
+    });
+    if (!auto) throw new Error('Automatización no encontrada');
+
+    if (auto.webhook_url) {
+      try {
+        await fetch(auto.webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'activar',
+            automatizacion: { id: auto.id, nombre: auto.nombre, area: auto.area, tipo: auto.tipo, trigger: auto.trigger, accion: auto.accion, canal: auto.canal, config: auto.config },
+            cliente: auto.cliente,
+          }),
+        });
+      } catch (e) {
+        console.error('[Automatizacion] webhook error:', e);
+      }
+    }
+
+    return this.prisma.mentoriaAutomatizacion.update({
+      where: { id },
+      data: { status: 'activa', activada_at: new Date() },
+    });
+  }
+
+  async pausarAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.update({ where: { id }, data: { status: 'pausada' } });
+  }
+
+  async deleteAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.delete({ where: { id } });
+  }
 }

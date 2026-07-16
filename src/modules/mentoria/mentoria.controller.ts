@@ -229,4 +229,43 @@ export class MentoriaController {
   async procesarDiagnostico(@Req() req: any, @Param('id') id: string) {
     return this.procesamiento.procesarDiagnostico(req.user.tenant_id, id);
   }
+
+  // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
+
+  @Get('automatizaciones')
+  getAutomatizaciones(@Req() req: any, @Query('cliente_id') clienteId?: string) {
+    return this.service.getAutomatizaciones(req.user.tenant_id, clienteId);
+  }
+
+  @Post('automatizaciones')
+  createAutomatizacion(@Req() req: any, @Body() body: any) {
+    return this.service.createAutomatizacion(req.user.tenant_id, body);
+  }
+
+  @Patch('automatizaciones/:id')
+  updateAutomatizacion(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.service.updateAutomatizacion(req.user.tenant_id, id, body);
+  }
+
+  @Post('automatizaciones/:id/activar')
+  activarAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.activarAutomatizacion(req.user.tenant_id, id);
+  }
+
+  @Post('automatizaciones/:id/pausar')
+  pausarAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.pausarAutomatizacion(req.user.tenant_id, id);
+  }
+
+  @Delete('automatizaciones/:id')
+  deleteAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.deleteAutomatizacion(req.user.tenant_id, id);
+  }
+
+  // ── AUTOMATIZACIONES POR CLIENTE ────────────────────────────────────────────
+
+  @Get('clientes/:id/automatizaciones')
+  getAutomatizacionesByCliente(@Req() req: any, @Param('id') id: string) {
+    return this.service.getAutomatizaciones(req.user.tenant_id, id);
+  }
 }

@@ -1985,15 +1985,43 @@ model MentoriaCliente {
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
-  hallazgos  MentoriaHallazgo[]
-  plan       MentoriaAccionPlan[]
-  sesiones   MentoriaSesion[]
-  pagos      MentoriaPago[]
-  checks     MentoriaCheck[]
-  diagnosticos MentoriaDiagnostico[]
+  hallazgos       MentoriaHallazgo[]
+  plan            MentoriaAccionPlan[]
+  sesiones        MentoriaSesion[]
+  pagos           MentoriaPago[]
+  checks          MentoriaCheck[]
+  diagnosticos    MentoriaDiagnostico[]
+  automatizaciones MentoriaAutomatizacion[]
 
   @@index([tenant_id])
   @@index([status])
+}
+
+model MentoriaAutomatizacion {
+  id          String           @id @default(cuid())
+  tenant_id   String
+  cliente_id  String?
+  cliente     MentoriaCliente? @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+
+  nombre      String
+  area        String           // ventas | marketing | operaciones | administracion | atencion_cliente | otro
+  descripcion String?
+  tipo        String           // whatsapp_bot | n8n_workflow | webhook | otro
+  trigger     String?          // qué lo activa
+  accion      String?          // qué hace
+  canal       String?          // whatsapp | email | webhook | interno
+  webhook_url String?          // URL de n8n / Evolution API
+  config      Json?            // parámetros adicionales
+  status      String           @default("pendiente") // pendiente | activa | pausada | inactiva
+  activada_at DateTime?
+
+  created_at  DateTime         @default(now())
+  updated_at  DateTime         @updatedAt
+
+  @@index([tenant_id])
+  @@index([cliente_id])
+  @@index([status])
+  @@map("mentoria_automatizaciones")
 }
 
 model MentoriaHallazgo {
