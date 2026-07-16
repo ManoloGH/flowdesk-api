@@ -96,6 +96,69 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'registrarEnCRM',
+      description:
+        'Registra al prospecto como Contacto y crea un Deal en el CRM de FlowDesk. Llama esto en cuanto el prospecto acepte hacer el micro-diagnóstico, ANTES de empezar las preguntas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre:   { type: 'string', description: 'Nombre del prospecto' },
+          empresa:  { type: 'string', description: 'Nombre de la empresa (si ya lo sabes)' },
+          telefono: { type: 'string', description: 'Teléfono del prospecto con código de país' },
+        },
+        required: ['nombre', 'telefono'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generarMicroDiagnostico',
+      description:
+        'Genera el micro-diagnóstico con IA después de recibir las 5 respuestas. Llama esto SOLO cuando tengas todas las respuestas de las 5 preguntas. Devuelve la URL pública del micro-diagnóstico para enviar al prospecto.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre:   { type: 'string', description: 'Nombre del prospecto' },
+          empresa:  { type: 'string', description: 'Nombre de la empresa' },
+          telefono: { type: 'string', description: 'Teléfono del prospecto' },
+          deal_id:  { type: 'string', description: 'ID del deal obtenido de registrarEnCRM (puede ser vacío si no se registró)' },
+          respuestas: {
+            type: 'object',
+            description: 'Las 5 respuestas del micro-diagnóstico',
+            properties: {
+              actividad_y_antiguedad:  { type: 'string' },
+              empleados:               { type: 'string' },
+              herramientas_digitales:  { type: 'string' },
+              tiene_area_programacion: { type: 'string' },
+              cuello_de_botella:       { type: 'string' },
+            },
+            required: ['actividad_y_antiguedad','empleados','herramientas_digitales','tiene_area_programacion','cuello_de_botella'],
+          },
+        },
+        required: ['nombre', 'telefono', 'respuestas'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'moverEnPipeline',
+      description:
+        'Mueve el Deal del prospecto a una etapa específica del pipeline CRM. Llama esto después de generarMicroDiagnostico para mover el deal a "Micro Diagnóstico".',
+      parameters: {
+        type: 'object',
+        properties: {
+          deal_id:    { type: 'string', description: 'ID del deal' },
+          stage_name: { type: 'string', description: 'Nombre exacto de la etapa destino en el pipeline' },
+        },
+        required: ['deal_id', 'stage_name'],
+      },
+    },
+  },
 ];
 
 // ─── servicio ─────────────────────────────────────────────────────────────────
@@ -184,7 +247,7 @@ export class SalesBotService {
     const systemPrompt = await this.buildSystemPrompt(tenantId);
 
     // 6. Llamar a OpenRouter con herramientas
-    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone);
+    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone, tenantId);
 
     if (!reply) return;
 
@@ -202,6 +265,181 @@ export class SalesBotService {
     await this.evolution.sendText(instanceName, jid, reply);
   }
 
+  // ─── CRM helpers ───────────────────────────────────────────────────────────
+
+  private async registrarEnCRM(
+    tenantId: string,
+    nombre: string,
+    empresa: string | undefined,
+    telefono: string,
+  ): Promise<{ contact_id: string; deal_id: string }> {
+    let contact = await this.prisma.contact.findFirst({
+      where: { tenant_id: tenantId, phone: telefono },
+    });
+
+    if (!contact) {
+      const parts = (nombre || 'Prospecto').split(' ');
+      contact = await this.prisma.contact.create({
+        data: {
+          tenant_id: tenantId,
+          first_name: parts[0],
+          last_name: parts.slice(1).join(' ') || '',
+          phone: telefono,
+          company: empresa ?? null,
+          status: 'lead',
+        },
+      });
+    }
+
+    const pipeline = await this.prisma.pipeline.findFirst({
+      where: { tenant_id: tenantId, pipeline_type: 'sales', is_active: true },
+      include: { stages: { orderBy: { order_index: 'asc' } } },
+    });
+
+    if (!pipeline || pipeline.stages.length === 0) {
+      return { contact_id: contact.id, deal_id: '' };
+    }
+
+    const agentSlot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { id: true },
+    });
+
+    const deal = await this.prisma.deal.create({
+      data: {
+        tenant_id: tenantId,
+        pipeline_id: pipeline.id,
+        stage_id: pipeline.stages[0].id,
+        contact_id: contact.id,
+        owner_id: agentSlot?.id,
+        title: empresa ? `${empresa} — WhatsApp` : `${nombre} — WhatsApp`,
+        status: 'open',
+      } as any,
+    });
+
+    return { contact_id: contact.id, deal_id: deal.id };
+  }
+
+  private async generarMicroDiagnosticoIA(
+    tenantId: string,
+    nombre: string,
+    empresa: string | undefined,
+    telefono: string,
+    respuestas: Record<string, string>,
+    dealId: string | undefined,
+  ): Promise<string> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const model  = process.env.OPENROUTER_MODEL ?? 'anthropic/claude-haiku-4-5';
+
+    const prompt = `Eres un consultor experto en automatización de procesos empresariales para MentorIA Systems, una empresa de tecnología IA First.
+Analiza estas respuestas y genera un micro-diagnóstico profesional en JSON con esta estructura EXACTA:
+{
+  "situacion_actual": "párrafo de 2-3 oraciones sobre su situación actual basado en sus respuestas",
+  "hallazgos": ["hallazgo concreto 1", "hallazgo concreto 2", "hallazgo concreto 3"],
+  "impacto_estimado": "párrafo sobre el impacto potencial de implementar la metodología IA First en su operación",
+  "recomendacion": "párrafo con recomendación concreta y por qué el diagnóstico completo con MentorIA es el siguiente paso"
+}
+
+Empresa: ${empresa || 'No especificada'}
+Contacto: ${nombre}
+Respuestas:
+1. Actividad y antigüedad: ${respuestas.actividad_y_antiguedad || ''}
+2. Empleados: ${respuestas.empleados || ''}
+3. Herramientas digitales: ${respuestas.herramientas_digitales || ''}
+4. Área de programación: ${respuestas.tiene_area_programacion || ''}
+5. Cuello de botella: ${respuestas.cuello_de_botella || ''}
+
+Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
+
+    let diagnosticData: {
+      situacion_actual: string;
+      hallazgos: string[];
+      impacto_estimado: string;
+      recomendacion: string;
+    } = {
+      situacion_actual: `${empresa || nombre} opera con procesos que tienen oportunidades claras de optimización con IA.`,
+      hallazgos: [
+        'Procesos manuales identificados con alto potencial de automatización',
+        'Herramientas actuales no integradas entre sí',
+        'Oportunidad de eliminar horas de trabajo humano repetitivo',
+      ],
+      impacto_estimado: 'Con la metodología IA First podríamos reducir significativamente el tiempo dedicado a tareas operativas.',
+      recomendacion: 'Un diagnóstico completo nos permitirá mapear con precisión los puntos de automatización de mayor impacto para tu empresa.',
+    };
+
+    if (apiKey) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://flowdesk.io',
+            'X-Title': 'FlowDesk MicroDiagnóstico',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.choices?.[0]?.message?.content ?? '';
+          const match = text.match(/\{[\s\S]+\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (parsed.situacion_actual && parsed.hallazgos && parsed.impacto_estimado && parsed.recomendacion) {
+              diagnosticData = parsed;
+            }
+          }
+        }
+      } catch (err) {
+        this.logger.warn('generarMicroDiagnosticoIA: OpenRouter error, usando fallback');
+      }
+    }
+
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { agent_config: true },
+    });
+    const cfg = (slot?.agent_config as Record<string, any>) ?? {};
+
+    const record = await this.prisma.microDiagnostico.create({
+      data: {
+        tenant_id: tenantId,
+        lead_name: nombre,
+        lead_company: empresa ?? null,
+        lead_phone: telefono,
+        responses: respuestas,
+        diagnostic_data: diagnosticData,
+        deal_id: dealId || null,
+        cal_booking_url: cfg.cal_booking_url ?? null,
+      },
+    });
+
+    const frontendUrl = process.env.APP_FRONTEND_URL ?? 'https://app.flowdesk.mx';
+    return `${frontendUrl}/micro/${record.token}`;
+  }
+
+  private async moverEnPipelinePrivado(tenantId: string, dealId: string, stageName: string): Promise<void> {
+    if (!dealId) return;
+    const stage = await this.prisma.pipelineStage.findFirst({
+      where: {
+        tenant_id: tenantId,
+        name: { contains: stageName, mode: 'insensitive' },
+      },
+    });
+    if (!stage) {
+      this.logger.warn(`moverEnPipeline: etapa "${stageName}" no encontrada en tenant ${tenantId}`);
+      return;
+    }
+    await this.prisma.deal.update({
+      where: { id: dealId },
+      data: { stage_id: stage.id },
+    });
+  }
+
   // ─── System prompt ─────────────────────────────────────────────────────────
 
   private async buildSystemPrompt(tenantId: string): Promise<string> {
@@ -211,42 +449,71 @@ export class SalesBotService {
     });
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
+    const nombre = cfg.nombre ?? 'Leo';
+    const preguntas: string[] = cfg.preguntas_microdiagnostico ?? [
+      '¿A qué se dedica la empresa y cuántos años lleva operando?',
+      '¿Cuántos empleados tiene?',
+      '¿Qué software o herramientas digitales usan hoy en día?',
+      '¿Tienen área de programación?',
+      '¿Qué tarea o proceso les genera cuello de botella o ven que se podría agregar más valor?',
+    ];
 
-    return `Eres el Agente de Ventas de ${cfg.nombre ?? 'este negocio'}. Tu trabajo es atender mensajes de WhatsApp, calificar prospectos y agendar diagnósticos cuando encajan con el perfil ideal.
+    return `Eres ${nombre}, agente comercial de MentorIA Systems que atiende mensajes de WhatsApp. Tu objetivo es guiar al prospecto a través de un journey de valor, no simplemente calificar y cerrar.
 
-## Negocio
+## Quiénes somos
+${cfg.actividad ?? ''}
 
-**Qué hacemos:** ${cfg.actividad ?? ''}
+${cfg.propuesta_valor ?? 'Somos una empresa de tecnología expertos en entender el funcionamiento real de los negocios y simplificar los procesos eliminando horas de trabajo humano y optimizando los resultados utilizando la metodología IA First.'}
 
-**Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
+## Tu journey de 6 etapas
 
-## Preguntas de calificación
+### ETAPA 1 — Bienvenida
+Preséntate por nombre. Di brevemente qué hace MentorIA Systems (1 oración). Haz UNA pregunta abierta para conocer su negocio. Sin emojis.
 
-${((cfg.preguntas_calificacion ?? []) as string[]).map((p, i) => `${i + 1}. ${p}`).join('\n') || 'Pregunta a qué se dedica el prospecto y cuántos empleados tienen.'}
+### ETAPA 2 — Escucha
+Escucha y entiende su negocio. No más de 2 intercambios. No hagas más de una pregunta a la vez. Objetivo: saber a qué se dedican y si hay una oportunidad.
 
-## Criterios de lead
+### ETAPA 3 — Gancho de valor
+Una vez que tengas contexto, ofrece el micro-diagnóstico. Usa este texto como guía:
+"${cfg.gancho ?? 'Me gustaría ofrecerte algo: podemos hacerte un micro-diagnóstico gratuito de automatización para tu empresa. Solo 5 preguntas, menos de un minuto, y te mandamos un análisis personalizado aquí mismo por WhatsApp. ¿Te gustaría?'}"
+Espera confirmación antes de continuar.
 
-**Procede a agendar si:**
-${cfg.criterios_buen_lead ?? ''}
+### ETAPA 4 — Las 5 preguntas
+Si acepta:
+1. PRIMERO llama a la herramienta registrarEnCRM con su nombre, empresa (si la sabes) y teléfono.
+2. Luego haz las preguntas UNA POR UNA, esperando respuesta entre cada una:
+${preguntas.map((q, i) => `   ${i + 1}. ${q}`).join('\n')}
 
-**Responde con calidez sin agendar si:**
-${cfg.criterios_mal_lead ?? ''}
+### ETAPA 5 — Entrega del micro-diagnóstico
+Cuando tengas las 5 respuestas:
+1. Llama a generarMicroDiagnostico con todas las respuestas y el deal_id obtenido de registrarEnCRM.
+2. Llama a moverEnPipeline con el deal_id y stage_name "Micro Diagnóstico".
+3. Envía la URL al prospecto con un mensaje como: "Listo [nombre], aquí está tu micro-diagnóstico personalizado: [URL] — tómate un momento para revisarlo y cuéntame qué te parece."
+
+### ETAPA 6 — Cierre
+Después de entregar el diagnóstico, espera su reacción. Luego evalúa el lead con calificar().
+- Si califica (score ≥ 7): "${cfg.cierre_calificado ?? 'Basándonos en lo que veo en tu diagnóstico, creo que hay una oportunidad real para MentorIA en tu empresa. ¿Te gustaría agendar una llamada de 30 minutos para ver en detalle cómo podríamos transformar tu operación?'}" → llama a agendar()
+- Si no califica (score < 7): "${cfg.cierre_no_calificado ?? 'Gracias por compartirme esto. Por ahora te recomendaría enfocarte en consolidar algunos procesos base. Cuando estén listos para el siguiente nivel, aquí estaremos.'}"
+
+## Criterios de calificación
+Buen lead: ${cfg.criterios_buen_lead ?? 'Empresa con 10+ años, 100+ empleados, herramientas genéricas, dolor operativo concreto identificado'}
+Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50 empleados, sin dolor claro o sin presupuesto'}
+
+## Cuándo usar cada herramienta
+- registrarEnCRM: cuando el prospecto acepta el micro-diagnóstico
+- generarMicroDiagnostico: SOLO cuando tienes las 5 respuestas completas
+- moverEnPipeline: inmediatamente después de generarMicroDiagnostico
+- calificar: después de entregar el diagnóstico para evaluar si proceder
+- agendar: SOLO si calificar() devolvió score ≥ 7
+- guardarLead: cuando tengas datos útiles adicionales para Airtable
+- derivarHumano: si piden precios específicos, contratos o algo fuera de tu alcance
 
 ## Reglas de comunicación
-
-- Responde en español neutro, conversacional
-- Mensajes breves: 2 a 4 líneas máximo
-- No uses emojis
-- Una pregunta a la vez
-- Si te desvían del tema, vuelve amablemente al objetivo: calificar y agendar
-- Si piden precios, contratos o casos complejos, usa derivarHumano()
-
-## Cuándo usar cada tool
-
-- **guardarLead**: cuando tengas nombre + empresa + algún dato útil del prospecto
-- **calificar**: cuando hayas recogido suficiente información para evaluar si encaja
-- **agendar**: SOLO si calificar() devolvió score ≥ 7
-- **derivarHumano**: precios, quejas, casos fuera de guión`.trim();
+- Español neutro, conversacional, profesional pero cercano
+- Mensajes de 2-4 líneas máximo
+- Una pregunta a la vez, siempre
+- Sin emojis
+- Nunca menciones las etapas por nombre al prospecto`.trim();
   }
 
   // ─── Agent loop (OpenRouter + tools) ──────────────────────────────────────
@@ -256,6 +523,7 @@ ${cfg.criterios_mal_lead ?? ''}
     history: Array<{ role: string; content: string }>,
     conversationId: string,
     phone: string,
+    tenantId: string,
   ): Promise<string | null> {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model  = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
@@ -309,7 +577,7 @@ ${cfg.criterios_mal_lead ?? ''}
         let args: any = {};
         try { args = JSON.parse(call.function.arguments); } catch {}
 
-        const result = await this.executeTool(call.function.name, args, conversationId, phone);
+        const result = await this.executeTool(call.function.name, args, conversationId, phone, tenantId);
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }
@@ -324,6 +592,7 @@ ${cfg.criterios_mal_lead ?? ''}
     args: any,
     conversationId: string,
     phone: string,
+    tenantId: string,
   ): Promise<any> {
     switch (name) {
 
@@ -408,6 +677,39 @@ ${cfg.criterios_mal_lead ?? ''}
           message: `Conversación derivada a agente humano. Razón: ${args.razon}`,
           instruccion: "Responde al usuario: 'Voy a transferirte con un asesor. Te atenderá en breve.' No respondas más en esta conversación.",
         };
+      }
+
+      case 'registrarEnCRM': {
+        const { nombre, empresa, telefono: tel } = args;
+        try {
+          const result = await this.registrarEnCRM(tenantId, nombre, empresa, tel ?? phone);
+          return { ok: true, contact_id: result.contact_id, deal_id: result.deal_id, message: 'Prospecto registrado en CRM.' };
+        } catch (err: any) {
+          this.logger.error(`registrarEnCRM error: ${err.message}`);
+          return { ok: false, message: 'No se pudo registrar en CRM, continúa con el proceso.' };
+        }
+      }
+
+      case 'generarMicroDiagnostico': {
+        const { nombre, empresa, telefono: tel2, respuestas, deal_id } = args;
+        try {
+          const url = await this.generarMicroDiagnosticoIA(tenantId, nombre, empresa, tel2 ?? phone, respuestas, deal_id);
+          return { ok: true, url, message: `Micro-diagnóstico generado. Envía esta URL al prospecto: ${url}` };
+        } catch (err: any) {
+          this.logger.error(`generarMicroDiagnostico error: ${err.message}`);
+          return { ok: false, message: 'Hubo un error al generar el diagnóstico. Intenta de nuevo.' };
+        }
+      }
+
+      case 'moverEnPipeline': {
+        const { deal_id: dId, stage_name } = args;
+        try {
+          await this.moverEnPipelinePrivado(tenantId, dId, stage_name);
+          return { ok: true, message: `Deal movido a etapa "${stage_name}".` };
+        } catch (err: any) {
+          this.logger.error(`moverEnPipeline error: ${err.message}`);
+          return { ok: false, message: 'No se pudo mover el deal.' };
+        }
       }
 
       default:
