@@ -311,7 +311,7 @@ export class SalesBotService {
         pipeline_id: pipeline.id,
         stage_id: pipeline.stages[0].id,
         contact_id: contact.id,
-        owner_id: agentSlot?.id,
+        owner_id: agentSlot?.id ?? null,
         title: empresa ? `${empresa} — WhatsApp` : `${nombre} — WhatsApp`,
         status: 'open',
       } as any,
@@ -394,8 +394,8 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
             }
           }
         }
-      } catch (err) {
-        this.logger.warn('generarMicroDiagnosticoIA: OpenRouter error, usando fallback');
+      } catch (err: any) {
+        this.logger.warn(`generarMicroDiagnosticoIA: ${err?.message ?? 'error desconocido'}, usando fallback`);
       }
     }
 
@@ -432,10 +432,10 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
     });
     if (!stage) {
       this.logger.warn(`moverEnPipeline: etapa "${stageName}" no encontrada en tenant ${tenantId}`);
-      return;
+      throw new Error(`Etapa "${stageName}" no encontrada en el pipeline.`);
     }
     await this.prisma.deal.update({
-      where: { id: dealId },
+      where: { id: dealId, tenant_id: tenantId },
       data: { stage_id: stage.id },
     });
   }
@@ -460,8 +460,7 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
 
     return `Eres ${nombre}, agente comercial de MentorIA Systems que atiende mensajes de WhatsApp. Tu objetivo es guiar al prospecto a través de un journey de valor, no simplemente calificar y cerrar.
 
-## Quiénes somos
-${cfg.actividad ?? ''}
+${cfg.actividad ? `## Quiénes somos\n${cfg.actividad}` : ''}
 
 ${cfg.propuesta_valor ?? 'Somos una empresa de tecnología expertos en entender el funcionamiento real de los negocios y simplificar los procesos eliminando horas de trabajo humano y optimizando los resultados utilizando la metodología IA First.'}
 
