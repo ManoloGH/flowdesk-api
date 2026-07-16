@@ -99,6 +99,7 @@ model Tenant {
   soc_services           SocService[]
   soc_requests           SocRequest[]
   erp_requirements       ErpRequirement[]
+  micro_diagnosticos     MicroDiagnostico[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -2117,6 +2118,32 @@ model BotMessage {
   conversation BotConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
 
   @@map("bot_messages")
+}
+
+// ─────────────────────────────────────────────
+// MICRO DIAGNÓSTICO — Diagnóstico público vía token
+// ─────────────────────────────────────────────
+model MicroDiagnostico {
+  id              String   @id @default(cuid())
+  token           String   @unique @default(cuid())
+  tenant_id       String
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  lead_name       String?
+  lead_company    String?
+  lead_phone      String
+
+  responses       Json
+  diagnostic_data Json?
+
+  contact_id      String?
+  deal_id         String?
+  cal_booking_url String?
+
+  created_at      DateTime @default(now())
+
+  @@index([tenant_id])
+  @@map("micro_diagnosticos")
 }
 
 // ═════════════════════════════════════════════
