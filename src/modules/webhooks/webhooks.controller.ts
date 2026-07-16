@@ -1,15 +1,19 @@
-import { Controller, Post, Body, Headers, HttpCode, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, Headers, HttpCode, HttpException, HttpStatus, Logger, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { WebhooksService } from './webhooks.service';
 import { MessagesGateway } from '../messages/messages.gateway';
+import { EvolutionAdapter } from '../../integrations/evolution/evolution.adapter';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhooksController {
+  private readonly logger = new Logger(WebhooksController.name);
+
   constructor(
     private service: WebhooksService,
     private messagesGateway: MessagesGateway,
+    private evolution: EvolutionAdapter,
   ) {}
 
   @Post('chatwoot')
@@ -27,8 +31,18 @@ export class WebhooksController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Receptor de eventos de Evolution API (WhatsApp)' })
   async evolution(@Body() payload: any) {
+    this.logger.log(`Evolution webhook: instance=${payload?.instance ?? 'N/A'} event=${payload?.event ?? 'N/A'}`);
     await this.service.handleEvolution(payload, this.messagesGateway);
     return { ok: true };
+  }
+
+  @Get('evolution-check/:instance')
+  @Public()
+  @HttpCode(200)
+  @ApiOperation({ summary: '[Debug] Consulta el webhook config de una instancia Evolution' })
+  async evolutionCheck(@Param('instance') instance: string) {
+    const config = await this.evolution.getWebhook(instance);
+    return { instance, config };
   }
 
   @Post('ghl')

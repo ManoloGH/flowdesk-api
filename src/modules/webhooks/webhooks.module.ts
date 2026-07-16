@@ -5,9 +5,10 @@ import { MessagesModule } from '../messages/messages.module';
 import { SecretaryModule } from '../secretary/secretary.module';
 import { WhatsAppChannelModule } from '../whatsapp-channel/whatsapp-channel.module';
 import { ChatwootBridgeModule } from '../chatwoot-bridge/chatwoot-bridge.module';
+import { IntegrationsModule } from '../../integrations/integrations.module';
 
 @Module({
-  imports: [MessagesModule, SecretaryModule, WhatsAppChannelModule, ChatwootBridgeModule],
+  imports: [MessagesModule, SecretaryModule, WhatsAppChannelModule, ChatwootBridgeModule, IntegrationsModule],
   controllers: [WebhooksController],
   providers: [WebhooksService],
 })
