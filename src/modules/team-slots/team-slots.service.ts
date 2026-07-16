@@ -25,6 +25,8 @@ const SLOT_SELECT = {
   permissions: true,
   agent_config: true,
   created_at: true,
+  office_branch_id: true,
+  office_branch: { select: { id: true, name: true, color: true } },
   department: { select: { id: true, name: true, color: true, icon: true } },
   schedule: { select: { id: true, name: true, check_in_time: true, check_out_time: true } },
 };
