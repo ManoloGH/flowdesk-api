@@ -9,9 +9,31 @@ export class MentoriaService {
 
   async getProspectos(tenantId: string) {
     return this.prisma.mentoriaProspecto.findMany({
-      where: { tenant_id: tenantId },
+      where: { tenant_id: tenantId, status: 'activo' },
       orderBy: { created_at: 'desc' },
       include: { cliente: { select: { id: true, fase_actual: true, status: true } } },
+    });
+  }
+
+  async getDescartados(tenantId: string) {
+    return this.prisma.mentoriaProspecto.findMany({
+      where: { tenant_id: tenantId, status: 'descartado' },
+      orderBy: { updated_at: 'desc' },
+    });
+  }
+
+  async descartarProspecto(tenantId: string, id: string) {
+    await this.findProspecto(tenantId, id);
+    return this.prisma.mentoriaProspecto.update({
+      where: { id },
+      data: { status: 'descartado', fecha_ultima_accion: new Date() },
+    });
+  }
+
+  async reactivarProspecto(tenantId: string, id: string) {
+    return this.prisma.mentoriaProspecto.update({
+      where: { id },
+      data: { status: 'activo', fecha_ultima_accion: new Date() },
     });
   }
 

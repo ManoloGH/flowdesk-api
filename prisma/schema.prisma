@@ -1918,6 +1918,7 @@ model MentoriaProspecto {
   tamano               String?  // "<10" | "10-100" | ">100"
   etapa                String   @default("agente_ia")
   // agente_ia | micro_diagnostico | discovery | propuesta | contrato | kickoff | diagnostico | implementacion
+  status               String   @default("activo")   // activo | descartado
   puntuacion           Int?
   ejecutivo_asignado   String?
   canal                String?  // "email" | "whatsapp"

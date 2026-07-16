@@ -23,6 +23,11 @@ export class MentoriaController {
     return this.service.getProspectos(req.user.tenant_id);
   }
 
+  @Get('prospectos/descartados')
+  getDescartados(@Req() req: any) {
+    return this.service.getDescartados(req.user.tenant_id);
+  }
+
   @Post('prospectos')
   async createProspecto(@Req() req: any, @Body() body: any) {
     try {
@@ -40,6 +45,16 @@ export class MentoriaController {
   @Patch('prospectos/:id/notas')
   updateProspectoNotas(@Req() req: any, @Param('id') id: string, @Body() body: { notas: string }) {
     return this.service.updateProspectoNotas(req.user.tenant_id, id, body.notas);
+  }
+
+  @Patch('prospectos/:id/descartar')
+  descartarProspecto(@Req() req: any, @Param('id') id: string) {
+    return this.service.descartarProspecto(req.user.tenant_id, id);
+  }
+
+  @Patch('prospectos/:id/reactivar')
+  reactivarProspecto(@Req() req: any, @Param('id') id: string) {
+    return this.service.reactivarProspecto(req.user.tenant_id, id);
   }
 
   @Post('prospectos/:id/convertir')
