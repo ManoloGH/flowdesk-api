@@ -83,4 +83,15 @@ export class WebhooksController {
       throw new HttpException(err.message ?? 'Error en migración', err.status ?? HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  @Post('run-bot-migration')
+  @Public()
+  @HttpCode(200)
+  @ApiOperation({ summary: '[Admin] Crea tablas bot_conversations y bot_messages si no existen' })
+  async runBotMigration(@Headers('x-flowdesk-secret') secret: string) {
+    if (secret !== process.env.FLOWDESK_SECRET) {
+      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+    }
+    return await this.service.runBotMigration();
+  }
 }
