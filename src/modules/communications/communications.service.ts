@@ -271,6 +271,9 @@ export class CommunicationsService {
         criterios_mal_lead: body.criterios_mal_lead ?? null,
         cal_booking_url: body.cal_booking_url ?? null,
         evolution_instance: evolutionInstance,
+        // Ensure correct model format for OpenRouter when chatting via FlowDesk UI
+        ai_provider: 'openrouter',
+        model: process.env.OPENROUTER_MODEL ?? 'anthropic/claude-haiku-4-5',
       },
     };
 
