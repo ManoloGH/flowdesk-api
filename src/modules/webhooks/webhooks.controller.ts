@@ -89,7 +89,7 @@ export class WebhooksController {
   @HttpCode(200)
   @ApiOperation({ summary: '[Admin] Crea tablas bot_conversations y bot_messages si no existen' })
   async runBotMigration(@Headers('x-flowdesk-secret') secret: string) {
-    if (secret !== process.env.FLOWDESK_SECRET) {
+    if (secret !== process.env.ENCRYPTION_KEY) {
       throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
     }
     return await this.service.runBotMigration();
