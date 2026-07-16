@@ -716,8 +716,44 @@ JSON esperado:
   async getFeatures(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { communications_enabled: true },
+      select: { communications_enabled: true, branches_enabled: true },
     });
-    return { communications_enabled: tenant?.communications_enabled ?? false };
+    return {
+      communications_enabled: tenant?.communications_enabled ?? false,
+      branches_enabled: tenant?.branches_enabled ?? false,
+    };
+  }
+
+  // ── SUCURSALES FÍSICAS ─────────────────────────────────────────────────────
+
+  async listOfficeBranches(tenantId: string) {
+    return this.prisma.officeBranch.findMany({
+      where: { tenant_id: tenantId },
+      include: { _count: { select: { team_slots: true } } },
+      orderBy: [{ is_main: 'desc' }, { name: 'asc' }],
+    });
+  }
+
+  async createOfficeBranch(tenantId: string, dto: { name: string; address?: string; color?: string }) {
+    const count = await this.prisma.officeBranch.count({ where: { tenant_id: tenantId } });
+    return this.prisma.officeBranch.create({
+      data: {
+        tenant_id: tenantId,
+        name: dto.name,
+        address: dto.address,
+        color: dto.color ?? '#6366F1',
+        is_main: count === 0,
+      },
+    });
+  }
+
+  async deleteOfficeBranch(tenantId: string, branchId: string) {
+    await this.prisma.officeBranch.deleteMany({ where: { id: branchId, tenant_id: tenantId } });
+    return { ok: true };
+  }
+
+  async toggleBranches(tenantId: string, enabled: boolean) {
+    await this.prisma.tenant.update({ where: { id: tenantId }, data: { branches_enabled: enabled } });
+    return { branches_enabled: enabled };
   }
 }

@@ -1,6 +1,13 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Header, Res, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
 import type { Response } from 'express';
+
+class CreateOfficeBranchDto {
+  @IsString() name: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() color?: string;
+}
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto, UpdateTenantStatusDto, UpdateTenantTypeDto } from './dto/update-tenant.dto';
@@ -154,5 +161,35 @@ export class TenantsController {
   @ApiOperation({ summary: '[Super-admin] Restaurar datos de una empresa desde un export JSON' })
   restoreTenant(@Param('id') id: string, @Body() exportData: any) {
     return this.tenantsService.restoreTenant(id, exportData);
+  }
+
+  // ── SUCURSALES FÍSICAS ────────────────────────────────────────────────────
+
+  @Get('mine/office-branches')
+  @ApiOperation({ summary: 'Listar sucursales físicas de mi empresa' })
+  listOfficeBranches(@TenantId() tenantId: string) {
+    return this.tenantsService.listOfficeBranches(tenantId);
+  }
+
+  @Post('mine/office-branches')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: '[Owner/Admin] Crear una nueva sucursal física' })
+  createOfficeBranch(@TenantId() tenantId: string, @Body() dto: CreateOfficeBranchDto) {
+    return this.tenantsService.createOfficeBranch(tenantId, dto);
+  }
+
+  @Delete('mine/office-branches/:branchId')
+  @Roles('owner', 'admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[Owner/Admin] Eliminar una sucursal física' })
+  deleteOfficeBranch(@TenantId() tenantId: string, @Param('branchId') branchId: string) {
+    return this.tenantsService.deleteOfficeBranch(tenantId, branchId);
+  }
+
+  @Patch('mine/branches-toggle')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: '[Owner/Admin] Activar o desactivar el módulo de sucursales' })
+  toggleBranches(@TenantId() tenantId: string, @Body() body: { enabled: boolean }) {
+    return this.tenantsService.toggleBranches(tenantId, body.enabled);
   }
 }

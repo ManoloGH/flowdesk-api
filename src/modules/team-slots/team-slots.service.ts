@@ -278,6 +278,14 @@ export class TeamSlotsService {
     });
   }
 
+  async setOfficeBranch(slotId: string, tenantId: string, officeBranchId: string | null) {
+    return this.prisma.teamSlot.update({
+      where: { id: slotId, tenant_id: tenantId },
+      data: { office_branch_id: officeBranchId },
+      select: { id: true, name: true, office_branch_id: true },
+    });
+  }
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   private generateTempPassword(): string {

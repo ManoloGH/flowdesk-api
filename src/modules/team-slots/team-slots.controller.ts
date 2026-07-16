@@ -98,4 +98,11 @@ export class TeamSlotsController {
   remove(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.slotsService.remove(id, tenantId);
   }
+
+  @Patch('me/office-branch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Establecer mi sucursal física (cualquier miembro del equipo)' })
+  setMyBranch(@CurrentUser() user: any, @TenantId() tenantId: string, @Body() body: { office_branch_id: string | null }) {
+    return this.slotsService.setOfficeBranch(user.slot_id, tenantId, body.office_branch_id);
+  }
 }

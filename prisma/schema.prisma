@@ -39,6 +39,7 @@ model Tenant {
   campus_config           Json? // { campus_enabled, map_source, map_template, background_color, grid_size }
   web_builder_enabled     Boolean @default(false)
   communications_enabled  Boolean @default(false)
+  branches_enabled        Boolean @default(false) // activa gestión de sucursales físicas
   modules_config          Json?   // [{key, label, enabled}] — si existe, solo muestra esos módulos en el nav
 
   created_at DateTime @default(now())
@@ -99,10 +100,30 @@ model Tenant {
   soc_services           SocService[]
   soc_requests           SocRequest[]
   erp_requirements       ErpRequirement[]
+  office_branches        OfficeBranch[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
   branches  Tenant[] @relation("NetworkBranches")
+}
+
+// ─────────────────────────────────────────────
+// SUCURSALES FÍSICAS (ubicaciones dentro de un tenant)
+// ─────────────────────────────────────────────
+model OfficeBranch {
+  id        String   @id @default(cuid())
+  tenant_id String
+  tenant    Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  name      String
+  address   String?
+  color     String   @default("#6366F1")
+  is_main   Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  team_slots TeamSlot[]
+
+  @@index([tenant_id])
 }
 
 // ─────────────────────────────────────────────
@@ -183,8 +204,10 @@ model TeamSlot {
 
   secretary_config Json?   // { connected_tools[], workflow_templates[], delegation_preferences }
   // PBX Conmutador
-  pbx_extension    String?   // extensión SIP Asterisk (ej. "101")
-  pbx_sip_password String?   // contraseña SIP cifrada con EncryptionService
+  pbx_extension      String?   // extensión SIP Asterisk (ej. "101")
+  pbx_sip_password   String?   // contraseña SIP cifrada con EncryptionService
+  office_branch_id   String?   // sucursal física donde trabaja este empleado
+  office_branch      OfficeBranch? @relation(fields: [office_branch_id], references: [id])
   permissions Json?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
