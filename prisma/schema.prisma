@@ -2136,13 +2136,16 @@ model MicroDiagnostico {
   responses       Json
   diagnostic_data Json?
 
+  // Soft references — el micro-diagnóstico se conserva aunque se elimine el Contact o Deal
   contact_id      String?
   deal_id         String?
   cal_booking_url String?
 
   created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
 
   @@index([tenant_id])
+  @@index([tenant_id, lead_phone])
   @@map("micro_diagnosticos")
 }
 
