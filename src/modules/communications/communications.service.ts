@@ -313,6 +313,11 @@ export class CommunicationsService {
           },
         });
       }
+
+      // Auto-configure Evolution API webhook so messages reach FlowDesk
+      const apiBase = process.env.API_PUBLIC_URL ?? 'https://api.flowdesk.mx';
+      const webhookUrl = `${apiBase}/api/v1/webhooks/evolution`;
+      await this.evolution.setWebhook(evolutionInstance, webhookUrl).catch(() => {});
     }
 
     return { ok: true };

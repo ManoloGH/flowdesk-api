@@ -49,6 +49,34 @@ export class EvolutionAdapter {
     return res.json();
   }
 
+  // Configurar webhook de una instancia para que apunte a FlowDesk
+  async setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+    const url = `${this.baseUrl}/webhook/set/${instanceName}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        enabled: true,
+        url: webhookUrl,
+        webhook_by_events: false,
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      this.logger.error(`Evolution setWebhook error ${res.status}: ${body}`);
+    } else {
+      this.logger.log(`Evolution webhook configurado: ${instanceName} → ${webhookUrl}`);
+    }
+  }
+
+  // Consultar la configuración de webhook de una instancia
+  async getWebhook(instanceName: string): Promise<any> {
+    const url = `${this.baseUrl}/webhook/find/${instanceName}`;
+    const res = await fetch(url, { headers: this.headers() });
+    return res.json();
+  }
+
   // Procesar webhook de Evolution API
   processWebhook(payload: any): {
     type: 'message' | 'status' | 'other';
