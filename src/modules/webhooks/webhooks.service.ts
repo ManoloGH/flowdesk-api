@@ -143,13 +143,19 @@ export class WebhooksService {
       // ── Detectar instancia del Agente de Ventas ──────────────────────────
       // Si el slot de ventas tiene evolution_instance configurada y coincide,
       // el mensaje va al SalesBotService (con su propio historial y tools).
-      const salesSlot = await this.prisma.teamSlot.findFirst({
+      const salesSlotExact = await this.prisma.teamSlot.findFirst({
         where: {
           tenant_id: tenantId,
           type: 'AI_AGENT',
           agent_role: 'sales',
           agent_config: { path: ['evolution_instance'], equals: instanceName },
         },
+        select: { id: true },
+      });
+      // Fallback: si no hay coincidencia exacta, cualquier agente de ventas del tenant
+      // (cubre el caso donde evolution_instance no fue guardado en agent_config aún)
+      const salesSlot = salesSlotExact ?? await this.prisma.teamSlot.findFirst({
+        where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
         select: { id: true },
       });
 
