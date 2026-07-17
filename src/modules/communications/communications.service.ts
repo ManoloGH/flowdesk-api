@@ -247,6 +247,7 @@ export class CommunicationsService {
       criterios_mal_lead: cfg.criterios_mal_lead ?? null,
       cal_booking_url: cfg.cal_booking_url ?? null,
       evolution_instance: cfg.evolution_instance ?? null,
+      journey: Array.isArray(cfg.journey) ? cfg.journey : [],
     };
   }
 
@@ -271,6 +272,7 @@ export class CommunicationsService {
         criterios_buen_lead: body.criterios_buen_lead ?? null,
         criterios_mal_lead: body.criterios_mal_lead ?? null,
         cal_booking_url: body.cal_booking_url ?? null,
+        journey: Array.isArray(body.journey) ? body.journey : [],
         evolution_instance: evolutionInstance,
         // Ensure correct model format for OpenRouter when chatting via FlowDesk UI
         ai_provider: 'openrouter',
