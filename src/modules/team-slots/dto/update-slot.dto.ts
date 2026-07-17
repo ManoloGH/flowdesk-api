@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEnum, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateSlotDto {
@@ -46,6 +46,11 @@ export class UpdateSlotDto {
   @IsOptional()
   @IsObject()
   permissions?: Record<string, unknown>;
+
+  @ApiProperty({ required: false, enum: ['FULL', 'LIGHT', 'NONE'] })
+  @IsOptional()
+  @IsIn(['FULL', 'LIGHT', 'NONE'])
+  desk_access?: string;
 }
 
 export class UpdateStatusDto {
