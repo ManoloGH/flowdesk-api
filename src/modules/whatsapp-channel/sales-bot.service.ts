@@ -25,6 +25,27 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'generarMicroDiagnostico',
+      description:
+        'Genera el micro-diagnóstico de automatización con las respuestas recopiladas y devuelve el link público. Usar cuando el prospecto haya respondido todas las preguntas del diagnóstico.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre:    { type: 'string', description: 'Nombre del prospecto' },
+          empresa:   { type: 'string', description: 'Nombre de la empresa' },
+          actividad: { type: 'string', description: 'A qué se dedica la empresa y años operando' },
+          empleados: { type: 'string', description: 'Número aproximado de empleados' },
+          herramientas: { type: 'string', description: 'Software o herramientas digitales que usan' },
+          programacion: { type: 'string', description: 'Si tienen área de programación propia' },
+          cuello_botella: { type: 'string', description: 'Proceso o tarea que genera cuello de botella' },
+        },
+        required: ['nombre', 'empresa'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'calificar',
       description:
         'Calcula un score 1-10 del lead según el perfil ideal. Score ≥ 7 = procede a agendar. Score < 7 = responde con calidez, no agendes.',
@@ -138,6 +159,26 @@ export class SalesBotService {
     this.logger.log('SalesBot: tablas auto-creadas/verificadas');
   }
 
+  private microTableReady = false;
+  private async ensureMicroTable(): Promise<void> {
+    if (this.microTableReady) return;
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "micro_diagnoses" (
+        "id" TEXT NOT NULL,
+        "token" TEXT NOT NULL,
+        "conversation_id" TEXT,
+        "prospect_data" TEXT NOT NULL DEFAULT '{}',
+        "generated_content" TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "micro_diagnoses_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "micro_diagnoses_token_key" ON "micro_diagnoses"("token")
+    `);
+    this.microTableReady = true;
+  }
+
   async handle(params: HandleParams): Promise<void> {
     await this.ensureTables();
     const { phone, jid, message, contactName, tenantId, instanceName } = params;
@@ -212,41 +253,96 @@ export class SalesBotService {
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
 
-    return `Eres el Agente de Ventas de ${cfg.nombre ?? 'este negocio'}. Tu trabajo es atender mensajes de WhatsApp, calificar prospectos y agendar diagnósticos cuando encajan con el perfil ideal.
+    const journeySection =
+      Array.isArray(cfg.journey) && cfg.journey.length > 0
+        ? this.renderJourneyNodes(cfg.journey, '')
+        : this.buildLegacyJourneySection(cfg);
 
-## Negocio
+    return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Tu trabajo es atender mensajes de WhatsApp y guiar al prospecto a través del flujo de conversación.
+
+## Identidad del negocio
 
 **Qué hacemos:** ${cfg.actividad ?? ''}
-
 **Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
 
-## Preguntas de calificación
+## Flujo de conversación
 
-${((cfg.preguntas_calificacion ?? []) as string[]).map((p, i) => `${i + 1}. ${p}`).join('\n') || 'Pregunta a qué se dedica el prospecto y cuántos empleados tienen.'}
+Sigue este flujo EXACTAMENTE, en el orden indicado. UNA SOLA PREGUNTA O MENSAJE POR TURNO:
 
-## Criterios de lead
+${journeySection}
 
-**Procede a agendar si:**
+## Criterios de calificación
+
+**Lead calificado — procede a agendar:**
 ${cfg.criterios_buen_lead ?? ''}
 
-**Responde con calidez sin agendar si:**
+**Lead no calificado — responde con calidez, NO agendes:**
 ${cfg.criterios_mal_lead ?? ''}
 
 ## Reglas de comunicación
 
 - Responde en español neutro, conversacional
 - Mensajes breves: 2 a 4 líneas máximo
-- No uses emojis
-- Una pregunta a la vez
-- Si te desvían del tema, vuelve amablemente al objetivo: calificar y agendar
+- No uses emojis en exceso
+- Una pregunta o mensaje a la vez — espera la respuesta antes de continuar
+- Si te desvían del tema, vuelve amablemente al flujo
 - Si piden precios, contratos o casos complejos, usa derivarHumano()
 
-## Cuándo usar cada tool
+## Cuándo usar cada herramienta
 
-- **guardarLead**: cuando tengas nombre + empresa + algún dato útil del prospecto
-- **calificar**: cuando hayas recogido suficiente información para evaluar si encaja
+- **guardarLead**: cuando tengas nombre + empresa + algún dato útil
+- **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
+- **calificar**: cuando tengas información suficiente para evaluar si encaja
 - **agendar**: SOLO si calificar() devolvió score ≥ 7
 - **derivarHumano**: precios, quejas, casos fuera de guión`.trim();
+  }
+
+  private renderJourneyNodes(nodes: any[], indent: string): string {
+    const lines: string[] = [];
+    for (const node of nodes) {
+      if (!node || !node.type) continue;
+
+      if (node.type === 'dialogo') {
+        if (node.branching) {
+          lines.push(`${indent}[${node.label}] — Envía: "${node.mensaje}"`);
+          lines.push(`${indent}  Espera respuesta.`);
+          if (Array.isArray(node.si) && node.si.length > 0) {
+            lines.push(`${indent}  → SI ACEPTA/SÍ:`);
+            lines.push(this.renderJourneyNodes(node.si, `${indent}    `));
+          }
+          if (Array.isArray(node.no) && node.no.length > 0) {
+            lines.push(`${indent}  → SI RECHAZA/NO:`);
+            lines.push(this.renderJourneyNodes(node.no, `${indent}    `));
+          }
+        } else {
+          lines.push(`${indent}[${node.label}] — Envía: "${node.mensaje}"`);
+        }
+      } else if (node.type === 'pregunta') {
+        if (node.answerType === 'multiple' && Array.isArray(node.options) && node.options.length > 0) {
+          const opts = node.options.map((o: string, i: number) => `${i + 1}. ${o}`).join(' | ');
+          lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Opciones: ${opts}`);
+        } else {
+          lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Espera respuesta libre.`);
+        }
+      } else if (node.type === 'entregable') {
+        lines.push(`${indent}[${node.label}] — Llama a generarMicroDiagnostico() con las respuestas recopiladas. Cuando obtengas el link, envíaselo al prospecto.`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  private buildLegacyJourneySection(cfg: Record<string, any>): string {
+    const preguntas = (cfg.preguntas_calificacion ?? cfg.preguntas_microdiagnostico ?? []) as any[];
+    const preguntasList = preguntas.length
+      ? preguntas.map((p: any, i: number) => `  ${i + 1}. ${typeof p === 'string' ? p : p.text ?? p}`).join('\n')
+      : '  1. ¿A qué se dedica la empresa y cuántos años lleva operando?\n  2. ¿Cuántos empleados tiene?\n  3. ¿Qué herramientas digitales usan?\n  4. ¿Qué proceso genera más cuello de botella?';
+    return `1. [Bienvenida] — Saluda y preséntate.
+2. [Datos] — Recoge nombre, empresa y actividad (una pregunta a la vez).
+3. [Gancho] — Ofrece el micro-diagnóstico gratuito. Si acepta:
+${preguntasList}
+   Luego llama a generarMicroDiagnostico() y envía el enlace.
+   Si rechaza: ${cfg.oferta_llamada_sin_diagnostico ?? 'Ofrece una llamada de 15 minutos.'}
+4. [Cierre] — Califica con calificar() y cierra según el resultado.`;
   }
 
   // ─── Agent loop (OpenRouter + tools) ──────────────────────────────────────
@@ -326,6 +422,33 @@ ${cfg.criterios_mal_lead ?? ''}
     phone: string,
   ): Promise<any> {
     switch (name) {
+
+      case 'generarMicroDiagnostico': {
+        try {
+          await this.ensureMicroTable();
+          const token = Math.random().toString(36).slice(2, 14);
+          const diagId = Math.random().toString(36).slice(2, 18);
+          const content = JSON.stringify({
+            nombre: args.nombre ?? '',
+            empresa: args.empresa ?? '',
+            actividad: args.actividad ?? '',
+            empleados: args.empleados ?? '',
+            herramientas: args.herramientas ?? '',
+            programacion: args.programacion ?? '',
+            cuello_botella: args.cuello_botella ?? '',
+          });
+          await this.prisma.$executeRawUnsafe(
+            `INSERT INTO "micro_diagnoses" ("id","token","conversation_id","prospect_data","created_at")
+             VALUES ($1,$2,$3,$4,NOW())`,
+            diagId, token, conversationId, content,
+          );
+          const url = `https://app.flowdesk.mx/micro/${token}`;
+          return { ok: true, url, message: `Micro-diagnóstico generado: ${url}` };
+        } catch (err: any) {
+          this.logger.error('generarMicroDiagnostico error', err?.message);
+          return { ok: false, message: 'No se pudo generar el diagnóstico en este momento.' };
+        }
+      }
 
       case 'calificar': {
         let score = 0;
