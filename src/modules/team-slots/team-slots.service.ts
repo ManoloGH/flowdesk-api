@@ -26,6 +26,7 @@ const SLOT_SELECT = {
   position_y: true,
   permissions: true,
   agent_config: true,
+  desk_access: true,
   created_at: true,
   office_branch_id: true,
   office_branch: { select: { id: true, name: true, color: true } },
@@ -238,7 +239,7 @@ export class TeamSlotsService {
     const slot = await this.findOne(id, tenantId);
 
     const isSelf = id === requestingSlotId;
-    const isManager = ['owner', 'admin', 'manager'].includes(requestingRole);
+    const isManager = ['superadmin', 'owner', 'admin', 'manager'].includes(requestingRole);
 
     if (!isSelf && !isManager) throw new ForbiddenException('Solo puedes editar tu propio perfil');
     if (isSelf && !isManager && (dto.role || dto.department_id)) throw new ForbiddenException('No puedes cambiar tu rol o departamento');
