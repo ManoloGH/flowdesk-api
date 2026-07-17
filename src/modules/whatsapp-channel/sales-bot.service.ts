@@ -258,13 +258,25 @@ export class SalesBotService {
         ? this.renderJourneyNodes(cfg.journey, '')
         : this.buildLegacyJourneySection(cfg);
 
-    return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Tu trabajo es atender mensajes de WhatsApp y guiar al prospecto a través del flujo de conversación.
+    const misionSection = cfg.mision
+      ? `\n## Misión\n${cfg.mision}`
+      : '';
 
+    const enfoqueSection = cfg.enfoque
+      ? `\n## En qué enfocarse\n${cfg.enfoque}`
+      : '';
+
+    const seguimientoSection = cfg.tarea_seguimiento
+      ? `\n## Tarea de seguimiento (si no agenda)\n${cfg.tarea_seguimiento}`
+      : '';
+
+    return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Tu trabajo es atender mensajes de WhatsApp y guiar al prospecto a través del flujo de conversación.
+${misionSection}
 ## Identidad del negocio
 
 **Qué hacemos:** ${cfg.actividad ?? ''}
 **Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
-
+${enfoqueSection}
 ## Flujo de conversación
 
 Sigue este flujo EXACTAMENTE, en el orden indicado. UNA SOLA PREGUNTA O MENSAJE POR TURNO:
@@ -278,7 +290,7 @@ ${cfg.criterios_buen_lead ?? ''}
 
 **Lead no calificado — responde con calidez, NO agendes:**
 ${cfg.criterios_mal_lead ?? ''}
-
+${seguimientoSection}
 ## Reglas de comunicación
 
 - Responde en español neutro, conversacional
