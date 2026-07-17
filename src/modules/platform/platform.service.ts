@@ -21,6 +21,10 @@ export class PlatformService {
   ) {}
 
   private async assertPlatform(tenantId: string) {
+    // El tenant del superadmin siempre tiene acceso a la plataforma
+    const hasSuperAdmin = await this.prisma.teamSlot.count({ where: { tenant_id: tenantId, role: 'superadmin' } });
+    if (hasSuperAdmin > 0) return;
+
     const t = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { tenant_type: true, campus_config: true },
@@ -44,6 +48,8 @@ export class PlatformService {
   }
 
   private async assertNetworkOrAbove(tenantId: string) {
+    const hasSuperAdmin = await this.prisma.teamSlot.count({ where: { tenant_id: tenantId, role: 'superadmin' } });
+    if (hasSuperAdmin > 0) return;
     const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { tenant_type: true } });
     if (!t || (t.tenant_type !== 'PLATFORM' && t.tenant_type !== 'NETWORK'))
       throw new ForbiddenException('Acceso restringido a administradores de red.');
