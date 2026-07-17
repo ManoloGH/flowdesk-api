@@ -724,6 +724,14 @@ JSON esperado:
     };
   }
 
+  async updateModules(tenantId: string, modules: any[]) {
+    return this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { modules_config: modules },
+      select: { id: true, modules_config: true },
+    });
+  }
+
   // ── SUCURSALES FÍSICAS ─────────────────────────────────────────────────────
 
   async listOfficeBranches(tenantId: string) {

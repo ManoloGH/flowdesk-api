@@ -12,8 +12,10 @@ class ProvisionTenantDto {
   @IsOptional() @IsString()  network_id?: string;
   @IsOptional() @IsString()  external_ref?: string;
   @IsOptional() @IsString()  plan?: string;
+  @IsOptional() @IsString()  account_type?: string;
   @IsEmail()   owner_email: string;
   @IsString()  owner_name: string;
+  @IsOptional() modules_config?: any[];
 }
 
 class ProvisionBranchDto {

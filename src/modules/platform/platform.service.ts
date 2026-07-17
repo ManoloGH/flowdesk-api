@@ -990,8 +990,8 @@ curl -s https://api.anthropic.com/v1/messages \\
 
   async provisionTenant(callerTenantId: string, dto: {
     name: string; slug: string; tenant_type: 'NETWORK' | 'BRANCH';
-    network_id?: string; external_ref?: string; plan?: string;
-    owner_email: string; owner_name: string;
+    network_id?: string; external_ref?: string; plan?: string; account_type?: string;
+    owner_email: string; owner_name: string; modules_config?: any[];
   }) {
     await this.assertPlatform(callerTenantId);
 
@@ -1001,6 +1001,8 @@ curl -s https://api.anthropic.com/v1/messages \\
           name: dto.name, slug: dto.slug, tenant_type: dto.tenant_type,
           network_id: dto.network_id ?? null, external_ref: dto.external_ref ?? null,
           plan: dto.plan ?? 'starter', status: 'active',
+          ...(dto.account_type && { account_type: dto.account_type }),
+          ...(dto.modules_config && { modules_config: dto.modules_config }),
         },
       });
 

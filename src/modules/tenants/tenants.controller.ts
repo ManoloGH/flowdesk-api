@@ -67,6 +67,13 @@ export class TenantsController {
     return this.tenantsService.getFeatures(tenantId);
   }
 
+  @Patch('mine/modules')
+  @Roles('owner', 'admin')
+  @ApiOperation({ summary: '[Owner/Admin] Actualizar módulos del sidebar' })
+  updateModules(@TenantId() tenantId: string, @Body() body: { modules: any[] }) {
+    return this.tenantsService.updateModules(tenantId, body.modules);
+  }
+
   @Get('mine/focus-brief')
   @ApiOperation({ summary: 'Focus Mode del día — cacheado, regenera en background si es antiguo' })
   getFocusBrief(
