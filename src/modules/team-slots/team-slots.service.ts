@@ -56,9 +56,9 @@ export class TeamSlotsService {
     });
   }
 
-  async findOne(id: string, tenantId: string) {
+  async findOne(id: string, tenantId: string | null) {
     const slot = await this.prisma.teamSlot.findFirst({
-      where: { id, tenant_id: tenantId },
+      where: tenantId ? { id, tenant_id: tenantId } : { id },
       select: SLOT_SELECT,
     });
     if (!slot) throw new NotFoundException('Colaborador no encontrado');
@@ -235,7 +235,7 @@ export class TeamSlotsService {
     });
   }
 
-  async update(id: string, tenantId: string, dto: UpdateSlotDto, requestingRole: string, requestingSlotId: string) {
+  async update(id: string, tenantId: string | null, dto: UpdateSlotDto, requestingRole: string, requestingSlotId: string) {
     const slot = await this.findOne(id, tenantId);
 
     const isSelf = id === requestingSlotId;
@@ -262,7 +262,7 @@ export class TeamSlotsService {
   }
 
   // El empleado actualiza su propio status (online, busy, away)
-  async updateStatus(id: string, tenantId: string, dto: UpdateStatusDto) {
+  async updateStatus(id: string, tenantId: string | null, dto: UpdateStatusDto) {
     await this.findOne(id, tenantId);
     return this.prisma.teamSlot.update({
       where: { id },
@@ -271,7 +271,7 @@ export class TeamSlotsService {
     });
   }
 
-  async remove(id: string, tenantId: string) {
+  async remove(id: string, tenantId: string | null) {
     const slot = await this.findOne(id, tenantId);
     await this.prisma.teamSlot.delete({ where: { id } });
     return { message: `${slot.name} eliminado del equipo` };

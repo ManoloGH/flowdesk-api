@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { TeamSlotsService } from './team-slots.service';
 import { CreateHumanSlotDto, CreateAgentSlotDto } from './dto/create-slot.dto';
@@ -88,15 +88,19 @@ export class TeamSlotsController {
     @CurrentUser() user: any,
     @Body() dto: UpdateSlotDto,
   ) {
-    return this.slotsService.update(id, tenantId, dto, user.role, user.slot_id);
+    // Platform admin puede editar en cualquier tenant sin restricción de tenant_id
+    const effectiveTenant = user.platform_admin ? null : tenantId;
+    return this.slotsService.update(id, effectiveTenant, dto, user.role, user.slot_id);
   }
 
   @Delete(':id')
   @Roles('owner', 'admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '[Owner/Admin] Eliminar miembro del equipo' })
-  remove(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.slotsService.remove(id, tenantId);
+  remove(@Param('id') id: string, @TenantId() tenantId: string, @CurrentUser() user: any) {
+    // Platform admin puede borrar en cualquier tenant sin restricción de tenant_id
+    const effectiveTenant = user.platform_admin ? null : tenantId;
+    return this.slotsService.remove(id, effectiveTenant);
   }
 
   @Patch('me/office-branch')
