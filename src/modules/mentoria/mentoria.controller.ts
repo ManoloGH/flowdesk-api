@@ -95,7 +95,10 @@ export class MentoriaController {
 
   @Post('clientes')
   createCliente(@Req() req: any, @Body() body: any) {
-    return this.service.convertirACliente(req.user.tenant_id, body.prospecto_id, body);
+    if (body.prospecto_id) {
+      return this.service.convertirACliente(req.user.tenant_id, body.prospecto_id, body);
+    }
+    return this.service.createClienteDirect(req.user.tenant_id, body);
   }
 
   @Get('clientes/:id')

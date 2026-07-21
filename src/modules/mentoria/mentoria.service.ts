@@ -61,6 +61,44 @@ export class MentoriaService {
     return this.prisma.mentoriaProspecto.update({ where: { id }, data: { notas } });
   }
 
+  async createClienteDirect(tenantId: string, data: {
+    empresa: string; contacto_nombre?: string; contacto_cargo?: string;
+    email?: string; whatsapp?: string; industria?: string; tamano?: string;
+    ejecutivo_asignado?: string; precio?: number;
+  }) {
+    // Crea un prospecto en etapa "implementacion" como registro de origen
+    const prospecto = await this.prisma.mentoriaProspecto.create({
+      data: {
+        tenant_id: tenantId,
+        empresa: data.empresa,
+        contacto: data.contacto_nombre ?? '',
+        email: data.email,
+        whatsapp: data.whatsapp,
+        industria: data.industria,
+        tamano: data.tamano,
+        ejecutivo_asignado: data.ejecutivo_asignado,
+        etapa: 'implementacion',
+      },
+    });
+
+    return this.prisma.mentoriaCliente.create({
+      data: {
+        tenant_id: tenantId,
+        prospecto_id: prospecto.id,
+        empresa: data.empresa,
+        contacto_nombre: data.contacto_nombre ?? '',
+        contacto_cargo: data.contacto_cargo,
+        email: data.email,
+        whatsapp: data.whatsapp,
+        industria: data.industria,
+        tamano: data.tamano,
+        ejecutivo_asignado: data.ejecutivo_asignado,
+        precio: data.precio ?? 0,
+        fase_actual: 0,
+      },
+    });
+  }
+
   async convertirACliente(tenantId: string, prospecto_id: string, datos: {
     precio?: number; ejecutivo_asignado?: string; drive_url?: string;
   }) {
