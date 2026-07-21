@@ -95,7 +95,6 @@ export class AgentPanelController {
   }
 
   @Delete(':id/skills/:skillId')
-  @HttpCode(204)
   deleteSkill(
     @Request() req: any,
     @Param('id') agentId: string,
