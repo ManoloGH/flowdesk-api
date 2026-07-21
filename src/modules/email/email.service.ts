@@ -38,7 +38,7 @@ export class EmailService {
     }
   }
 
-  private welcomeHtml(opts: { name: string; tempPassword: string; tenantName: string; loginUrl: string }) {
+  private welcomeHtml(opts: { to: string; name: string; tempPassword: string; tenantName: string; loginUrl: string }) {
     return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

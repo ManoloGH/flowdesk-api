@@ -1194,10 +1194,9 @@ curl -s https://api.anthropic.com/v1/messages \\
         type:          'HUMAN',
         status:        'OFFLINE',
         password_hash: hash,
-        worker_type:   workerType,
         desk_access:   deskAccess,
       },
-      select: { id: true, name: true, email: true, role: true, worker_type: true, tenant_id: true },
+      select: { id: true, name: true, email: true, role: true, tenant_id: true },
     });
 
     const tenant = await this.prisma.tenant.findUnique({ where: { id: targetTenantId }, select: { name: true } });

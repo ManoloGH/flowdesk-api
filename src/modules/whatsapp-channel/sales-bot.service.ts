@@ -155,8 +155,24 @@ export class SalesBotService {
         CONSTRAINT "bot_messages_pkey" PRIMARY KEY ("id")
       )
     `);
+    // Agregar columnas de seguimiento (idempotente en PostgreSQL)
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "bot_conversations"
+        ADD COLUMN IF NOT EXISTS "seguimiento_activo"     BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "seguimiento_inicio"     TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "etapa_seguimiento"      INTEGER   NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "diagnostico_completado" BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "prospect_data"          TEXT      NOT NULL DEFAULT '{}'
+    `);
     this.tablesReady = true;
     this.logger.log('SalesBot: tablas auto-creadas/verificadas');
+  }
+
+  private async loadConvState(convId: string): Promise<{ diagnosticoCompletado: boolean }> {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT diagnostico_completado FROM "bot_conversations" WHERE id = $1`, convId,
+    );
+    return { diagnosticoCompletado: Boolean(rows[0]?.diagnostico_completado) };
   }
 
   private microTableReady = false;
@@ -221,11 +237,14 @@ export class SalesBotService {
       take: 20,
     });
 
-    // 5. Obtener system prompt desde agent_config del slot de ventas
-    const systemPrompt = await this.buildSystemPrompt(tenantId);
+    // 5. Cargar estado de la conversación (diagnóstico completado, etc.)
+    const convState = await this.loadConvState(conversation.id);
 
-    // 6. Llamar a OpenRouter con herramientas
-    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone);
+    // 6. Obtener system prompt contextualizado
+    const systemPrompt = await this.buildSystemPrompt(tenantId, convState.diagnosticoCompletado);
+
+    // 7. Llamar a OpenRouter con herramientas
+    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone, tenantId);
 
     if (!reply) return;
 
@@ -245,7 +264,7 @@ export class SalesBotService {
 
   // ─── System prompt ─────────────────────────────────────────────────────────
 
-  private async buildSystemPrompt(tenantId: string): Promise<string> {
+  private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false): Promise<string> {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
       select: { agent_config: true },
@@ -253,22 +272,54 @@ export class SalesBotService {
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
 
+    const misionSection = cfg.mision ? `\n## Misión\n${cfg.mision}` : '';
+    const enfoqueSection = cfg.enfoque ? `\n## En qué enfocarse\n${cfg.enfoque}` : '';
+    const seguimientoSection = cfg.tarea_seguimiento
+      ? `\n## Tarea de seguimiento (si no agenda)\n${cfg.tarea_seguimiento}`
+      : '';
+
+    // Modo "post-diagnóstico": el prospecto ya completó el micro-diagnóstico y las
+    // preguntas de descubrimiento. Leo ahora se enfoca en beneficios y en convencer
+    // al prospecto de agendar una reunión, sin repetir el flujo de calificación.
+    if (diagnosticoCompletado) {
+      return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Ya tuviste una conversación previa con este prospecto en la que realizaste el micro-diagnóstico y las preguntas de descubrimiento.
+${misionSection}
+## Identidad del negocio
+
+**Qué hacemos:** ${cfg.actividad ?? ''}
+**Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
+${enfoqueSection}
+## Tu misión en este momento
+
+El prospecto ya conoce nuestro servicio y ya nos compartió su situación. Tu único objetivo ahora es convencerlo de agendar una reunión de 30 minutos para resolver sus dudas.
+
+- NO repitas el micro-diagnóstico ni las preguntas de descubrimiento.
+- Habla de los BENEFICIOS concretos que obtendría al trabajar con nosotros.
+- Responde sus dudas y objeciones con calidez y argumentos de valor.
+- Cuando sea el momento, envíale el link de agendamiento con agendar().
+- Si insiste en precios o condiciones específicas, usa derivarHumano().
+
+## Criterios de calificación
+
+**Lead calificado — procede a agendar:**
+${cfg.criterios_buen_lead ?? ''}
+
+**Lead no calificado — responde con calidez, NO agendes:**
+${cfg.criterios_mal_lead ?? ''}
+${seguimientoSection}
+## Reglas de comunicación
+
+- Responde en español neutro, conversacional
+- Mensajes breves: 2 a 4 líneas máximo
+- No uses emojis en exceso
+- Una pregunta a la vez — espera la respuesta antes de continuar`.trim();
+    }
+
+    // Modo normal: seguir el journey configurado
     const journeySection =
       Array.isArray(cfg.journey) && cfg.journey.length > 0
         ? this.renderJourneyNodes(cfg.journey, '')
         : this.buildLegacyJourneySection(cfg);
-
-    const misionSection = cfg.mision
-      ? `\n## Misión\n${cfg.mision}`
-      : '';
-
-    const enfoqueSection = cfg.enfoque
-      ? `\n## En qué enfocarse\n${cfg.enfoque}`
-      : '';
-
-    const seguimientoSection = cfg.tarea_seguimiento
-      ? `\n## Tarea de seguimiento (si no agenda)\n${cfg.tarea_seguimiento}`
-      : '';
 
     return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Tu trabajo es atender mensajes de WhatsApp y guiar al prospecto a través del flujo de conversación.
 ${misionSection}
@@ -364,6 +415,7 @@ ${preguntasList}
     history: Array<{ role: string; content: string }>,
     conversationId: string,
     phone: string,
+    tenantId: string,
   ): Promise<string | null> {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model  = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
@@ -417,7 +469,7 @@ ${preguntasList}
         let args: any = {};
         try { args = JSON.parse(call.function.arguments); } catch {}
 
-        const result = await this.executeTool(call.function.name, args, conversationId, phone);
+        const result = await this.executeTool(call.function.name, args, conversationId, phone, tenantId);
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }
@@ -432,6 +484,7 @@ ${preguntasList}
     args: any,
     conversationId: string,
     phone: string,
+    _tenantId: string,
   ): Promise<any> {
     switch (name) {
 
@@ -454,6 +507,16 @@ ${preguntasList}
              VALUES ($1,$2,$3,$4,NOW())`,
             diagId, token, conversationId, content,
           );
+          // Marcar diagnóstico completado e iniciar ventana de seguimiento
+          await this.prisma.$executeRawUnsafe(`
+            UPDATE "bot_conversations"
+            SET diagnostico_completado = TRUE,
+                seguimiento_activo     = TRUE,
+                seguimiento_inicio     = NOW(),
+                etapa_seguimiento      = 0,
+                prospect_data          = $1
+            WHERE id = $2
+          `, content, conversationId);
           const url = `https://app.flowdesk.mx/micro/${token}`;
           return { ok: true, url, message: `Micro-diagnóstico generado: ${url}` };
         } catch (err: any) {
@@ -530,6 +593,13 @@ ${preguntasList}
         const url = new URL(base);
         url.searchParams.set('name', args.nombre);
         if (args.email) url.searchParams.set('email', args.email);
+
+        // Cancelar seguimiento — el prospecto agendó reunión
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "bot_conversations" SET seguimiento_activo = FALSE WHERE id = $1`,
+          conversationId,
+        );
+
         return { ok: true, link: url.toString(), message: `Envía este link: ${url}` };
       }
 
