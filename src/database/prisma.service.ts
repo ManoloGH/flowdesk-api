@@ -123,6 +123,11 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Aprendizaje de agentes ────────────────────────────────────────────────
   get agentLearningProposal() { return this.prisma.agentLearningProposal; }
 
+  // ── Agent Panel ────────────────────────────────────────────────────────────
+  get agentSkill() { return this.prisma.agentSkill; }
+  get agentCorrection() { return this.prisma.agentCorrection; }
+  get availableModel() { return this.prisma.availableModel; }
+
   // ── Web Builder ───────────────────────────────────────────────────────────
   get webProyecto() { return this.prisma.webProyecto; }
 

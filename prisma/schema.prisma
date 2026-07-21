@@ -101,6 +101,8 @@ model Tenant {
   soc_requests           SocRequest[]
   erp_requirements       ErpRequirement[]
   office_branches        OfficeBranch[]
+  agent_skills           AgentSkill[]
+  agent_corrections      AgentCorrection[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -252,6 +254,8 @@ model TeamSlot {
   soc_history              SocHistory[]
   erp_requirements_owned   ErpRequirement[] @relation("ErpOwner")
   erp_feedbacks            ErpFeedback[]
+  agent_skills             AgentSkill[]
+  agent_corrections        AgentCorrection[]
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -2478,4 +2482,57 @@ model ErpFeedback {
 
   @@index([requirement_id])
   @@map("erp_feedbacks")
+}
+
+// ═════════════════════════════════════════════
+// AGENT PANEL — Skills, Correcciones, Modelos
+// ═════════════════════════════════════════════
+
+model AgentSkill {
+  id                    String   @id @default(cuid())
+  tenant_id             String
+  tenant                Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id              String
+  agent                 TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  name                  String
+  trigger_condition     String
+  response_instructions String   @db.Text
+  example_conversation  String?  @db.Text
+  status                String   @default("active")
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@index([tenant_id, agent_id])
+}
+
+model AgentCorrection {
+  id              String   @id @default(cuid())
+  tenant_id       String
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id        String
+  agent           TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  conversation_id String?
+  message_id      String?
+  source          String   @default("real")
+  verdict         String   @default("error")
+  original_text   String?  @db.Text
+  corrected_text  String?  @db.Text
+  note            String?  @db.Text
+  created_at      DateTime @default(now())
+
+  @@index([tenant_id, agent_id])
+}
+
+model AvailableModel {
+  id            String    @id @default(cuid())
+  provider      String
+  model_id      String    @unique
+  display_name  String
+  tier          String    @default("economy")
+  active        Boolean   @default(true)
+  deprecated_at DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([active])
 }

@@ -44,6 +44,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
 import { AgentLearningModule } from './modules/agent-learning/agent-learning.module';
+import { AgentPanelModule } from './modules/agent-panel/agent-panel.module';
 import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
 import { WebProyectosModule } from './modules/web-proyectos/web-proyectos.module';
 import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-agent.module';
@@ -132,6 +133,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     AgentCalibrationModule,
     AgentEvolutionModule,
     AgentLearningModule,
+    AgentPanelModule,
     WeeklyMeetingModule,
     // Web Builder â€” construcciÃ³n y seguimiento de webs de clientes
     WebProyectosModule,

@@ -418,7 +418,12 @@ ${preguntasList}
     tenantId: string,
   ): Promise<string | null> {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const model  = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
+    const agentSlot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { agent_config: true },
+    });
+    const cfg = (agentSlot?.agent_config as Record<string, unknown>) ?? {};
+    const model = cfg?.model as string ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
 
     if (!apiKey) {
       this.logger.error('OPENROUTER_API_KEY no configurada');
