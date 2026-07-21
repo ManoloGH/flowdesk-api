@@ -1,5 +1,5 @@
 -- CreateTable: AgentSkill
-CREATE TABLE "AgentSkill" (
+CREATE TABLE IF NOT EXISTS "AgentSkill" (
     "id" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,
     "agent_id" TEXT NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE "AgentSkill" (
 );
 
 -- CreateTable: AgentCorrection
-CREATE TABLE "AgentCorrection" (
+CREATE TABLE IF NOT EXISTS "AgentCorrection" (
     "id" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,
     "agent_id" TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE "AgentCorrection" (
 );
 
 -- CreateTable: AvailableModel
-CREATE TABLE "AvailableModel" (
+CREATE TABLE IF NOT EXISTS "AvailableModel" (
     "id" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "model_id" TEXT NOT NULL,
@@ -46,26 +46,45 @@ CREATE TABLE "AvailableModel" (
     CONSTRAINT "AvailableModel_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "AgentSkill_tenant_id_agent_id_idx" ON "AgentSkill"("tenant_id", "agent_id");
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "AgentSkill_tenant_id_agent_id_idx" ON "AgentSkill"("tenant_id", "agent_id");
+CREATE INDEX IF NOT EXISTS "AgentCorrection_tenant_id_agent_id_idx" ON "AgentCorrection"("tenant_id", "agent_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "AvailableModel_model_id_key" ON "AvailableModel"("model_id");
+CREATE INDEX IF NOT EXISTS "AvailableModel_active_idx" ON "AvailableModel"("active");
 
--- CreateIndex
-CREATE INDEX "AgentCorrection_tenant_id_agent_id_idx" ON "AgentCorrection"("tenant_id", "agent_id");
+-- AddForeignKey (idempotent using DO blocks)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'AgentSkill_tenant_id_fkey'
+  ) THEN
+    ALTER TABLE "AgentSkill" ADD CONSTRAINT "AgentSkill_tenant_id_fkey"
+      FOREIGN KEY ("tenant_id") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "AvailableModel_model_id_key" ON "AvailableModel"("model_id");
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'AgentSkill_agent_id_fkey'
+  ) THEN
+    ALTER TABLE "AgentSkill" ADD CONSTRAINT "AgentSkill_agent_id_fkey"
+      FOREIGN KEY ("agent_id") REFERENCES "TeamSlot"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- CreateIndex
-CREATE INDEX "AvailableModel_active_idx" ON "AvailableModel"("active");
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'AgentCorrection_tenant_id_fkey'
+  ) THEN
+    ALTER TABLE "AgentCorrection" ADD CONSTRAINT "AgentCorrection_tenant_id_fkey"
+      FOREIGN KEY ("tenant_id") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- AddForeignKey
-ALTER TABLE "AgentSkill" ADD CONSTRAINT "AgentSkill_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AgentSkill" ADD CONSTRAINT "AgentSkill_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "TeamSlot"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AgentCorrection" ADD CONSTRAINT "AgentCorrection_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AgentCorrection" ADD CONSTRAINT "AgentCorrection_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "TeamSlot"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'AgentCorrection_agent_id_fkey'
+  ) THEN
+    ALTER TABLE "AgentCorrection" ADD CONSTRAINT "AgentCorrection_agent_id_fkey"
+      FOREIGN KEY ("agent_id") REFERENCES "TeamSlot"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
