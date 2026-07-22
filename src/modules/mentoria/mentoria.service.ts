@@ -9,9 +9,31 @@ export class MentoriaService {
 
   async getProspectos(tenantId: string) {
     return this.prisma.mentoriaProspecto.findMany({
-      where: { tenant_id: tenantId },
+      where: { tenant_id: tenantId, status: 'activo', etapa: { not: 'implementacion' } },
       orderBy: { created_at: 'desc' },
       include: { cliente: { select: { id: true, fase_actual: true, status: true } } },
+    });
+  }
+
+  async getDescartados(tenantId: string) {
+    return this.prisma.mentoriaProspecto.findMany({
+      where: { tenant_id: tenantId, status: 'descartado' },
+      orderBy: { updated_at: 'desc' },
+    });
+  }
+
+  async descartarProspecto(tenantId: string, id: string) {
+    await this.findProspecto(tenantId, id);
+    return this.prisma.mentoriaProspecto.update({
+      where: { id },
+      data: { status: 'descartado', fecha_ultima_accion: new Date() },
+    });
+  }
+
+  async reactivarProspecto(tenantId: string, id: string) {
+    return this.prisma.mentoriaProspecto.update({
+      where: { id },
+      data: { status: 'activo', fecha_ultima_accion: new Date() },
     });
   }
 
@@ -37,6 +59,44 @@ export class MentoriaService {
   async updateProspectoNotas(tenantId: string, id: string, notas: string) {
     await this.findProspecto(tenantId, id);
     return this.prisma.mentoriaProspecto.update({ where: { id }, data: { notas } });
+  }
+
+  async createClienteDirect(tenantId: string, data: {
+    empresa: string; contacto_nombre?: string; contacto_cargo?: string;
+    email?: string; whatsapp?: string; industria?: string; tamano?: string;
+    ejecutivo_asignado?: string; precio?: number;
+  }) {
+    // Crea un prospecto en etapa "implementacion" como registro de origen
+    const prospecto = await this.prisma.mentoriaProspecto.create({
+      data: {
+        tenant_id: tenantId,
+        empresa: data.empresa,
+        contacto: data.contacto_nombre ?? '',
+        email: data.email,
+        whatsapp: data.whatsapp,
+        industria: data.industria,
+        tamano: data.tamano,
+        ejecutivo_asignado: data.ejecutivo_asignado,
+        etapa: 'implementacion',
+      },
+    });
+
+    return this.prisma.mentoriaCliente.create({
+      data: {
+        tenant_id: tenantId,
+        prospecto_id: prospecto.id,
+        empresa: data.empresa,
+        contacto_nombre: data.contacto_nombre ?? '',
+        contacto_cargo: data.contacto_cargo,
+        email: data.email,
+        whatsapp: data.whatsapp,
+        industria: data.industria,
+        tamano: data.tamano,
+        ejecutivo_asignado: data.ejecutivo_asignado,
+        precio: data.precio ?? 0,
+        fase_actual: 0,
+      },
+    });
   }
 
   async convertirACliente(tenantId: string, prospecto_id: string, datos: {
@@ -284,5 +344,87 @@ export class MentoriaService {
       where: { cliente_id: clienteId },
       data: { procesado: true },
     });
+  }
+
+  // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
+
+  async getAutomatizaciones(tenantId: string, clienteId?: string) {
+    return this.prisma.mentoriaAutomatizacion.findMany({
+      where: {
+        tenant_id: tenantId,
+        ...(clienteId ? { cliente_id: clienteId } : {}),
+      },
+      include: { cliente: { select: { id: true, empresa: true } } },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async createAutomatizacion(tenantId: string, data: {
+    cliente_id?: string;
+    nombre: string;
+    area: string;
+    descripcion?: string;
+    tipo: string;
+    trigger?: string;
+    accion?: string;
+    canal?: string;
+    webhook_url?: string;
+    config?: any;
+  }) {
+    return this.prisma.mentoriaAutomatizacion.create({
+      data: { tenant_id: tenantId, ...data },
+      include: { cliente: { select: { id: true, empresa: true } } },
+    });
+  }
+
+  async updateAutomatizacion(tenantId: string, id: string, data: Partial<{
+    nombre: string; area: string; descripcion: string; tipo: string;
+    trigger: string; accion: string; canal: string; webhook_url: string;
+    config: any; status: string;
+  }>) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.update({ where: { id }, data });
+  }
+
+  async activarAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({
+      where: { id, tenant_id: tenantId },
+      include: { cliente: { select: { id: true, empresa: true } } },
+    });
+    if (!auto) throw new Error('Automatización no encontrada');
+
+    if (auto.webhook_url) {
+      try {
+        await fetch(auto.webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'activar',
+            automatizacion: { id: auto.id, nombre: auto.nombre, area: auto.area, tipo: auto.tipo, trigger: auto.trigger, accion: auto.accion, canal: auto.canal, config: auto.config },
+            cliente: auto.cliente,
+          }),
+        });
+      } catch (e) {
+        console.error('[Automatizacion] webhook error:', e);
+      }
+    }
+
+    return this.prisma.mentoriaAutomatizacion.update({
+      where: { id },
+      data: { status: 'activa', activada_at: new Date() },
+    });
+  }
+
+  async pausarAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.update({ where: { id }, data: { status: 'pausada' } });
+  }
+
+  async deleteAutomatizacion(tenantId: string, id: string) {
+    const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
+    if (!auto) throw new Error('Automatización no encontrada');
+    return this.prisma.mentoriaAutomatizacion.delete({ where: { id } });
   }
 }

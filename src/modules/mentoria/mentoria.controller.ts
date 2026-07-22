@@ -23,6 +23,11 @@ export class MentoriaController {
     return this.service.getProspectos(req.user.tenant_id);
   }
 
+  @Get('prospectos/descartados')
+  getDescartados(@Req() req: any) {
+    return this.service.getDescartados(req.user.tenant_id);
+  }
+
   @Post('prospectos')
   async createProspecto(@Req() req: any, @Body() body: any) {
     try {
@@ -40,6 +45,16 @@ export class MentoriaController {
   @Patch('prospectos/:id/notas')
   updateProspectoNotas(@Req() req: any, @Param('id') id: string, @Body() body: { notas: string }) {
     return this.service.updateProspectoNotas(req.user.tenant_id, id, body.notas);
+  }
+
+  @Patch('prospectos/:id/descartar')
+  descartarProspecto(@Req() req: any, @Param('id') id: string) {
+    return this.service.descartarProspecto(req.user.tenant_id, id);
+  }
+
+  @Patch('prospectos/:id/reactivar')
+  reactivarProspecto(@Req() req: any, @Param('id') id: string) {
+    return this.service.reactivarProspecto(req.user.tenant_id, id);
   }
 
   @Post('prospectos/:id/convertir')
@@ -80,7 +95,10 @@ export class MentoriaController {
 
   @Post('clientes')
   createCliente(@Req() req: any, @Body() body: any) {
-    return this.service.convertirACliente(req.user.tenant_id, body.prospecto_id, body);
+    if (body.prospecto_id) {
+      return this.service.convertirACliente(req.user.tenant_id, body.prospecto_id, body);
+    }
+    return this.service.createClienteDirect(req.user.tenant_id, body);
   }
 
   @Get('clientes/:id')
@@ -213,5 +231,44 @@ export class MentoriaController {
   @Post('clientes/:id/procesar')
   async procesarDiagnostico(@Req() req: any, @Param('id') id: string) {
     return this.procesamiento.procesarDiagnostico(req.user.tenant_id, id);
+  }
+
+  // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
+
+  @Get('automatizaciones')
+  getAutomatizaciones(@Req() req: any, @Query('cliente_id') clienteId?: string) {
+    return this.service.getAutomatizaciones(req.user.tenant_id, clienteId);
+  }
+
+  @Post('automatizaciones')
+  createAutomatizacion(@Req() req: any, @Body() body: any) {
+    return this.service.createAutomatizacion(req.user.tenant_id, body);
+  }
+
+  @Patch('automatizaciones/:id')
+  updateAutomatizacion(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.service.updateAutomatizacion(req.user.tenant_id, id, body);
+  }
+
+  @Post('automatizaciones/:id/activar')
+  activarAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.activarAutomatizacion(req.user.tenant_id, id);
+  }
+
+  @Post('automatizaciones/:id/pausar')
+  pausarAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.pausarAutomatizacion(req.user.tenant_id, id);
+  }
+
+  @Delete('automatizaciones/:id')
+  deleteAutomatizacion(@Req() req: any, @Param('id') id: string) {
+    return this.service.deleteAutomatizacion(req.user.tenant_id, id);
+  }
+
+  // ── AUTOMATIZACIONES POR CLIENTE ────────────────────────────────────────────
+
+  @Get('clientes/:id/automatizaciones')
+  getAutomatizacionesByCliente(@Req() req: any, @Param('id') id: string) {
+    return this.service.getAutomatizaciones(req.user.tenant_id, id);
   }
 }

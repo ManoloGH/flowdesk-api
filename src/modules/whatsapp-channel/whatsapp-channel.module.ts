@@ -8,6 +8,7 @@ import { OperativeWhatsAppService } from './operative-whatsapp.service';
 import { CustomerWhatsAppService } from './customer-whatsapp.service';
 import { WhatsAppFormatterService } from './whatsapp-formatter.service';
 import { SalesBotService } from './sales-bot.service';
+import { SalesBotFollowUpService } from './sales-bot-followup.service';
 
 @Module({
   imports: [PrismaModule, IntegrationsModule, PersonalAssistantModule],
@@ -18,6 +19,7 @@ import { SalesBotService } from './sales-bot.service';
     CustomerWhatsAppService,
     WhatsAppFormatterService,
     SalesBotService,
+    SalesBotFollowUpService,
   ],
   exports: [
     WhatsAppRouterService,

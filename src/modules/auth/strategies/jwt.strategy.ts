@@ -27,8 +27,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // Los platform_admin (superadmin) pueden operar sin restricción de tenant
+    const where = payload.platform_admin
+      ? { id: payload.sub }
+      : { id: payload.sub, tenant_id: payload.tenant_id };
+
     const slot = await this.prisma.teamSlot.findFirst({
-      where: { id: payload.sub, tenant_id: payload.tenant_id },
+      where,
       select: { id: true, tenant_id: true, role: true, type: true, email: true, status: true },
     });
 

@@ -25,6 +25,9 @@ export class RolesGuard implements CanActivate {
     const { user } = context.switchToHttp().getRequest();
     if (!user) return false;
 
+    // Superadmin con platform_admin=true tiene acceso ilimitado a cualquier tenant
+    if (user.platform_admin) return true;
+
     const userLevel = ROLE_HIERARCHY[user.role] ?? 0;
     const minRequired = Math.min(...requiredRoles.map(r => ROLE_HIERARCHY[r] ?? 99));
 

@@ -41,9 +41,9 @@ export class AuthService {
       throw new ConflictException('El super-admin ya existe');
     }
 
-    // Tenant raíz para el super-admin de FlowDesk
+    // Tenant raíz para el super-admin de FlowDesk — siempre tipo PLATFORM
     const tenant = await this.prisma.tenant.create({
-      data: { name: 'FlowDesk', slug: 'flowdesk', plan: 'internal' },
+      data: { name: 'FlowDesk', slug: 'flowdesk', plan: 'internal', tenant_type: 'PLATFORM' },
     });
 
     const hash = await bcrypt.hash(dto.password, SALT_ROUNDS);
@@ -58,7 +58,7 @@ export class AuthService {
       },
     });
 
-    return this.buildTokens(slot.id, tenant.id, 'superadmin', 'HUMAN', slot.email!, slot.name);
+    return this.buildTokens(slot.id, tenant.id, 'superadmin', 'HUMAN', slot.email!, slot.name, 'PLATFORM', true);
   }
 
   async login(dto: LoginDto, ipAddress?: string) {
@@ -109,7 +109,8 @@ export class AuthService {
     });
 
     const cfg = (slot.tenant.campus_config as Record<string, unknown>) ?? {};
-    const platformAdmin = !!(cfg.include_platform_metrics) || slot.tenant.tenant_type === 'PLATFORM';
+    // superadmin siempre tiene acceso a plataforma, independiente del tenant_type almacenado
+    const platformAdmin = slot.role === 'superadmin' || !!(cfg.include_platform_metrics) || slot.tenant.tenant_type === 'PLATFORM';
 
     return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined, platformAdmin);
   }
@@ -127,7 +128,8 @@ export class AuthService {
 
       if (!slot) throw new UnauthorizedException('Sesión inválida');
 
-      return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined);
+      const isPlatformAdmin = slot.role === 'superadmin' || slot.tenant.tenant_type === 'PLATFORM';
+      return this.buildTokens(slot.id, slot.tenant_id, slot.role, slot.type, slot.email!, slot.name, slot.tenant.tenant_type ?? undefined, isPlatformAdmin);
     } catch {
       throw new UnauthorizedException('Refresh token inválido o expirado');
     }

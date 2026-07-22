@@ -5,7 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
+import { EmailService } from '../email/email.service';
 import { CreateHumanSlotDto, CreateAgentSlotDto } from './dto/create-slot.dto';
 import { UpdateSlotDto, UpdateStatusDto } from './dto/update-slot.dto';
 
@@ -24,14 +26,21 @@ const SLOT_SELECT = {
   position_y: true,
   permissions: true,
   agent_config: true,
+  desk_access: true,
   created_at: true,
+  office_branch_id: true,
+  office_branch: { select: { id: true, name: true, color: true } },
   department: { select: { id: true, name: true, color: true, icon: true } },
   schedule: { select: { id: true, name: true, check_in_time: true, check_out_time: true } },
 };
 
 @Injectable()
 export class TeamSlotsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+    private config: ConfigService,
+  ) {}
 
   // Listar todos los slots de la empresa (con filtros opcionales)
   async findAll(tenantId: string, filters?: { type?: string; department_id?: string; status?: string }) {
@@ -47,9 +56,9 @@ export class TeamSlotsService {
     });
   }
 
-  async findOne(id: string, tenantId: string) {
+  async findOne(id: string, tenantId: string | null) {
     const slot = await this.prisma.teamSlot.findFirst({
-      where: { id, tenant_id: tenantId },
+      where: tenantId ? { id, tenant_id: tenantId } : { id },
       select: SLOT_SELECT,
     });
     if (!slot) throw new NotFoundException('Colaborador no encontrado');
@@ -161,12 +170,22 @@ export class TeamSlotsService {
       await this.provisionDailyAssistant(tenantId, slot.id as string, dto.name, dto.role ?? 'employee');
     }
 
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+    const loginUrl = this.config.get<string>('APP_URL') ?? 'https://app.flowdesk.mx';
+    this.email.sendWelcome({
+      to:           dto.email,
+      name:         dto.name,
+      tempPassword,
+      tenantName:   tenant?.name ?? 'FlowDesk',
+      loginUrl,
+    });
+
     const workerLabel = isOperative ? 'Operativo (cédula vía WhatsApp)' : 'Escritorio (asistente personal)';
     return {
       slot,
       temp_password: tempPassword,
       worker_type: workerType,
-      message: `Comparte esta contraseña con el empleado. Solo se muestra una vez. Tipo: ${workerLabel}.`,
+      message: `Credenciales enviadas por email. Tipo: ${workerLabel}.`,
     };
   }
 
@@ -216,11 +235,11 @@ export class TeamSlotsService {
     });
   }
 
-  async update(id: string, tenantId: string, dto: UpdateSlotDto, requestingRole: string, requestingSlotId: string) {
+  async update(id: string, tenantId: string | null, dto: UpdateSlotDto, requestingRole: string, requestingSlotId: string) {
     const slot = await this.findOne(id, tenantId);
 
     const isSelf = id === requestingSlotId;
-    const isManager = ['owner', 'admin', 'manager'].includes(requestingRole);
+    const isManager = ['superadmin', 'owner', 'admin', 'manager'].includes(requestingRole);
 
     if (!isSelf && !isManager) throw new ForbiddenException('Solo puedes editar tu propio perfil');
     if (isSelf && !isManager && (dto.role || dto.department_id)) throw new ForbiddenException('No puedes cambiar tu rol o departamento');
@@ -236,14 +255,14 @@ export class TeamSlotsService {
 
     // Crear/actualizar CEO Agent si se proporcionó nombre
     if (agent_name && isSelf) {
-      await this.ensureCeoAgent(id, tenantId, agent_name, (updated as any).name ?? slot.name);
+      await this.ensureCeoAgent(id, tenantId ?? '', agent_name, (updated as any).name ?? slot.name ?? '');
     }
 
     return updated;
   }
 
   // El empleado actualiza su propio status (online, busy, away)
-  async updateStatus(id: string, tenantId: string, dto: UpdateStatusDto) {
+  async updateStatus(id: string, tenantId: string | null, dto: UpdateStatusDto) {
     await this.findOne(id, tenantId);
     return this.prisma.teamSlot.update({
       where: { id },
@@ -252,7 +271,7 @@ export class TeamSlotsService {
     });
   }
 
-  async remove(id: string, tenantId: string) {
+  async remove(id: string, tenantId: string | null) {
     const slot = await this.findOne(id, tenantId);
     await this.prisma.teamSlot.delete({ where: { id } });
     return { message: `${slot.name} eliminado del equipo` };
@@ -275,6 +294,14 @@ export class TeamSlotsService {
         department: { select: { id: true, name: true, color: true } },
       },
       orderBy: { name: 'asc' },
+    });
+  }
+
+  async setOfficeBranch(slotId: string, tenantId: string, officeBranchId: string | null) {
+    return this.prisma.teamSlot.update({
+      where: { id: slotId, tenant_id: tenantId },
+      data: { office_branch_id: officeBranchId },
+      select: { id: true, name: true, office_branch_id: true },
     });
   }
 

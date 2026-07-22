@@ -248,6 +248,9 @@ export class CommunicationsService {
       actividad: cfg.actividad ?? null,
       propuesta_valor: cfg.propuesta_valor ?? null,
       gancho: cfg.gancho ?? null,
+      mision: cfg.mision ?? null,
+      enfoque: cfg.enfoque ?? null,
+      tarea_seguimiento: cfg.tarea_seguimiento ?? null,
       preguntas_calificacion: cfg.preguntas_calificacion ?? [],
       preguntas_microdiagnostico: cfg.preguntas_microdiagnostico ?? [],
       criterios_buen_lead: cfg.criterios_buen_lead ?? null,
@@ -256,6 +259,7 @@ export class CommunicationsService {
       cierre_no_calificado: cfg.cierre_no_calificado ?? null,
       cal_booking_url: cfg.cal_booking_url ?? null,
       evolution_instance: cfg.evolution_instance ?? null,
+      journey: Array.isArray(cfg.journey) ? cfg.journey : [],
     };
   }
 
@@ -277,6 +281,9 @@ export class CommunicationsService {
         actividad: body.actividad ?? null,
         propuesta_valor: body.propuesta_valor ?? null,
         gancho: body.gancho ?? null,
+        mision: body.mision ?? null,
+        enfoque: body.enfoque ?? null,
+        tarea_seguimiento: body.tarea_seguimiento ?? null,
         preguntas_calificacion: body.preguntas_calificacion ?? [],
         preguntas_microdiagnostico: body.preguntas_microdiagnostico ?? [],
         criterios_buen_lead: body.criterios_buen_lead ?? null,
@@ -284,6 +291,7 @@ export class CommunicationsService {
         cierre_calificado: body.cierre_calificado ?? null,
         cierre_no_calificado: body.cierre_no_calificado ?? null,
         cal_booking_url: body.cal_booking_url ?? null,
+        journey: Array.isArray(body.journey) ? body.journey : [],
         evolution_instance: evolutionInstance,
         ai_provider: 'openrouter',
         model: process.env.OPENROUTER_MODEL ?? 'anthropic/claude-haiku-4-5',

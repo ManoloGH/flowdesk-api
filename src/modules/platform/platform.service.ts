@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { TenantExportService } from './tenant-export.service';
+import { EmailService } from '../email/email.service';
 
 import { randomBytes } from 'crypto';
 
@@ -15,9 +17,14 @@ export class PlatformService {
     private tenantExport: TenantExportService,
     private jwt: JwtService,
     private config: ConfigService,
+    private email: EmailService,
   ) {}
 
   private async assertPlatform(tenantId: string) {
+    // El tenant del superadmin siempre tiene acceso a la plataforma
+    const hasSuperAdmin = await this.prisma.teamSlot.count({ where: { tenant_id: tenantId, role: 'superadmin' } });
+    if (hasSuperAdmin > 0) return;
+
     const t = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { tenant_type: true, campus_config: true },
@@ -41,6 +48,8 @@ export class PlatformService {
   }
 
   private async assertNetworkOrAbove(tenantId: string) {
+    const hasSuperAdmin = await this.prisma.teamSlot.count({ where: { tenant_id: tenantId, role: 'superadmin' } });
+    if (hasSuperAdmin > 0) return;
     const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { tenant_type: true } });
     if (!t || (t.tenant_type !== 'PLATFORM' && t.tenant_type !== 'NETWORK'))
       throw new ForbiddenException('Acceso restringido a administradores de red.');
@@ -987,8 +996,8 @@ curl -s https://api.anthropic.com/v1/messages \\
 
   async provisionTenant(callerTenantId: string, dto: {
     name: string; slug: string; tenant_type: 'NETWORK' | 'BRANCH';
-    network_id?: string; external_ref?: string; plan?: string;
-    owner_email: string; owner_name: string;
+    network_id?: string; external_ref?: string; plan?: string; account_type?: string;
+    owner_email: string; owner_name: string; modules_config?: any[];
   }) {
     await this.assertPlatform(callerTenantId);
 
@@ -998,6 +1007,8 @@ curl -s https://api.anthropic.com/v1/messages \\
           name: dto.name, slug: dto.slug, tenant_type: dto.tenant_type,
           network_id: dto.network_id ?? null, external_ref: dto.external_ref ?? null,
           plan: dto.plan ?? 'starter', status: 'active',
+          ...(dto.account_type && { account_type: dto.account_type }),
+          ...(dto.modules_config && { modules_config: dto.modules_config }),
         },
       });
 
@@ -1156,5 +1167,48 @@ curl -s https://api.anthropic.com/v1/messages \\
         completed_today: completedTasks, overdue_tasks: overdueTasks, recent_conversations: recentConversations,
       },
     };
+  }
+
+  async createTenantSlot(
+    callerTenantId: string,
+    targetTenantId: string,
+    dto: { name: string; email: string; role?: string; worker_type?: string; password?: string },
+  ) {
+    await this.assertPlatform(callerTenantId);
+
+    const exists = await this.prisma.teamSlot.findFirst({ where: { email: dto.email } });
+    if (exists) throw new ConflictException(`El email ${dto.email} ya está registrado`);
+
+    const tempPassword = dto.password ?? randomBytes(5).toString('hex');
+    const hash = await bcrypt.hash(tempPassword, 12);
+
+    const workerType  = (dto.worker_type === 'operative') ? 'operative' : 'desk';
+    const deskAccess  = workerType === 'operative' ? 'NONE' : 'FULL';
+
+    const slot = await this.prisma.teamSlot.create({
+      data: {
+        tenant_id:     targetTenantId,
+        name:          dto.name,
+        email:         dto.email,
+        role:          dto.role ?? 'employee',
+        type:          'HUMAN',
+        status:        'OFFLINE',
+        password_hash: hash,
+        desk_access:   deskAccess,
+      },
+      select: { id: true, name: true, email: true, role: true, tenant_id: true },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: targetTenantId }, select: { name: true } });
+    const loginUrl = this.config.get<string>('APP_URL') ?? 'https://app.flowdesk.mx';
+    this.email.sendWelcome({
+      to:           dto.email,
+      name:         dto.name,
+      tempPassword,
+      tenantName:   tenant?.name ?? 'FlowDesk',
+      loginUrl,
+    });
+
+    return { ...slot, temp_password: tempPassword };
   }
 }

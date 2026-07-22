@@ -44,6 +44,7 @@ import { SalesModule } from './modules/sales/sales.module';
 import { AgentCalibrationModule } from './modules/agent-calibration/agent-calibration.module';
 import { AgentEvolutionModule } from './modules/agent-evolution/agent-evolution.module';
 import { AgentLearningModule } from './modules/agent-learning/agent-learning.module';
+import { AgentPanelModule } from './modules/agent-panel/agent-panel.module';
 import { WeeklyMeetingModule } from './modules/weekly-meeting/weekly-meeting.module';
 import { WebProyectosModule } from './modules/web-proyectos/web-proyectos.module';
 import { WebBuilderAgentModule } from './modules/web-builder-agent/web-builder-agent.module';
@@ -56,6 +57,7 @@ import { CommunicationsModule } from './modules/communications/communications.mo
 import { MicroDiagnosticoModule } from './modules/micro-diagnostico/micro-diagnostico.module';
 import { SocModule } from './modules/soc/soc.module';
 import { ErpAreasModule } from './modules/erp-areas/erp-areas.module';
+import { EmailModule } from './modules/email/email.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 
@@ -79,6 +81,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     AiModule,
     // BÃºsqueda web â€” Brave Search + Firecrawl con fallbacks gratuitos
     SearchModule,
+    // Email — Resend (global)
+    EmailModule,
     // Integraciones externas (global â€” disponible en todos los mÃ³dulos)
     IntegrationsModule,
     // Core
@@ -130,6 +134,7 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     AgentCalibrationModule,
     AgentEvolutionModule,
     AgentLearningModule,
+    AgentPanelModule,
     WeeklyMeetingModule,
     // Web Builder â€” construcciÃ³n y seguimiento de webs de clientes
     WebProyectosModule,

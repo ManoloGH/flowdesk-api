@@ -123,6 +123,11 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Aprendizaje de agentes ────────────────────────────────────────────────
   get agentLearningProposal() { return this.prisma.agentLearningProposal; }
 
+  // ── Agent Panel ────────────────────────────────────────────────────────────
+  get agentSkill() { return this.prisma.agentSkill; }
+  get agentCorrection() { return this.prisma.agentCorrection; }
+  get availableModel() { return this.prisma.availableModel; }
+
   // ── Web Builder ───────────────────────────────────────────────────────────
   get webProyecto() { return this.prisma.webProyecto; }
 
@@ -139,6 +144,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get mentoriaSesion() { return this.prisma.mentoriaSesion; }
   get mentoriaPago() { return this.prisma.mentoriaPago; }
   get mentoriaDiagnostico() { return this.prisma.mentoriaDiagnostico; }
+  get mentoriaAutomatizacion() { return this.prisma.mentoriaAutomatizacion; }
+
+  // ── Office Branches ───────────────────────────────────────────────────────────
+  get officeBranch() { return this.prisma.officeBranch; }
 
   // ── Micro-diagnóstico ────────────────────────────────────────────────────
   get microDiagnostico() { return this.prisma.microDiagnostico; }

@@ -25,6 +25,27 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'generarMicroDiagnostico',
+      description:
+        'Genera el micro-diagnóstico de automatización con las respuestas recopiladas y devuelve el link público. Usar cuando el prospecto haya respondido todas las preguntas del diagnóstico.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre:    { type: 'string', description: 'Nombre del prospecto' },
+          empresa:   { type: 'string', description: 'Nombre de la empresa' },
+          actividad: { type: 'string', description: 'A qué se dedica la empresa y años operando' },
+          empleados: { type: 'string', description: 'Número aproximado de empleados' },
+          herramientas: { type: 'string', description: 'Software o herramientas digitales que usan' },
+          programacion: { type: 'string', description: 'Si tienen área de programación propia' },
+          cuello_botella: { type: 'string', description: 'Proceso o tarea que genera cuello de botella' },
+        },
+        required: ['nombre', 'empresa'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'calificar',
       description:
         'Calcula un score 1-10 del lead según el perfil ideal. Score ≥ 7 = procede a agendar. Score < 7 = responde con calidez, no agendes.',
@@ -190,8 +211,44 @@ export class SalesBotService {
         CONSTRAINT "bot_messages_pkey" PRIMARY KEY ("id")
       )
     `);
+    // Agregar columnas de seguimiento (idempotente en PostgreSQL)
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "bot_conversations"
+        ADD COLUMN IF NOT EXISTS "seguimiento_activo"     BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "seguimiento_inicio"     TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "etapa_seguimiento"      INTEGER   NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "diagnostico_completado" BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "prospect_data"          TEXT      NOT NULL DEFAULT '{}'
+    `);
     this.tablesReady = true;
     this.logger.log('SalesBot: tablas auto-creadas/verificadas');
+  }
+
+  private async loadConvState(convId: string): Promise<{ diagnosticoCompletado: boolean }> {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT diagnostico_completado FROM "bot_conversations" WHERE id = $1`, convId,
+    );
+    return { diagnosticoCompletado: Boolean(rows[0]?.diagnostico_completado) };
+  }
+
+  private microTableReady = false;
+  private async ensureMicroTable(): Promise<void> {
+    if (this.microTableReady) return;
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "micro_diagnoses" (
+        "id" TEXT NOT NULL,
+        "token" TEXT NOT NULL,
+        "conversation_id" TEXT,
+        "prospect_data" TEXT NOT NULL DEFAULT '{}',
+        "generated_content" TEXT,
+        "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "micro_diagnoses_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "micro_diagnoses_token_key" ON "micro_diagnoses"("token")
+    `);
+    this.microTableReady = true;
   }
 
   async handle(params: HandleParams): Promise<void> {
@@ -236,10 +293,13 @@ export class SalesBotService {
       take: 20,
     });
 
-    // 5. Obtener system prompt desde agent_config del slot de ventas
-    const systemPrompt = await this.buildSystemPrompt(tenantId);
+    // 5. Cargar estado de la conversación (diagnóstico completado, etc.)
+    const convState = await this.loadConvState(conversation.id);
 
-    // 6. Llamar a OpenRouter con herramientas
+    // 6. Obtener system prompt contextualizado
+    const systemPrompt = await this.buildSystemPrompt(tenantId, convState.diagnosticoCompletado);
+
+    // 7. Llamar a OpenRouter con herramientas
     const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone, tenantId);
 
     if (!reply) return;
@@ -435,7 +495,7 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
 
   // ─── System prompt ─────────────────────────────────────────────────────────
 
-  private async buildSystemPrompt(tenantId: string): Promise<string> {
+  private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false): Promise<string> {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
       select: { agent_config: true },
@@ -444,108 +504,136 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
     const nombre = cfg.nombre ?? 'Leo';
 
-    // Normalize to Pregunta[] — handle legacy string[] format
-    type Pregunta = { text: string; type: 'open' | 'multiple'; options: string[] };
-    const preguntasRaw: Array<string | Pregunta> = cfg.preguntas_microdiagnostico ?? [];
-    const preguntas: Pregunta[] = preguntasRaw.length
-      ? preguntasRaw.map(q =>
-          typeof q === 'string'
-            ? { text: q, type: 'open', options: [] }
-            : { ...q, options: q.options ?? [] }
-        )
-      : [
-          { text: '¿A qué se dedica la empresa y cuántos años lleva operando?', type: 'open', options: [] },
-          { text: '¿Cuántos empleados tiene?', type: 'multiple', options: ['Menos de 50', '50 a 200', '200 a 1000', 'Más de 1000'] },
-          { text: '¿Qué software o herramientas digitales usan hoy en día?', type: 'open', options: [] },
-          { text: '¿Tienen área de programación?', type: 'multiple', options: ['Sí, propia', 'No, outsourcing', 'No tenemos'] },
-          { text: '¿Qué tarea o proceso les genera cuello de botella?', type: 'open', options: [] },
-        ];
+    const misionSection = cfg.mision ? `\n## Misión\n${cfg.mision}` : '';
+    const enfoqueSection = cfg.enfoque ? `\n## En qué enfocarse\n${cfg.enfoque}` : '';
+    const seguimientoSection = cfg.tarea_seguimiento
+      ? `\n## Tarea de seguimiento (si no agenda)\n${cfg.tarea_seguimiento}`
+      : '';
 
-    const preguntasStr = preguntas
-      .map((q, i) => {
-        if (q.type === 'multiple' && q.options.length > 0) {
-          const opts = q.options.map((o, j) => `   ${j + 1}. ${o}`).join('\n');
-          return `${i + 1}. [OPCIÓN MÚLTIPLE] ${q.text}\n${opts}\n   → Envía las opciones numeradas en un mensaje limpio y espera que conteste con un número o el texto de la opción.`;
-        }
-        return `${i + 1}. [ABIERTA] ${q.text}`;
-      })
-      .join('\n\n');
+    if (diagnosticoCompletado) {
+      return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Ya tuviste una conversación previa con este prospecto en la que realizaste el micro-diagnóstico y las preguntas de descubrimiento.
+${misionSection}
+## Identidad del negocio
 
-    return `Eres ${nombre}, agente comercial de MentorIA Systems que atiende mensajes de WhatsApp. Tu objetivo es guiar al prospecto a través de un journey de valor, no simplemente calificar y cerrar.
+**Qué hacemos:** ${cfg.actividad ?? ''}
+**Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
+${enfoqueSection}
+## Tu misión en este momento
 
-${cfg.actividad ? `## Quiénes somos\n${cfg.actividad}` : ''}
+El prospecto ya conoce nuestro servicio y ya nos compartió su situación. Tu único objetivo ahora es convencerlo de agendar una reunión de 30 minutos para resolver sus dudas.
 
-${cfg.propuesta_valor ?? 'Somos una empresa de tecnología expertos en entender el funcionamiento real de los negocios y simplificar los procesos eliminando horas de trabajo humano y optimizando los resultados utilizando la metodología IA First.'}
-
-## Tu journey de 6 etapas
-
-### ETAPA 1 — Bienvenida
-Preséntate por nombre. Di brevemente qué hace MentorIA Systems (1 oración). Haz UNA pregunta abierta para conocer su negocio. Sin emojis.
-
-### ETAPA 2 — Escucha
-Escucha y entiende el negocio. No más de 2 intercambios. Una pregunta a la vez. Objetivo: entender a qué se dedican. Luego pasa a pedir sus datos de contacto (Etapa 2.5) antes de ofrecer el diagnóstico.
-
-### ETAPA 2.5 — Datos de contacto (secuencial, antes del Gancho)
-Recopila estos 3 datos en orden, haciendo UNA PREGUNTA A LA VEZ y esperando respuesta antes de continuar:
-
-1. Nombre del prospecto — "¿Con quién tengo el gusto?"
-2. Nombre de su empresa — "¿Y cómo se llama tu empresa?"
-3. A qué se dedica — "¿A qué se dedica [nombre de la empresa]?"
-
-Reglas:
-- No hagas la siguiente pregunta hasta recibir respuesta a la anterior.
-- Si el prospecto ya mencionó alguno de estos datos antes, omite esa pregunta específica.
-- Cuando tengas los 3 datos, pasa a ofrecer el micro-diagnóstico (Etapa 3).
-
-### ETAPA 3 — Gancho de valor
-Una vez que tengas contexto, ofrece el micro-diagnóstico. Usa este texto como guía:
-"${cfg.gancho ?? `Me gustaría ofrecerte algo: podemos hacerte un micro-diagnóstico gratuito de automatización para tu empresa. Solo ${preguntas.length} preguntas, menos de un minuto, y te mandamos un análisis personalizado aquí mismo por WhatsApp. ¿Te gustaría?`}"
-Espera su respuesta y actúa según el caso:
-- Si ACEPTA (sí, claro, va, adelante, sí me interesa, etc.) → pasa inmediatamente a Etapa 4 (las preguntas).
-- Si NO ACEPTA o muestra dudas → responde con el texto de oferta de llamada y usa agendar() si dice que sí:
-  "${cfg.oferta_llamada_sin_diagnostico ?? 'Entiendo, no hay problema. Si prefieres, podemos agendar una llamada de 15 minutos con uno de nuestros asesores para platicar sobre cómo funcionan nuestros servicios y si hay algo que podamos hacer por ustedes. ¿Te gustaría?'}"
-  Si acepta la llamada → llama a agendar() y comparte el enlace de Cal.com.
-  Si tampoco quiere la llamada → despídete con calidez y cierra la conversación.
-
-### ETAPA 4 — Las preguntas del diagnóstico
-Si el prospecto acepta:
-1. PRIMERO llama a registrarEnCRM con su nombre, empresa y teléfono.
-2. Luego haz las preguntas UNA POR UNA, en orden, esperando respuesta antes de continuar con la siguiente:
-
-${preguntasStr}
-
-Para preguntas de opción múltiple: escribe las opciones como una lista numerada en el mensaje. Acepta tanto el número como el texto de la opción como respuesta válida.
-
-### ETAPA 5 — Entrega del micro-diagnóstico
-Cuando hayas recibido respuesta a todas las preguntas (${preguntas.length} en total):
-1. Llama a generarMicroDiagnostico con todas las respuestas y el deal_id obtenido de registrarEnCRM.
-2. Llama a moverEnPipeline con el deal_id y stage_name "Micro Diagnóstico".
-3. Envía la URL al prospecto con un mensaje como: "Listo [nombre], aquí está tu micro-diagnóstico personalizado: [URL] — tómate un momento para revisarlo y cuéntame qué te parece."
-
-### ETAPA 6 — Cierre
-Después de entregar el diagnóstico, espera su reacción. Luego evalúa el lead con calificar().
-- Si califica (score ≥ 7): "${cfg.cierre_calificado ?? 'Basándonos en lo que veo en tu diagnóstico, creo que hay una oportunidad real para MentorIA en tu empresa. ¿Te gustaría agendar una llamada de 30 minutos para ver en detalle cómo podríamos transformar tu operación?'}" → llama a agendar()
-- Si no califica (score < 7): "${cfg.cierre_no_calificado ?? 'Gracias por compartirme esto. Por ahora te recomendaría enfocarte en consolidar algunos procesos base. Cuando estén listos para el siguiente nivel, aquí estaremos.'}"
+- NO repitas el micro-diagnóstico ni las preguntas de descubrimiento.
+- Habla de los BENEFICIOS concretos que obtendría al trabajar con nosotros.
+- Responde sus dudas y objeciones con calidez y argumentos de valor.
+- Cuando sea el momento, envíale el link de agendamiento con agendar().
+- Si insiste en precios o condiciones específicas, usa derivarHumano().
 
 ## Criterios de calificación
-Buen lead: ${cfg.criterios_buen_lead ?? 'Empresa con 10+ años, 100+ empleados, herramientas genéricas, dolor operativo concreto identificado'}
-Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50 empleados, sin dolor claro o sin presupuesto'}
+
+**Lead calificado — procede a agendar:**
+${cfg.criterios_buen_lead ?? ''}
+
+**Lead no calificado — responde con calidez, NO agendes:**
+${cfg.criterios_mal_lead ?? ''}
+${seguimientoSection}
+## Reglas de comunicación
+
+- Responde en español neutro, conversacional
+- Mensajes breves: 2 a 4 líneas máximo
+- No uses emojis en exceso
+- Una pregunta a la vez — espera la respuesta antes de continuar`.trim();
+    }
+
+    const journeySection =
+      Array.isArray(cfg.journey) && cfg.journey.length > 0
+        ? this.renderJourneyNodes(cfg.journey, '')
+        : this.buildLegacyJourneySection(cfg);
+
+    return `Eres ${cfg.nombre ?? 'el Agente de Ventas'} de este negocio. Tu trabajo es atender mensajes de WhatsApp y guiar al prospecto a través del flujo de conversación.
+${misionSection}
+## Identidad del negocio
+
+**Qué hacemos:** ${cfg.actividad ?? ''}
+**Propuesta de valor:** ${cfg.propuesta_valor ?? ''}
+${enfoqueSection}
+## Flujo de conversación
+
+Sigue este flujo EXACTAMENTE, en el orden indicado. UNA SOLA PREGUNTA O MENSAJE POR TURNO:
+
+${journeySection}
+
+## Criterios de calificación
+
+**Lead calificado — procede a agendar:**
+${cfg.criterios_buen_lead ?? ''}
+
+**Lead no calificado — responde con calidez, NO agendes:**
+${cfg.criterios_mal_lead ?? ''}
+${seguimientoSection}
+## Reglas de comunicación
+
+- Responde en español neutro, conversacional
+- Mensajes breves: 2 a 4 líneas máximo
+- No uses emojis en exceso
+- Una pregunta o mensaje a la vez — espera la respuesta antes de continuar
+- Si te desvían del tema, vuelve amablemente al flujo
+- Si piden precios, contratos o casos complejos, usa derivarHumano()
 
 ## Cuándo usar cada herramienta
-- registrarEnCRM: cuando el prospecto acepta el micro-diagnóstico
-- generarMicroDiagnostico: SOLO cuando tienes todas las respuestas completas (${preguntas.length} en total)
-- moverEnPipeline: inmediatamente después de generarMicroDiagnostico
-- calificar: después de entregar el diagnóstico para evaluar si proceder
-- agendar: SOLO si calificar() devolvió score ≥ 7
-- guardarLead: cuando tengas datos útiles adicionales para Airtable
-- derivarHumano: si piden precios específicos, contratos o algo fuera de tu alcance
 
-## Reglas de comunicación
-- Español neutro, conversacional, profesional pero cercano
-- Mensajes de 2-4 líneas máximo
-- Una pregunta a la vez, siempre
-- Sin emojis
-- Nunca menciones las etapas por nombre al prospecto`.trim();
+- **guardarLead**: cuando tengas nombre + empresa + algún dato útil
+- **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
+- **calificar**: cuando tengas información suficiente para evaluar si encaja
+- **agendar**: SOLO si calificar() devolvió score ≥ 7
+- **derivarHumano**: precios, quejas, casos fuera de guión`.trim();
+  }
+
+  private renderJourneyNodes(nodes: any[], indent: string): string {
+    const lines: string[] = [];
+    for (const node of nodes) {
+      if (!node || !node.type) continue;
+
+      if (node.type === 'dialogo') {
+        if (node.branching) {
+          lines.push(`${indent}[${node.label}] — Envía: "${node.mensaje}"`);
+          lines.push(`${indent}  Espera respuesta.`);
+          if (Array.isArray(node.si) && node.si.length > 0) {
+            lines.push(`${indent}  → SI ACEPTA/SÍ:`);
+            lines.push(this.renderJourneyNodes(node.si, `${indent}    `));
+          }
+          if (Array.isArray(node.no) && node.no.length > 0) {
+            lines.push(`${indent}  → SI RECHAZA/NO:`);
+            lines.push(this.renderJourneyNodes(node.no, `${indent}    `));
+          }
+        } else {
+          lines.push(`${indent}[${node.label}] — Envía: "${node.mensaje}"`);
+        }
+      } else if (node.type === 'pregunta') {
+        if (node.answerType === 'multiple' && Array.isArray(node.options) && node.options.length > 0) {
+          const opts = node.options.map((o: string, i: number) => `${i + 1}. ${o}`).join(' | ');
+          lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Opciones: ${opts}`);
+        } else {
+          lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Espera respuesta libre.`);
+        }
+      } else if (node.type === 'entregable') {
+        lines.push(`${indent}[${node.label}] — Llama a generarMicroDiagnostico() con las respuestas recopiladas. Cuando obtengas el link, envíaselo al prospecto.`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  private buildLegacyJourneySection(cfg: Record<string, any>): string {
+    const preguntas = (cfg.preguntas_calificacion ?? cfg.preguntas_microdiagnostico ?? []) as any[];
+    const preguntasList = preguntas.length
+      ? preguntas.map((p: any, i: number) => `  ${i + 1}. ${typeof p === 'string' ? p : p.text ?? p}`).join('\n')
+      : '  1. ¿A qué se dedica la empresa y cuántos años lleva operando?\n  2. ¿Cuántos empleados tiene?\n  3. ¿Qué herramientas digitales usan?\n  4. ¿Qué proceso genera más cuello de botella?';
+    return `1. [Bienvenida] — Saluda y preséntate.
+2. [Datos] — Recoge nombre, empresa y actividad (una pregunta a la vez).
+3. [Gancho] — Ofrece el micro-diagnóstico gratuito. Si acepta:
+${preguntasList}
+   Luego llama a generarMicroDiagnostico() y envía el enlace.
+   Si rechaza: ${cfg.oferta_llamada_sin_diagnostico ?? 'Ofrece una llamada de 15 minutos.'}
+4. [Cierre] — Califica con calificar() y cierra según el resultado.`;
   }
 
   // ─── Agent loop (OpenRouter + tools) ──────────────────────────────────────
@@ -558,7 +646,12 @@ Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50
     tenantId: string,
   ): Promise<string | null> {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const model  = process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
+    const agentSlot = await this.prisma.teamSlot.findFirst({
+      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+      select: { agent_config: true },
+    });
+    const cfg = (agentSlot?.agent_config as Record<string, unknown>) ?? {};
+    const model = cfg?.model as string ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
 
     if (!apiKey) {
       this.logger.error('OPENROUTER_API_KEY no configurada');
@@ -628,6 +721,43 @@ Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50
   ): Promise<any> {
     switch (name) {
 
+      case 'generarMicroDiagnostico': {
+        try {
+          await this.ensureMicroTable();
+          const token = Math.random().toString(36).slice(2, 14);
+          const diagId = Math.random().toString(36).slice(2, 18);
+          const content = JSON.stringify({
+            nombre: args.nombre ?? '',
+            empresa: args.empresa ?? '',
+            actividad: args.actividad ?? '',
+            empleados: args.empleados ?? '',
+            herramientas: args.herramientas ?? '',
+            programacion: args.programacion ?? '',
+            cuello_botella: args.cuello_botella ?? '',
+          });
+          await this.prisma.$executeRawUnsafe(
+            `INSERT INTO "micro_diagnoses" ("id","token","conversation_id","prospect_data","created_at")
+             VALUES ($1,$2,$3,$4,NOW())`,
+            diagId, token, conversationId, content,
+          );
+          // Marcar diagnóstico completado e iniciar ventana de seguimiento
+          await this.prisma.$executeRawUnsafe(`
+            UPDATE "bot_conversations"
+            SET diagnostico_completado = TRUE,
+                seguimiento_activo     = TRUE,
+                seguimiento_inicio     = NOW(),
+                etapa_seguimiento      = 0,
+                prospect_data          = $1
+            WHERE id = $2
+          `, content, conversationId);
+          const url = `https://app.flowdesk.mx/micro/${token}`;
+          return { ok: true, url, message: `Micro-diagnóstico generado: ${url}` };
+        } catch (err: any) {
+          this.logger.error('generarMicroDiagnostico error', err?.message);
+          return { ok: false, message: 'No se pudo generar el diagnóstico en este momento.' };
+        }
+      }
+
       case 'calificar': {
         let score = 0;
         if (args.tieneEmpresaConsolidada) score += 2;
@@ -696,6 +826,13 @@ Mal lead: ${cfg.criterios_mal_lead ?? 'Empresa con menos de 5 años, menos de 50
         const url = new URL(base);
         url.searchParams.set('name', args.nombre);
         if (args.email) url.searchParams.set('email', args.email);
+
+        // Cancelar seguimiento — el prospecto agendó reunión
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "bot_conversations" SET seguimiento_activo = FALSE WHERE id = $1`,
+          conversationId,
+        );
+
         return { ok: true, link: url.toString(), message: `Envía este link: ${url}` };
       }
 
