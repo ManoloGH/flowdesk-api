@@ -1,14 +1,17 @@
 import {
   Controller, Get, Post, Patch,
   Body, Param, Query, Request,
+  UseInterceptors, UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { SocRequestsService } from './soc-requests.service';
 import {
   CreateSocRequestDto,
   UpdateSocRequestStatusDto,
   AddSocCommentDto,
   DecideSocApprovalDto,
+  AssignRequestDto,
 } from './dto/soc.dto';
 
 @ApiTags('SOC — Solicitudes')
@@ -83,5 +86,27 @@ export class SocRequestsController {
     @Request() req: any,
   ) {
     return this.service.decideApproval(req.user.tenant_id, req.user.slot_id, id, approvalId, dto);
+  }
+
+  @Patch(':id/assign')
+  @ApiOperation({ summary: 'Asignar solicitud a un miembro del equipo' })
+  assignRequest(
+    @Param('id') id: string,
+    @Body() dto: AssignRequestDto,
+    @Request() req: any,
+  ) {
+    return this.service.assignRequest(req.user.tenant_id, req.user.slot_id, id, dto);
+  }
+
+  @Post(':id/documents')
+  @ApiOperation({ summary: 'Adjuntar un archivo a la solicitud (Supabase Storage)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  uploadDocument(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    return this.service.uploadDocument(req.user.tenant_id, req.user.slot_id, id, file);
   }
 }

@@ -165,3 +165,9 @@ export class DecideSocApprovalDto {
   @IsString() @IsOptional()
   notes?: string;
 }
+
+export class AssignRequestDto {
+  @ApiPropertyOptional()
+  @IsString() @IsOptional()
+  assigned_to_id?: string;
+}

@@ -5,6 +5,7 @@ import {
   UpdateSocRequestStatusDto,
   AddSocCommentDto,
   DecideSocApprovalDto,
+  AssignRequestDto,
 } from './dto/soc.dto';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -46,7 +47,7 @@ export class SocRequestsService {
       ? new Date(Date.now() + service.sla_hours * 3_600_000)
       : undefined;
 
-    const initialStatus = service.requires_approval ? 'PENDING' : 'PENDING';
+    const initialStatus = service.requires_approval ? 'PENDING' : 'IN_PROGRESS';
 
     const request = await this.prisma.socRequest.create({
       data: {
@@ -268,6 +269,73 @@ export class SocRequestsService {
 
     await this.recordHistory(requestId, slotId, dto.decision === 'approved' ? 'approved' : 'rejected', undefined, undefined, dto.notes);
     return { success: true };
+  }
+
+  // ── Asignación ────────────────────────────────────────────────────────────
+
+  async assignRequest(tenantId: string, slotId: string, requestId: string, dto: AssignRequestDto) {
+    await this.assertRequestAccess(tenantId, requestId);
+    const updated = await this.prisma.socRequest.update({
+      where: { id: requestId },
+      data: { assigned_to_id: dto.assigned_to_id ?? null },
+      include: this.requestIncludes(),
+    });
+    await this.recordHistory(requestId, slotId, 'assigned', undefined, dto.assigned_to_id ?? 'sin asignar');
+    return updated;
+  }
+
+  // ── Documentos ────────────────────────────────────────────────────────────
+
+  async uploadDocument(
+    tenantId: string,
+    slotId: string,
+    requestId: string,
+    file: Express.Multer.File,
+  ) {
+    await this.assertRequestAccess(tenantId, requestId);
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new BadRequestException('Almacenamiento no configurado');
+    }
+
+    const bucket = 'soc-documents';
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${tenantId}/${requestId}/${Date.now()}-${safeName}`;
+
+    const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}/${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${supabaseKey}`,
+        'Content-Type': file.mimetype,
+        'x-upsert': 'true',
+      },
+      body: file.buffer as unknown as BodyInit,
+    });
+
+    if (!uploadRes.ok) {
+      const msg = await uploadRes.text().catch(() => '');
+      throw new BadRequestException(`Error al subir archivo: ${msg}`);
+    }
+
+    const fileUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+
+    const document = await this.prisma.socDocument.create({
+      data: {
+        request_id: requestId,
+        slot_id: slotId,
+        name: file.originalname,
+        url: fileUrl,
+        mime_type: file.mimetype,
+        size_bytes: file.size,
+      },
+      include: { slot: { select: { id: true, name: true } } },
+    });
+
+    await this.recordHistory(requestId, slotId, 'document_added', undefined, file.originalname);
+    return document;
   }
 
   // ── Analítica básica ──────────────────────────────────────────────────────
