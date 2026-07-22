@@ -17,4 +17,4 @@ RUN npm run build
 EXPOSE 3001
 
 # Correr migraciones y arrancar
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back '20260721000000_add_micro_diagnostic' 2>/dev/null; npx prisma migrate deploy && node dist/src/main"]
