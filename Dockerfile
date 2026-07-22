@@ -17,4 +17,4 @@ RUN npm run build
 EXPOSE 3001
 
 # Correr migraciones y arrancar
-CMD ["sh", "-c", "node scripts/fix-migrations.js ; npx prisma migrate deploy && node dist/src/main"]
+CMD ["sh", "-c", "node -e \"const{Client}=require('pg');const c=new Client({connectionString:process.env.DATABASE_URL});c.connect().then(()=>c.query('UPDATE \\\"_prisma_migrations\\\" SET rolled_back_at=NOW() WHERE finished_at IS NULL AND rolled_back_at IS NULL')).then(r=>{console.log('[fix]',r.rowCount,'resolved');return c.end();}).catch(e=>{console.error('[fix]',e.message);return c.end().catch(()=>{});});\" ; npx prisma migrate deploy && node dist/src/main"]
