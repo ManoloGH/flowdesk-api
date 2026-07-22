@@ -111,6 +111,4 @@ export class UpdateAgentConfigDto {
   @IsOptional()
   @IsString()
   tts_voice_id?: string;
-
-  [key: string]: unknown;
 }

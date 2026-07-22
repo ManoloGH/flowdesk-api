@@ -8,8 +8,12 @@ import {
   Body,
   Query,
   Request,
-  HttpCode,
 } from '@nestjs/common';
+
+function safeInt(val: string | undefined, fallback: number, max = Infinity): number {
+  const n = parseInt(val ?? '', 10);
+  return Math.min(max, isNaN(n) || n < 1 ? fallback : n);
+}
 import { AgentPanelService } from './agent-panel.service';
 import {
   CreateSkillDto,
@@ -47,8 +51,8 @@ export class AgentPanelController {
     return this.service.getConversations(
       req.user.tenant_id,
       agentId,
-      Number(page ?? 1),
-      Number(limit ?? 20),
+      safeInt(page, 1),
+      safeInt(limit, 20, 100),
     );
   }
 
@@ -113,8 +117,8 @@ export class AgentPanelController {
     return this.service.getProspects(
       req.user.tenant_id,
       agentId,
-      Number(page ?? 1),
-      Number(limit ?? 20),
+      safeInt(page, 1),
+      safeInt(limit, 20, 100),
     );
   }
 
@@ -171,6 +175,6 @@ export class AgentPanelController {
     @Param('id') agentId: string,
     @Query('limit') limit?: string,
   ) {
-    return this.service.getAuditLog(req.user.tenant_id, agentId, Number(limit ?? 50));
+    return this.service.getAuditLog(req.user.tenant_id, agentId, safeInt(limit, 50, 200));
   }
 }

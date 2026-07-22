@@ -255,7 +255,7 @@ export class TeamSlotsService {
 
     // Crear/actualizar CEO Agent si se proporcionó nombre
     if (agent_name && isSelf) {
-      await this.ensureCeoAgent(id, tenantId, agent_name, (updated as any).name ?? slot.name);
+      await this.ensureCeoAgent(id, tenantId ?? '', agent_name, (updated as any).name ?? slot.name ?? '');
     }
 
     return updated;

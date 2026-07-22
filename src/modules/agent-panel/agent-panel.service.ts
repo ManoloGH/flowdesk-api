@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
 import { AgentEvolutionService } from '../agent-evolution/agent-evolution.service';
@@ -52,10 +52,14 @@ export class AgentPanelService {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     if (slot.agent_role === 'sales') {
+      const cfg = (slot.agent_config as Record<string, unknown>) ?? {};
+      const instanceName = cfg.instance_name as string | undefined;
+      const botWhere = { tenant_id: tenantId, ...(instanceName ? { instance_name: instanceName } : {}) };
+
       const [totalConvs, monthConvs, corrections, skills] = await Promise.all([
-        this.prisma.botConversation.count({ where: { tenant_id: tenantId } }),
+        this.prisma.botConversation.count({ where: botWhere }),
         this.prisma.botConversation.count({
-          where: { tenant_id: tenantId, created_at: { gte: monthStart } },
+          where: { ...botWhere, created_at: { gte: monthStart } },
         }),
         this.prisma.agentCorrection.count({
           where: { tenant_id: tenantId, agent_id: agentId },
@@ -99,17 +103,21 @@ export class AgentPanelService {
   async getConversations(tenantId: string, agentId: string, page = 1, limit = 20) {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { id: agentId, tenant_id: tenantId, type: 'AI_AGENT' },
-      select: { agent_role: true },
+      select: { agent_role: true, agent_config: true },
     });
     if (!slot) throw new NotFoundException('Agente no encontrado');
 
     const skip = (page - 1) * limit;
 
     if (slot.agent_role === 'sales') {
+      const cfg = (slot.agent_config as Record<string, unknown>) ?? {};
+      const instanceName = cfg.instance_name as string | undefined;
+      const botWhere = { tenant_id: tenantId, ...(instanceName ? { instance_name: instanceName } : {}) };
+
       // BotConversation: id, phone, contact_name, mode, instance_name, last_message_at, created_at, updated_at
       const [items, total] = await Promise.all([
         this.prisma.botConversation.findMany({
-          where: { tenant_id: tenantId },
+          where: botWhere,
           orderBy: { created_at: 'desc' },
           skip,
           take: limit,
@@ -124,7 +132,7 @@ export class AgentPanelService {
             updated_at: true,
           },
         }),
-        this.prisma.botConversation.count({ where: { tenant_id: tenantId } }),
+        this.prisma.botConversation.count({ where: botWhere }),
       ]);
       return { items, total, page, limit };
     }
@@ -203,12 +211,14 @@ export class AgentPanelService {
     });
     if (!slot) throw new NotFoundException('Agente de ventas no encontrado');
 
+    const cfg = (slot.agent_config as Record<string, unknown>) ?? {};
+    const instanceName = cfg.instance_name as string | undefined;
+    const botWhere = { tenant_id: tenantId, ...(instanceName ? { instance_name: instanceName } : {}) };
+
     const skip = (page - 1) * limit;
-    // BotConversation no tiene status/stage/lead_score — devolvemos todas las
-    // conversaciones del tenant ordenadas por última actividad
     const [items, total] = await Promise.all([
       this.prisma.botConversation.findMany({
-        where: { tenant_id: tenantId },
+        where: botWhere,
         orderBy: { last_message_at: 'desc' },
         skip,
         take: limit,
@@ -221,7 +231,7 @@ export class AgentPanelService {
           created_at: true,
         },
       }),
-      this.prisma.botConversation.count({ where: { tenant_id: tenantId } }),
+      this.prisma.botConversation.count({ where: botWhere }),
     ]);
     return { items, total, page, limit };
   }
@@ -292,14 +302,16 @@ export class AgentPanelService {
   }
 
   async getEvolutionStatus(tenantId: string, agentId: string) {
-    const pendingApprovals = await this.prisma.pendingApproval.findMany({
-      where: { tenant_id: tenantId, status: 'pending' },
+    const agentApprovals = await this.prisma.pendingApproval.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: 'pending',
+        AND: [
+          { context: { path: ['agent_id'], equals: agentId } },
+          { context: { path: ['type'], equals: 'agent_evolution' } },
+        ],
+      },
       orderBy: { created_at: 'desc' },
-    });
-
-    const agentApprovals = pendingApprovals.filter((p) => {
-      const ctx = p.context as Record<string, unknown>;
-      return ctx?.agent_id === agentId && ctx?.type === 'agent_evolution';
     });
 
     const memories = await this.prisma.agentMemory.groupBy({
@@ -311,12 +323,26 @@ export class AgentPanelService {
     return { pending_approvals: agentApprovals, memories };
   }
 
-  async approveEvolution(tenantId: string, _agentId: string, approvalId: string) {
+  async approveEvolution(tenantId: string, agentId: string, approvalId: string) {
+    const approval = await this.prisma.pendingApproval.findFirst({
+      where: { id: approvalId, tenant_id: tenantId, status: 'pending' },
+    });
+    if (!approval) throw new NotFoundException('Propuesta no encontrada');
+    const ctx = approval.context as Record<string, unknown>;
+    if (ctx?.agent_id !== agentId)
+      throw new ForbiddenException('Esta propuesta no pertenece al agente especificado');
     await this.evolution.applyEvolution(tenantId, approvalId);
     return { success: true };
   }
 
-  async rejectEvolution(tenantId: string, _agentId: string, approvalId: string) {
+  async rejectEvolution(tenantId: string, agentId: string, approvalId: string) {
+    const approval = await this.prisma.pendingApproval.findFirst({
+      where: { id: approvalId, tenant_id: tenantId, status: 'pending' },
+    });
+    if (!approval) throw new NotFoundException('Propuesta no encontrada');
+    const ctx = approval.context as Record<string, unknown>;
+    if (ctx?.agent_id !== agentId)
+      throw new ForbiddenException('Esta propuesta no pertenece al agente especificado');
     await this.evolution.rejectEvolution(tenantId, approvalId);
     return { success: true };
   }
