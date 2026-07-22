@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Flujo de Requerimientos de Programación — Proyectos SOC</title>
+<style>
+:root {
+  --bg: #F1F5F9;
+  --surface: #FFFFFF;
+  --border: #E2E8F0;
+  --shadow: rgba(10,45,82,0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0F172A;
+    --surface: #1E293B;
+    --border: #334155;
+    --shadow: rgba(0,0,0,0.3);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #F1F5F9;
+  --surface: #FFFFFF;
+  --border: #E2E8F0;
+  --shadow: rgba(10,45,82,0.08);
+}
+:root[data-theme="dark"] {
+  --bg: #0F172A;
+  --surface: #1E293B;
+  --border: #334155;
+  --shadow: rgba(0,0,0,0.3);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  padding: 28px 16px 56px;
+  min-height: 100vh;
+}
+.wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  overflow-x: auto;
+  background: var(--surface);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 16px var(--shadow);
+}
+svg { display: block; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<svg viewBox="0 0 1200 1404" width="1200" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="a0" markerWidth="7" markerHeight="6" refX="6.2" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#64748B"/></marker>
+  <marker id="ag" markerWidth="7" markerHeight="6" refX="6.2" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#0DB07A"/></marker>
+  <marker id="ar" markerWidth="7" markerHeight="6" refX="6.2" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#E91E7A"/></marker>
+  <marker id="ay" markerWidth="7" markerHeight="6" refX="6.2" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#D97706"/></marker>
+</defs>
+
+<!-- ░░ TOP HEADER ░░ -->
+<rect x="0" y="0" width="1200" height="64" fill="white"/>
+<image x="16" y="10" height="44" href="data:image/png;base64,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" preserveAspectRatio="xMinYMid meet"/>
+<text x="220" y="34" fill="#0A2D52" font-size="15" font-weight="700" font-family="Segoe UI,system-ui,sans-serif" letter-spacing="-0.3">Flujo de Requerimientos de Programación</text>
+<text x="220" y="52" fill="#64748B" font-size="11" font-family="Segoe UI,system-ui,sans-serif">Proyectos SOC · Proceso AS-IS</text>
+<line x1="0" y1="63" x2="1200" y2="63" stroke="#1DBDF0" stroke-width="2"/>
+
+<g transform="translate(0,64)">
+<rect x="0"   y="0" width="240"  height="1340" fill="#EBF3FF"/>
+<rect x="240" y="0" width="240"  height="1340" fill="#E8EDF8"/>
+<rect x="480" y="0" width="240"  height="1340" fill="#E5F9FF"/>
+<rect x="720" y="0" width="240"  height="1340" fill="#FFF8EE"/>
+<rect x="960" y="0" width="240"  height="1340" fill="#ECFDF5"/>
+<line x1="240"  y1="56" x2="240"  y2="1340" stroke="#CBD5E1" stroke-width="0.7" stroke-dasharray="3,5"/>
+<line x1="480"  y1="56" x2="480"  y2="1340" stroke="#CBD5E1" stroke-width="0.7" stroke-dasharray="3,5"/>
+<line x1="720"  y1="56" x2="720"  y2="1340" stroke="#CBD5E1" stroke-width="0.7" stroke-dasharray="3,5"/>
+<line x1="960"  y1="56" x2="960"  y2="1340" stroke="#CBD5E1" stroke-width="0.7" stroke-dasharray="3,5"/>
+<rect x="0"   y="0" width="240" height="56" fill="#2566E8"/>
+<text x="120" y="33" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Área Solicitante</text>
+<rect x="240" y="0" width="240" height="56" fill="#0A2D52"/>
+<text x="360" y="25" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Proyectos SOC</text>
+<text x="360" y="43" text-anchor="middle" fill="#4DBBF0" font-size="10" font-family="Segoe UI,system-ui,sans-serif">Gestión de Reqs · PM</text>
+<rect x="480" y="0" width="240" height="56" fill="#0F4F8A"/>
+<text x="600" y="33" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Áreas Afectadas</text>
+<rect x="720" y="0" width="240" height="56" fill="#D97706"/>
+<text x="840" y="33" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Sistemas</text>
+<rect x="960" y="0" width="240" height="56" fill="#059669"/>
+<text x="1080" y="33" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">QA</text>
+<rect x="0" y="56" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="56" x2="1200" y2="56" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="68.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 1 · SOLICITUD Y ASIGNACIÓN</text>
+<rect x="20" y="82" width="200" height="62" rx="7" fill="white" stroke="#2566E8" stroke-width="1.5"/>
+<text x="120" y="102" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Solicita requerimiento</text>
+<text x="120" y="118" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">correo o sesión de</text>
+<text x="120" y="132" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">seguimiento</text>
+<line x1="220" y1="113" x2="258" y2="113" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="260" y="82" width="200" height="62" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="102" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Asigna PM</text>
+<text x="360" y="118" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">Crea registro en Notion</text>
+<rect x="284" y="127" width="152" height="13" rx="3" fill="#E8EDF8"/>
+<text x="360" y="137" text-anchor="middle" fill="#0A2D52" font-size="9" font-family="Segoe UI,system-ui,sans-serif">📋 Abre ficha en Notion</text>
+<line x1="360" y1="144" x2="360" y2="163" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="0" y="157" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="157" x2="1200" y2="157" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="169.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 2 · ELABORACIÓN DEL REQUERIMIENTO</text>
+<rect x="260" y="180" width="200" height="55" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="200" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">PM revisa impacto</text>
+<text x="360" y="216" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">con áreas afectadas</text>
+<line x1="460" y1="207" x2="498" y2="207" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="500" y="180" width="200" height="55" rx="7" fill="white" stroke="#0F4F8A" stroke-width="1.5"/>
+<text x="600" y="200" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">VoBo o comentarios</text>
+<text x="600" y="216" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">PM incorpora y continúa</text>
+<line x1="500" y1="220" x2="462" y2="220" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<line x1="360" y1="235" x2="360" y2="257" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="260" y="264" width="200" height="72" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="284" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Elabora requerimiento</text>
+<text x="360" y="300" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">Valida reglas y campos</text>
+<text x="360" y="314" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">interconectados</text>
+<text x="360" y="328" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">Envía a VoBo → Área Sol.</text>
+<line x1="260" y1="300" x2="177" y2="300" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<polygon points="120,278 175,300 120,322 65,300" fill="white" stroke="#2566E8" stroke-width="1.5"/>
+<text x="120" y="296" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">¿VoBo</text>
+<text x="120" y="308" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">área?</text>
+<path d="M 120 322 L 120 360 L 258 360" stroke="#0DB07A" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+<text x="138" y="347" fill="#0DB07A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">VoBo</text>
+<path d="M 65 300 L 8 300 L 8 274 L 258 274" stroke="#E91E7A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<text x="4" y="289" fill="#E91E7A" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,4,289)">Coment.</text>
+<rect x="260" y="368" width="200" height="70" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="388" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Llena datos en Notion</text>
+<text x="360" y="404" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">nombre, área, PM, sistema,</text>
+<text x="360" y="418" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">fechas, tamaño, estatus…</text>
+<rect x="284" y="427" width="152" height="13" rx="3" fill="#E8EDF8"/>
+<text x="360" y="437" text-anchor="middle" fill="#0A2D52" font-size="9" font-family="Segoe UI,system-ui,sans-serif">📋 Notion: registro completo</text>
+<path d="M 460 402 L 840 402 L 840 440" stroke="#64748B" stroke-width="1.5" fill="none" marker-end="url(#a0)"/>
+<rect x="486" y="394" width="228" height="16" rx="3" fill="#E5F9FF" opacity="0.95"/>
+<text x="600" y="405" text-anchor="middle" fill="#0F4F8A" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">→ llega a Sistemas vía Notion</text>
+<rect x="0" y="448" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="448" x2="1200" y2="448" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="460.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 3 · REVISIÓN Y PLANIFICACIÓN (SISTEMAS)</text>
+<polygon points="840,462 908,488 840,514 772,488" fill="white" stroke="#D97706" stroke-width="1.5"/>
+<text x="840" y="484" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Sistemas</text>
+<text x="840" y="498" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">revisa Notion</text>
+<line x1="840" y1="514" x2="840" y2="537" stroke="#0DB07A" stroke-width="1.5" marker-end="url(#ag)"/>
+<text x="854" y="530" fill="#0DB07A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">OK</text>
+<path d="M 772 488 L 720 488 L 720 452 L 462 452" stroke="#E91E7A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<text x="590" y="447" text-anchor="middle" fill="#E91E7A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Comentarios → SOC revisa y reenvía</text>
+<path d="M 772 503 L 720 503 L 720 522 L 462 522" stroke="#D97706" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ay)"/>
+<rect x="270" y="513" width="190" height="18" rx="4" fill="#FFFBEB" stroke="#D97706" stroke-width="1"/>
+<text x="365" y="525" text-anchor="middle" fill="#78350F" font-size="9" font-family="Segoe UI,system-ui,sans-serif">⚡ Sesión de dudas: SOC + Área Sol.</text>
+<rect x="740" y="545" width="200" height="62" rx="7" fill="white" stroke="#D97706" stroke-width="1.5"/>
+<text x="840" y="565" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Asigna fechas de trabajo</text>
+<text x="840" y="581" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">y entrega en Notion</text>
+<rect x="762" y="591" width="156" height="13" rx="3" fill="#FFF8EE"/>
+<text x="840" y="601" text-anchor="middle" fill="#D97706" font-size="9" font-family="Segoe UI,system-ui,sans-serif">📋 Notion: fechas confirmadas</text>
+<line x1="840" y1="607" x2="840" y2="624" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="0" y="618" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="618" x2="1200" y2="618" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="630.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 4 · DESARROLLO Y PRUEBAS</text>
+<rect x="740" y="641" width="200" height="55" rx="7" fill="white" stroke="#D97706" stroke-width="1.5"/>
+<text x="840" y="661" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Entrega desarrollo</text>
+<text x="840" y="677" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">a QA para validación</text>
+<line x1="940" y1="668" x2="978" y2="668" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<polygon points="1080,647 1132,668 1080,689 1028,668" fill="white" stroke="#059669" stroke-width="1.5"/>
+<text x="1080" y="664" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">QA</text>
+<text x="1080" y="677" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">valida</text>
+<path d="M 1028 668 L 942 668" stroke="#E91E7A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<rect x="750" y="704" width="180" height="17" rx="3" fill="#FDF2F8" stroke="#E91E7A" stroke-width="0.8"/>
+<text x="840" y="715.5" text-anchor="middle" fill="#831843" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Comentarios → regresa a Sistemas</text>
+<path d="M 1028 675 L 960 675 L 960 713 L 942 713" stroke="#E91E7A" stroke-width="1.2" fill="none" stroke-dasharray="4,3" marker-end="url(#ar)"/>
+<path d="M 1080 689 L 1080 726 L 362 726" stroke="#0DB07A" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+<text x="720" y="721" text-anchor="middle" fill="#0DB07A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">VoBo → pasa a Proyectos SOC</text>
+<polygon points="360,728 418,750 360,772 302,750" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="746" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">SOC</text>
+<text x="360" y="759" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">prueba</text>
+<path d="M 418 750 L 500 750 L 500 722 L 738 722" stroke="#E91E7A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<text x="610" y="717" text-anchor="middle" fill="#E91E7A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Comentarios → regresa a Sistemas</text>
+<line x1="360" y1="772" x2="360" y2="797" stroke="#0DB07A" stroke-width="1.5" marker-end="url(#ag)"/>
+<text x="374" y="789" fill="#0DB07A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">VoBo</text>
+<rect x="260" y="804" width="200" height="55" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="824" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Coordina pruebas</text>
+<text x="360" y="840" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">con área solicitante</text>
+<line x1="260" y1="831" x2="177" y2="831" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<polygon points="120,809 175,831 120,853 65,831" fill="white" stroke="#2566E8" stroke-width="1.5"/>
+<text x="120" y="827" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Área</text>
+<text x="120" y="840" text-anchor="middle" fill="#0A2D52" font-size="10" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">prueba</text>
+<path d="M 175 831 L 250 831 L 250 800 L 1185 800 L 1185 1070 L 362 1070 L 362 1076" stroke="#0DB07A" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+<text x="1174" y="940" fill="#0DB07A" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,1174,940)">VoBo → Fase 5</text>
+<path d="M 120 853 L 120 903 L 298 903" stroke="#E91E7A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<text x="62" y="882" fill="#E91E7A" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,62,882)">Coment.</text>
+<polygon points="360,881 422,903 360,925 298,903" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="898" text-anchor="middle" fill="#0A2D52" font-size="9.5" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">¿Rompe</text>
+<text x="360" y="911" text-anchor="middle" fill="#0A2D52" font-size="9.5" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">reglas?</text>
+<path d="M 422 903 L 492 903 L 492 708 L 738 708" stroke="#0DB07A" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ag)"/>
+<text x="470" y="807" fill="#0DB07A" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,470,807)">No rompe → Sistemas</text>
+<line x1="360" y1="925" x2="360" y2="948" stroke="#E91E7A" stroke-width="1.5" marker-end="url(#ar)"/>
+<text x="374" y="940" fill="#E91E7A" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Sí</text>
+<rect x="20" y="955" width="440" height="65" rx="7" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+<text x="240" y="976" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">SOC negocia alternativas con Área Solicitante</text>
+<text x="240" y="992" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">buscan acomodar el cambio sin romper reglas</text>
+<text x="240" y="1008" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">ni campos interconectados</text>
+<path d="M 28 955 L 28 841 L 63 841" stroke="#D97706" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ay)"/>
+<text x="6" y="900" fill="#D97706" font-size="8" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,6,900)">reformula</text>
+<rect x="0" y="1034" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="1034" x2="1200" y2="1034" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="1046.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 5 · LIBERACIÓN</text>
+<rect x="260" y="1058" width="200" height="55" rx="7" fill="white" stroke="#0A2D52" stroke-width="1.5"/>
+<text x="360" y="1079" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Solicita liberación</text>
+<text x="360" y="1095" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">a Sistemas</text>
+<line x1="460" y1="1085" x2="738" y2="1085" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<rect x="740" y="1058" width="200" height="72" rx="7" fill="white" stroke="#D97706" stroke-width="1.5"/>
+<text x="840" y="1078" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Da fecha de liberación</text>
+<text x="840" y="1094" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">y libera el desarrollo</text>
+<rect x="762" y="1104" width="156" height="24" rx="3" fill="#FFF8EE"/>
+<text x="840" y="1114" text-anchor="middle" fill="#D97706" font-size="9" font-family="Segoe UI,system-ui,sans-serif">📋 Notion: VoBo Sistemas</text>
+<text x="840" y="1125" text-anchor="middle" fill="#D97706" font-size="9" font-family="Segoe UI,system-ui,sans-serif">+ fecha de liberación</text>
+<path d="M 840 1130 L 840 1158 L 462 1158" stroke="#64748B" stroke-width="1.5" fill="none" marker-end="url(#a0)"/>
+<rect x="0" y="1152" width="1200" height="17" fill="#F8FAFC"/><line x1="0" y1="1152" x2="1200" y2="1152" stroke="#E2E8F0" stroke-width="1"/>
+<text x="600" y="1164.5" text-anchor="middle" fill="#94A3B8" font-size="9.5" font-weight="700" letter-spacing="1.4" font-family="Segoe UI,system-ui,sans-serif">FASE 6 · SEGUIMIENTO POST-LIBERACIÓN</text>
+<rect x="20" y="1172" width="920" height="68" rx="7" fill="white" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="7,3"/>
+<text x="480" y="1193" text-anchor="middle" fill="#0A2D52" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Sesiones de seguimiento — Proyectos SOC + Área Solicitante</text>
+<text x="480" y="1209" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">mejoras o faltantes detectados post-liberación</text>
+<text x="480" y="1225" text-anchor="middle" fill="#475569" font-size="10" font-family="Segoe UI,system-ui,sans-serif">generan Requerimientos de Cambio → inician ciclo simplificado</text>
+<path d="M 26 1172 L 26 95 L 18 95" stroke="#94A3B8" stroke-width="1.5" fill="none" stroke-dasharray="6,4" marker-end="url(#a0)"/>
+<text x="6" y="640" fill="#94A3B8" font-size="8" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,6,640)">Nuevo requerimiento de cambio</text>
+<rect x="20" y="1258" width="760" height="58" rx="7" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+<text x="40" y="1276" fill="#0A2D52" font-size="9" font-weight="700" letter-spacing="0.6" font-family="Segoe UI,system-ui,sans-serif">LEYENDA</text>
+<line x1="100" y1="1272" x2="132" y2="1272" stroke="#64748B" stroke-width="1.5" marker-end="url(#a0)"/>
+<text x="138" y="1276" fill="#475569" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Flujo principal</text>
+<line x1="228" y1="1272" x2="260" y2="1272" stroke="#0DB07A" stroke-width="1.5" marker-end="url(#ag)"/>
+<text x="266" y="1276" fill="#475569" font-size="9" font-family="Segoe UI,system-ui,sans-serif">VoBo / aprobación</text>
+<line x1="365" y1="1272" x2="397" y2="1272" stroke="#E91E7A" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ar)"/>
+<text x="403" y="1276" fill="#475569" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Comentarios / regreso</text>
+<line x1="508" y1="1272" x2="540" y2="1272" stroke="#D97706" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#ay)"/>
+<text x="546" y="1276" fill="#475569" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Negociación / sesión</text>
+<polygon points="68,1296 96,1308 68,1320 40,1308" fill="white" stroke="#64748B" stroke-width="1.2"/>
+<text x="102" y="1312" fill="#475569" font-size="9" font-family="Segoe UI,system-ui,sans-serif">Decisión</text>
+<rect x="162" y="1300" width="52" height="16" rx="3" fill="white" stroke="#0A2D52" stroke-width="1.2"/>
+<text x="188" y="1311" text-anchor="middle" fill="#0A2D52" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">Actividad</text>
+<rect x="232" y="1300" width="58" height="16" rx="3" fill="#FFFBEB" stroke="#D97706" stroke-width="1.2"/>
+<text x="261" y="1311" text-anchor="middle" fill="#78350F" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">Negociación</text>
+<rect x="308" y="1300" width="66" height="16" rx="3" fill="white" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="5,2"/>
+<text x="341" y="1311" text-anchor="middle" fill="#475569" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">Paso opcional</text>
+<rect x="390" y="1302" width="90" height="12" rx="3" fill="#E8EDF8"/>
+<text x="435" y="1311" text-anchor="middle" fill="#0A2D52" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">📋 Registro en Notion</text>
+</g>
+</svg>
+</div>
+</body>
+</html>
