@@ -56,6 +56,15 @@ export class AgentPanelController {
     );
   }
 
+  @Get(':id/conversations/:convId/messages')
+  getConversationMessages(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('convId') convId: string,
+  ) {
+    return this.service.getConversationMessages(req.user.tenant_id, agentId, convId);
+  }
+
   @Get(':id/corrections')
   getCorrections(
     @Request() req: any,

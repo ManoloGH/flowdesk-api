@@ -352,6 +352,32 @@ export class AgentPanelService {
     return { success: true, message: 'Evolución iniciada' };
   }
 
+  async getConversationMessages(tenantId: string, agentId: string, conversationId: string) {
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: { id: agentId, tenant_id: tenantId, type: 'AI_AGENT' },
+      select: { agent_config: true },
+    });
+    if (!slot) throw new NotFoundException('Agente no encontrado');
+
+    const conv = await this.prisma.botConversation.findFirst({
+      where: { id: conversationId, tenant_id: tenantId },
+    });
+    if (!conv) throw new NotFoundException('Conversación no encontrada');
+
+    const cfg = (slot.agent_config as Record<string, unknown>) ?? {};
+    const instanceName = cfg.instance_name as string | undefined;
+    if (instanceName && conv.instance_name !== instanceName)
+      throw new ForbiddenException('La conversación no pertenece a este agente');
+
+    const messages = await this.prisma.botMessage.findMany({
+      where: { conversation_id: conversationId },
+      orderBy: { created_at: 'asc' },
+      select: { id: true, role: true, content: true, created_at: true },
+    });
+
+    return { conversation: conv, messages };
+  }
+
   async updateConfig(tenantId: string, agentId: string, dto: UpdateAgentConfigDto) {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { id: agentId, tenant_id: tenantId, type: 'AI_AGENT' },

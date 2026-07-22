@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsArray } from 'class-validator';
 
 export class CreateSkillDto {
   @IsString()
@@ -111,4 +111,42 @@ export class UpdateAgentConfigDto {
   @IsOptional()
   @IsString()
   tts_voice_id?: string;
+
+  // Journey / agente comercial
+  @IsOptional()
+  @IsString()
+  instance_name?: string;
+
+  @IsOptional()
+  @IsString()
+  cal_com_url?: string;
+
+  @IsOptional()
+  @IsString()
+  pitch?: string;
+
+  @IsOptional()
+  @IsArray()
+  qualifying_questions?: string[];
+
+  @IsOptional()
+  @IsString()
+  good_lead_criteria?: string;
+
+  @IsOptional()
+  @IsString()
+  bad_lead_criteria?: string;
+
+  // Entregable
+  @IsOptional()
+  @IsString()
+  deliverable_type?: string;
+
+  @IsOptional()
+  @IsString()
+  deliverable_url?: string;
+
+  @IsOptional()
+  @IsString()
+  deliverable_description?: string;
 }
