@@ -17,4 +17,4 @@ RUN npm run build
 EXPOSE 3001
 
 # Correr migraciones y arrancar
-CMD ["sh", "-c", "node prisma/fix.js ; npx prisma migrate deploy && node dist/src/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]
