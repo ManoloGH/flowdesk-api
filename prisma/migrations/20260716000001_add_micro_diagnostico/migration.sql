@@ -20,6 +20,6 @@ CREATE INDEX IF NOT EXISTS "micro_diagnosticos_tenant_phone_idx" ON "micro_diagn
 DO $$ BEGIN
   ALTER TABLE "micro_diagnosticos"
     ADD CONSTRAINT "micro_diagnosticos_tenant_id_fkey"
-    FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    FOREIGN KEY ("tenant_id") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
