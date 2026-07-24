@@ -9,7 +9,11 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(join(__dirname, '..', '..', 'public'));
+  app.useStaticAssets(join(__dirname, '..', '..', 'public'), {
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    },
+  });
 
   // Stripe webhook necesita el body sin parsear para verificar la firma HMAC
   app.use('/api/v1/billing/webhook', raw({ type: 'application/json' }));
