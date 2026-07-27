@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateIntakeTokenDto {
   @ApiProperty() @IsString() area_name: string;
-  @ApiProperty() @IsEmail() area_email: string;
+  @ApiPropertyOptional() @IsOptional() @IsEmail() area_email?: string;
   @ApiPropertyOptional({ description: 'Días de validez del link (default 7)' })
   @IsOptional()
   expires_days?: number;
