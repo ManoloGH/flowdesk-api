@@ -43,7 +43,7 @@ export class RequirementsService {
     return req;
   }
 
-  async create(tenantId: string, slotId: string, dto: CreateRequirementDto) {
+  async create(tenantId: string, slotId: string | null, dto: CreateRequirementDto) {
     const folio = await this.generateFolio(tenantId);
     const req = await this.prisma.requirement.create({
       data: {
@@ -75,11 +75,11 @@ export class RequirementsService {
       },
     });
 
-    await this.recordHistory(req.id, slotId, 'created', null, 'BORRADOR');
+    if (slotId) await this.recordHistory(req.id, slotId, 'created', null, 'BORRADOR');
     return req;
   }
 
-  async createFromIntake(tenantId: string, slotId: string, uploadId: string) {
+  async createFromIntake(tenantId: string, slotId: string | null, uploadId: string) {
     const upload = await this.prisma.excelUpload.findFirst({
       where: { id: uploadId, tenant_id: tenantId },
       include: { questionnaire: true },

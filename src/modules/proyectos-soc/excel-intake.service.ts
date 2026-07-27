@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AiProviderService } from '../../ai/ai-provider.service';
+import { RequirementsService } from './requirements.service';
 import { CreateIntakeTokenDto, AnswerQuestionnaireDto } from './dto/excel-intake.dto';
 
 @Injectable()
@@ -8,6 +9,7 @@ export class ExcelIntakeService {
   constructor(
     private prisma: PrismaService,
     private aiProvider: AiProviderService,
+    private requirementsService: RequirementsService,
   ) {}
 
   // ── PM: gestión de tokens y uploads ───────────────────────────────
@@ -262,7 +264,30 @@ Genera 2 pantallas clave. Responde SOLO con JSON válido:
       include: { excel_upload: true },
     });
     if (!intakeToken) throw new NotFoundException('Token no válido');
-    return this.answerQuestionnaire(intakeToken.tenant_id, intakeToken.excel_upload_id!, dto);
+
+    const result = await this.answerQuestionnaire(intakeToken.tenant_id, intakeToken.excel_upload_id!, dto);
+
+    // Auto-crear requerimiento si no existe aún para este upload
+    let requirement: { id: string; folio: string } | null = null;
+    try {
+      const existing = await this.prisma.requirement.findFirst({
+        where: { excel_upload_id: intakeToken.excel_upload_id! },
+        select: { id: true, folio: true },
+      });
+      if (existing) {
+        requirement = existing;
+      } else {
+        requirement = await this.requirementsService.createFromIntake(
+          intakeToken.tenant_id,
+          null,
+          intakeToken.excel_upload_id!,
+        );
+      }
+    } catch (err) {
+      console.error('[intake] auto-create requirement falló:', err?.message ?? err);
+    }
+
+    return { ...result, requirement };
   }
 
   async answerQuestionnaire(tenantId: string, uploadId: string, dto: AnswerQuestionnaireDto) {
