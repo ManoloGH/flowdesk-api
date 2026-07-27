@@ -33,6 +33,12 @@ export class RequirementsController {
     return this.service.create(req.user.tenant_id, req.user.slot_id, dto);
   }
 
+  @Post('from-intake/:uploadId')
+  @ApiOperation({ summary: 'Crear requerimiento desde un intake de Excel completado' })
+  createFromIntake(@Request() req: any, @Param('uploadId') uploadId: string) {
+    return this.service.createFromIntake(req.user.tenant_id, req.user.slot_id, uploadId);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar datos del requerimiento' })
   update(@Request() req: any, @Param('id') id: string, @Body() dto: UpdateRequirementDto) {

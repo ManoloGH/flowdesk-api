@@ -79,6 +79,42 @@ export class RequirementsService {
     return req;
   }
 
+  async createFromIntake(tenantId: string, slotId: string, uploadId: string) {
+    const upload = await this.prisma.excelUpload.findFirst({
+      where: { id: uploadId, tenant_id: tenantId },
+      include: { questionnaire: true },
+    });
+    if (!upload) throw new NotFoundException('Upload de intake no encontrado');
+
+    const raw = upload.raw_content ?? '';
+    const parseField = (label: string): string => {
+      const m = raw.match(new RegExp(`^${label}:\\s*(.+)$`, 'm'));
+      return m?.[1]?.trim() ?? '';
+    };
+
+    const solicitante = parseField('Solicitante') || upload.area_name;
+    const areaSol    = parseField('Área');
+    const tipo       = parseField('Tipo de desarrollo');
+    const docType    = tipo.includes('Modificación') ? 'MEJORA' : 'NUEVO_DESARROLLO';
+
+    const descMatch  = raw.match(/=== Descripción del proceso ===([\s\S]*?)(?:=== Datos del Excel ===|$)/);
+    const descripcion = descMatch?.[1]?.trim() ?? '';
+
+    const year = new Date().getFullYear();
+    const title = `${upload.area_name} — ${tipo || 'Requerimiento de sistema'} ${year}`;
+
+    return this.create(tenantId, slotId, {
+      title,
+      doc_type: docType as any,
+      requested_by: solicitante,
+      requested_by_email: upload.area_email ?? undefined,
+      responsible_business: areaSol || upload.area_name,
+      current_situation: descripcion,
+      intake_source: 'EXCEL_AREA' as any,
+      excel_upload_id: uploadId,
+    });
+  }
+
   async update(tenantId: string, slotId: string, id: string, dto: UpdateRequirementDto) {
     await this.assertAccess(tenantId, id);
     const req = await this.prisma.requirement.update({
