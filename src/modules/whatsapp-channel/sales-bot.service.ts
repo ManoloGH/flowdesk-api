@@ -252,13 +252,15 @@ export class SalesBotService {
   private async loadConvState(convId: string): Promise<{
     diagnosticoCompletado: boolean;
     pendingSkillConfirmation: string | null;
+    activeDeliverableId: string | null;
   }> {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT diagnostico_completado, pending_skill_confirmation FROM "bot_conversations" WHERE id = $1`, convId,
+      `SELECT diagnostico_completado, pending_skill_confirmation, active_deliverable_id FROM "bot_conversations" WHERE id = $1`, convId,
     );
     return {
       diagnosticoCompletado: Boolean(rows[0]?.diagnostico_completado),
       pendingSkillConfirmation: rows[0]?.pending_skill_confirmation ?? null,
+      activeDeliverableId: rows[0]?.active_deliverable_id ?? null,
     };
   }
 
@@ -557,7 +559,7 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
 
   // ─── System prompt ─────────────────────────────────────────────────────────
 
-  private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false): Promise<string> {
+  private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false, _activeDeliverableId: string | null = null): Promise<string> {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
       select: {
@@ -857,6 +859,144 @@ ${preguntasList}
         }
       }
 
+      case 'callBuiltinAction': {
+        const builtinSkill = await this.prisma.agentSkill.findFirst({
+          where: { name: args.skill_name, status: 'active' },
+          select: { action_type: true, action_config: true },
+        });
+        if (!builtinSkill) return { ok: false, message: `Skill no encontrado: ${args.skill_name}` };
+        const bCfg = (builtinSkill.action_config as Record<string, string>) ?? {};
+
+        switch (builtinSkill.action_type) {
+          case 'send_image': {
+            if (!bCfg.url) return { ok: false, message: 'URL no configurada.' };
+            await this.evolution.sendImage(instanceName, jid, bCfg.url, bCfg.caption);
+            return { __button_sent: true };
+          }
+          case 'send_video': {
+            if (!bCfg.url) return { ok: false, message: 'URL no configurada.' };
+            await this.evolution.sendMedia(instanceName, jid, 'video', bCfg.url, bCfg.caption);
+            return { __button_sent: true };
+          }
+          case 'create_crm_contact': {
+            const convRow = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT prospect_data FROM "bot_conversations" WHERE id = $1 LIMIT 1`, conversationId,
+            );
+            let pData: Record<string, string> = {};
+            try { pData = JSON.parse(convRow?.[0]?.prospect_data ?? '{}'); } catch {}
+            try {
+              const nameParts = (pData.nombre ?? 'Prospecto WhatsApp').split(' ');
+              await this.prisma.contact.create({
+                data: {
+                  tenant_id: _tenantId,
+                  first_name: nameParts[0],
+                  last_name: nameParts.slice(1).join(' ') || '',
+                  phone,
+                  company: pData.empresa ?? '',
+                  status: 'lead',
+                },
+              });
+            } catch { /* contact may already exist */ }
+            return { ok: true, message: 'Contacto registrado en CRM.' };
+          }
+          case 'notify_team': {
+            if (!bCfg.phone) return { ok: false, message: 'Número de equipo no configurado.' };
+            const convRow2 = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT prospect_data FROM "bot_conversations" WHERE id = $1 LIMIT 1`, conversationId,
+            );
+            let p2: Record<string, string> = {};
+            try { p2 = JSON.parse(convRow2?.[0]?.prospect_data ?? '{}'); } catch {}
+            const notifyMsg = (bCfg.message_template ?? '🔔 Nuevo lead: {{nombre}} ({{empresa}}) — {{telefono}}')
+              .replace('{{nombre}}', p2.nombre ?? phone)
+              .replace('{{empresa}}', p2.empresa ?? '')
+              .replace('{{telefono}}', phone);
+            await this.evolution.sendText(instanceName, bCfg.phone, notifyMsg);
+            return { ok: true, message: 'Equipo notificado.' };
+          }
+          case 'send_custom_buttons': {
+            const btns = (bCfg.buttons ?? '').split('|').filter(Boolean).map((b, i) => ({ id: `btn_c${i}`, text: b.trim() }));
+            await this.evolution.sendButtons(instanceName, jid, {
+              description: bCfg.text ?? 'Por favor selecciona una opción:',
+              buttons: btns.length > 0 ? btns : [{ id: 'btn_c0', text: 'Continuar' }],
+            });
+            return { __button_sent: true };
+          }
+          default:
+            return { ok: false, message: `Tipo de acción desconocido: ${builtinSkill.action_type}` };
+        }
+      }
+
+      case 'ofrecerEntregable': {
+        const deliverable = await this.prisma.agentDeliverable.findUnique({
+          where: { id: args.deliverable_id },
+          select: { offer_text: true, name: true },
+        });
+        if (!deliverable) return { ok: false, message: 'Entregable no encontrado.' };
+        await this.evolution.sendButtons(instanceName, jid, {
+          description: deliverable.offer_text,
+          footer: deliverable.name,
+          buttons: [
+            { id: 'btn_del_si', text: '✅ Sí, me interesa' },
+            { id: 'btn_del_no', text: '❌ No por ahora' },
+          ],
+        });
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "bot_conversations" SET pending_skill_confirmation = $1 WHERE id = $2`,
+          `deliverable:${args.deliverable_id}`, conversationId,
+        );
+        return { __button_sent: true };
+      }
+
+      case 'completarEntregable': {
+        const deliverable = await this.prisma.agentDeliverable.findUnique({
+          where: { id: args.deliverable_id },
+          select: { id: true, sections: true, name: true, agent_id: true, tenant_id: true },
+        });
+        if (!deliverable) return { ok: false, message: 'Entregable no encontrado.' };
+        try {
+          const sections = deliverable.sections as { title: string; prompt: string }[];
+          const answersText = Object.entries(args.answers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+          const generatedContent: Record<string, string> = {};
+          for (const section of sections) {
+            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'google/gemini-flash-1.5',
+                messages: [
+                  { role: 'system', content: 'Eres un consultor de negocios. Redacta en español, profesional y conciso. Solo el texto de la sección, sin títulos ni encabezados.' },
+                  { role: 'user', content: `${section.prompt}\n\nDatos del prospecto:\n${answersText}` },
+                ],
+                temperature: 0.5,
+              }),
+            });
+            const data = await res.json();
+            generatedContent[section.title] = data.choices?.[0]?.message?.content ?? '';
+          }
+          const token = Math.random().toString(36).slice(2, 16);
+          await this.prisma.deliverableResponse.create({
+            data: {
+              token,
+              tenant_id: deliverable.tenant_id,
+              agent_id: deliverable.agent_id,
+              deliverable_id: deliverable.id,
+              conversation_id: conversationId,
+              prospect_name: args.prospect_name ?? null,
+              answers: args.answers ?? {},
+              content: generatedContent,
+            },
+          });
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "bot_conversations" SET active_deliverable_id = NULL WHERE id = $1`, conversationId,
+          );
+          const url = `https://app.flowdesk.mx/entregable/${token}`;
+          return { ok: true, url, message: `Entregable generado: ${url}` };
+        } catch (err: any) {
+          this.logger.error('completarEntregable error', err?.message);
+          return { ok: false, message: 'No se pudo generar el entregable en este momento.' };
+        }
+      }
+
       case 'ofrecerMicroDiagnostico': {
         await this.evolution.sendButtons(instanceName, jid, {
           description: '¿Te gustaría que generemos un micro-diagnóstico gratuito de automatización para tu empresa? Es un análisis rápido con recomendaciones personalizadas. 🎯',
@@ -1003,7 +1143,7 @@ ${preguntasList}
       case 'registrarEnCRM': {
         const { nombre, empresa, telefono: tel } = args;
         try {
-          const result = await this.registrarEnCRM(tenantId, nombre, empresa, tel ?? phone);
+          const result = await this.registrarEnCRM(_tenantId, nombre, empresa, tel ?? phone);
           return { ok: true, contact_id: result.contact_id, deal_id: result.deal_id, message: 'Prospecto registrado en CRM.' };
         } catch (err: any) {
           this.logger.error(`registrarEnCRM error: ${err.message}`);
@@ -1014,7 +1154,7 @@ ${preguntasList}
       case 'generarMicroDiagnostico': {
         const { nombre, empresa, telefono: tel2, respuestas, deal_id } = args;
         try {
-          const url = await this.generarMicroDiagnosticoIA(tenantId, nombre, empresa, tel2 ?? phone, respuestas, deal_id);
+          const url = await this.generarMicroDiagnosticoIA(_tenantId, nombre, empresa, tel2 ?? phone, respuestas, deal_id);
           return { ok: true, url, message: `Micro-diagnóstico generado. Envía esta URL al prospecto: ${url}` };
         } catch (err: any) {
           this.logger.error(`generarMicroDiagnostico error: ${err.message}`);
@@ -1025,7 +1165,7 @@ ${preguntasList}
       case 'moverEnPipeline': {
         const { deal_id: dId, stage_name } = args;
         try {
-          await this.moverEnPipelinePrivado(tenantId, dId, stage_name);
+          await this.moverEnPipelinePrivado(_tenantId, dId, stage_name);
           return { ok: true, message: `Deal movido a etapa "${stage_name}".` };
         } catch (err: any) {
           this.logger.error(`moverEnPipeline error: ${err.message}`);

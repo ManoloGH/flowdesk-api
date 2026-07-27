@@ -35,6 +35,19 @@ export class EvolutionAdapter {
     return res.json();
   }
 
+  // Enviar media genérica (video, audio, documento)
+  async sendMedia(instanceName: string, to: string, mediatype: 'video' | 'audio' | 'document', mediaUrl: string, caption?: string) {
+    const number = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const url = `${this.baseUrl}/message/sendMedia/${instanceName}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ number, mediatype, media: mediaUrl, caption }),
+    });
+    if (!res.ok) this.logger.error(`Evolution sendMedia error: ${res.status}`);
+    return res.json();
+  }
+
   // Obtener instancias activas
   async getInstances() {
     const res = await fetch(`${this.baseUrl}/instance/fetchInstances`, { headers: this.headers() });

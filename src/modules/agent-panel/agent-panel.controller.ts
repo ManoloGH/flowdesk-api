@@ -333,4 +333,10 @@ export class AgentPanelController {
   ) {
     return this.service.getDeliverableResponses(req.user.tenant_id, agentId, deliverableId);
   }
+
+  @Public()
+  @Get('public/deliverable/:token')
+  getPublicDeliverable(@Param('token') token: string) {
+    return this.service.getDeliverableResponseByToken(token);
+  }
 }
