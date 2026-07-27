@@ -617,8 +617,9 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
     const actionSkills = (slot?.agent_skills ?? []) as { action_type: string; trigger_condition: string; name: string; action_config: any }[];
     const skillsSection = actionSkills.length > 0
       ? '\n\n## Skills de acción configurados\n' + actionSkills.map(s => {
-          if (s.action_type === 'micro_diagnosis') {
-            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`ofrecerMicroDiagnostico()\``;
+          if (s.action_type === 'micro_diagnosis' || s.action_type === 'entregable') {
+            const did = (s.action_config as any)?.deliverable_id;
+            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`ofrecerEntregable({ deliverable_id: "${did ?? ''}" })\``;
           }
           if (s.action_type === 'schedule_meeting') {
             return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`agendar()\` con el nombre del prospecto`;
@@ -640,6 +641,15 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
           const qs = (d.questions as { field: string; question: string }[]) ?? [];
           return `\n### ${d.name} (id: "${d.id}")\n${d.description}\nOfrece con: "${d.offer_text}"\nPreguntas a hacer (en orden, una por turno):\n${qs.map((q, i) => `  ${i + 1}. [${q.field}] ${q.question}`).join('\n')}`;
         }).join('\n')
+      : '';
+
+    // Fuentes de conocimiento configuradas en Base de Conocimiento
+    const kSources = (cfg.knowledge_sources as { name: string; url?: string; covers?: string; notes?: string; status?: string }[] | undefined) ?? [];
+    const knowledgeSection = kSources.filter(k => k.status !== 'inactive').length > 0
+      ? '\n\n## Sistemas de información disponibles\nSi el prospecto pregunta sobre estos temas, puedes mencionar que la empresa cuenta con estos sistemas:\n' +
+        kSources.filter(k => k.status !== 'inactive').map(k =>
+          `- **${k.name}**${k.url ? ` (${k.url})` : ''}: ${k.covers ?? ''}${k.notes ? ` — ${k.notes}` : ''}`
+        ).join('\n')
       : '';
 
     const misionSection = cfg.mision ? `\n## Misión\n${cfg.mision}` : '';
@@ -679,7 +689,7 @@ ${seguimientoSection}
 - Responde en español neutro, conversacional
 - Mensajes breves: 2 a 4 líneas máximo
 - No uses emojis en exceso
-- Una pregunta a la vez — espera la respuesta antes de continuar${skillsSection}${deliverablesSection}`.trim();
+- Una pregunta a la vez — espera la respuesta antes de continuar${skillsSection}${deliverablesSection}${knowledgeSection}`.trim();
     }
 
     const journeySection =
@@ -723,7 +733,7 @@ ${seguimientoSection}
 - **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
 - **calificar**: cuando tengas información suficiente para evaluar si encaja
 - **agendar**: SOLO si calificar() devolvió score ≥ 7
-- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}${deliverablesSection}`.trim();
+- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}${deliverablesSection}${knowledgeSection}`.trim();
   }
 
   private renderJourneyNodes(nodes: any[], indent: string): string {
