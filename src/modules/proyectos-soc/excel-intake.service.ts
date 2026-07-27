@@ -84,8 +84,12 @@ export class ExcelIntakeService {
       },
     });
 
-    // Analizar columnas con IA de forma asíncrona
-    this.analyzeExcel(upload.id, intakeToken.tenant_id).catch(console.error);
+    // Analizar con IA de forma asíncrona; nunca bloquear la respuesta
+    this.analyzeExcel(upload.id, intakeToken.tenant_id).catch(async (err) => {
+      console.error(`[intake] analyzeExcel falló para upload ${upload.id}:`, err?.message ?? err);
+      // Crear cuestionario de respaldo para que el polling siempre encuentre algo
+      await this.createFallbackQuestionnaire(upload.id, upload.area_name, upload.raw_content ?? '');
+    });
 
     return { message: 'Archivo recibido. El análisis iniciará en breve.' };
   }
@@ -148,29 +152,32 @@ Responde SOLO con JSON:
     const columnMap = (upload.column_map ?? {}) as Record<string, string>;
     const byCategory = (cat: string) => Object.entries(columnMap).filter(([, v]) => v === cat).map(([k]) => k);
 
+    // Incluir descripción del proceso si viene del intake estructurado
+    const rawContent = upload.raw_content ?? '';
+    const descMatch  = rawContent.match(/=== Descripción del proceso ===([\s\S]*?)(?:=== Datos del Excel ===|$)/);
+    const processDesc = descMatch?.[1]?.trim() ?? '';
+
     const excelContext = `Área: ${upload.area_name}
 Archivo: ${upload.file_name ?? 'Excel'}
+${processDesc ? `Descripción del proceso: ${processDesc.slice(0, 800)}` : ''}
 CONFIRMAR: ${byCategory('CONFIRMAR').join(', ') || 'ninguno'}
 CAPTURA_MANUAL: ${byCategory('CAPTURA_MANUAL').join(', ') || 'ninguno'}
 SISEC_FUENTE: ${byCategory('SISEC_FUENTE').join(', ') || 'ninguno'}
 CALCULADO: ${byCategory('CALCULADO').join(', ') || 'ninguno'}
-Notas: ${upload.analysis_notes?.slice(0, 600) ?? '(ninguna)'}`;
+Notas: ${upload.analysis_notes?.slice(0, 600) ?? '(ninguna)'}`.trim();
 
     // ── Llamado 1: Preguntas y supuestos ──────────────────────────────────────
-    const sysQ = `Eres el Agente de Requerimientos de SOC (broker hipotecario). Analiza el contexto de un Excel del área y genera:
-1. Preguntas de clarificación (máx 8, lenguaje claro y no técnico)
-2. Supuestos que el agente está asumiendo sobre el negocio (máx 5)
+    const sysQ = `Eres el Agente de Requerimientos de SOC (broker hipotecario). Analiza el contexto de un proceso del área y genera:
+1. Preguntas de clarificación (máx 6, lenguaje claro y no técnico)
+2. Supuestos que el agente está asumiendo sobre el negocio (máx 4)
 
-Responde SOLO con JSON:
-{
-  "questions": [{"id":"q1","section":"Confirmación de campos","field":"NombreCampo o null","question":"¿...?","why":"Para poder..."}],
-  "assumptions": [{"id":"a1","text":"Asumimos que...","context":"Contexto o impacto de este supuesto"}]
-}`;
+Responde SOLO con JSON válido:
+{"questions":[{"id":"q1","section":"Sección","field":null,"question":"¿...?","why":"Para poder..."}],"assumptions":[{"id":"a1","text":"Asumimos que...","context":"Contexto o impacto"}]}`;
 
     const r1 = await this.aiProvider.chat({
       tenantId, agentRole: 'ceo', systemPrompt: sysQ,
       messages: [{ role: 'user', content: excelContext }],
-      maxTokens: 3000,
+      maxTokens: 2000,
     });
     const t1 = typeof r1 === 'string' ? r1 : (r1 as any).content ?? '';
     const m1 = t1.match(/```(?:json)?\s*([\s\S]*?)```/) ?? t1.match(/(\{[\s\S]*\})/);
@@ -182,42 +189,23 @@ Responde SOLO con JSON:
     const sisecFields  = byCategory('SISEC_FUENTE');
     const calcFields   = byCategory('CALCULADO');
 
-    const sysW = `Eres un diseñador UX de sistemas internos para SOC (broker hipotecario). Genera wireframes HTML compactos de las pantallas que habrá que construir en SISEC para reemplazar el Excel del área.
+    const sysW = `Eres un diseñador UX de sistemas internos para SOC (broker hipotecario). Genera wireframes HTML compactos de las pantallas que habrá que construir en SISEC para digitalizar el proceso del área.
 
-IMPORTANTE — Genera HTML auto-contenido con estilos inline. Sigue esta guía de estilo:
+IMPORTANTE — HTML auto-contenido con estilos inline únicamente:
 - Encabezado: fondo #1f3864, texto blanco, padding 10px 16px, font-size 13px, font-weight 700
-- Filtros: fondo #eef2ff, border-radius 20px, padding 4px 12px, font-size 12px, color #1f3864
-- Tablas: border-collapse collapse, header con fondo #f8faff, celdas con border 1px solid #e5e7eb, padding 8px 12px, font-size 13px
-- Formularios: inputs con border 1px solid #d1d5db, border-radius 6px, padding 8px, font-size 13px
-- Botones de acción: fondo #0d6efd, color blanco, border-radius 6px, padding 6px 14px, font-size 12px
-- Tags de estado: colores semánticos (verde #d1fae5/#065f46, amarillo #fef3c7/#92400e, rojo #fee2e2/#991b1b)
-- Máximo 50 líneas HTML por pantalla
-- Usa datos de ejemplo realistas del contexto del área
-- NO uses CSS externo, NO uses clases, solo estilos inline
+- Tablas: border-collapse collapse, header fondo #f8faff, celdas border 1px solid #e5e7eb, padding 8px 12px, font-size 13px
+- Formularios: inputs border 1px solid #d1d5db, border-radius 6px, padding 8px, font-size 13px
+- Botones: fondo #0d6efd, color blanco, border-radius 6px, padding 6px 14px, font-size 12px
+- Máximo 40 líneas HTML por pantalla, datos de ejemplo realistas
+- NO uses CSS externo ni clases
 
-Genera 2-3 pantallas clave del módulo. Responde SOLO con JSON:
-{
-  "screens": [
-    {
-      "id": "s1",
-      "name": "Nombre de la pantalla",
-      "description": "Qué hace esta pantalla y quién la usa",
-      "html": "<div style='font-family:system-ui,sans-serif;max-width:720px'>...</div>"
-    }
-  ]
-}`;
+Genera 2 pantallas clave. Responde SOLO con JSON válido:
+{"screens":[{"id":"s1","name":"Nombre","description":"Qué hace y quién la usa","html":"<div style='font-family:system-ui'>...</div>"}]}`;
 
     const r2 = await this.aiProvider.chat({
       tenantId, agentRole: 'ceo', systemPrompt: sysW,
-      messages: [{ role: 'user', content: `${excelContext}
-
-Campos de captura manual (formulario): ${manualFields.join(', ')}
-Campos de SISEC (mostrar en tabla/read-only): ${sisecFields.join(', ')}
-Campos calculados (mostrar con formato especial): ${calcFields.join(', ')}
-Análisis: ${upload.analysis_notes?.slice(0, 400) ?? ''}
-
-Genera los wireframes HTML de las pantallas principales del módulo para el área de ${upload.area_name}.` }],
-      maxTokens: 6144,
+      messages: [{ role: 'user', content: `${excelContext}\n\nCampos de captura manual: ${manualFields.join(', ') || 'ver descripción'}\nCampos de SISEC: ${sisecFields.join(', ') || 'ver descripción'}\nCampos calculados: ${calcFields.join(', ') || 'ninguno'}` }],
+      maxTokens: 5000,
     });
     const t2 = typeof r2 === 'string' ? r2 : (r2 as any).content ?? '';
     const m2 = t2.match(/```(?:json)?\s*([\s\S]*?)```/) ?? t2.match(/(\{[\s\S]*\})/);
@@ -230,8 +218,39 @@ Genera los wireframes HTML de las pantallas principales del módulo para el áre
       screens:     part2.screens     ?? [],
     };
 
-    await this.prisma.areaQuestionnaire.create({
-      data: { excel_upload_id: uploadId, qa_document: JSON.stringify(qaDoc) },
+    // Upsert para evitar error de unique constraint si ya existe
+    await this.prisma.areaQuestionnaire.upsert({
+      where: { excel_upload_id: uploadId },
+      create: { excel_upload_id: uploadId, qa_document: JSON.stringify(qaDoc) },
+      update: { qa_document: JSON.stringify(qaDoc) },
+    });
+
+    await this.prisma.excelUpload.update({ where: { id: uploadId }, data: { status: 'CUESTIONARIO_GENERADO' } });
+  }
+
+  async createFallbackQuestionnaire(uploadId: string, areaName: string, rawContent: string) {
+    const descMatch   = rawContent.match(/=== Descripción del proceso ===([\s\S]*?)(?:=== Datos del Excel ===|$)/);
+    const processDesc = descMatch?.[1]?.trim() ?? rawContent.slice(0, 400);
+
+    const qaDoc = {
+      questions: [
+        { id: 'q1', section: 'Proceso', field: null, question: '¿Cuál es el objetivo principal de este desarrollo?', why: 'Para enfocar el alcance del requerimiento.' },
+        { id: 'q2', section: 'Usuarios', field: null, question: '¿Quiénes usarán este módulo y con qué frecuencia?', why: 'Para dimensionar la carga y los permisos.' },
+        { id: 'q3', section: 'Integración', field: null, question: '¿Hay sistemas externos que deban conectarse a este módulo?', why: 'Para identificar integraciones necesarias.' },
+      ],
+      assumptions: [
+        { id: 'a1', text: `El módulo será usado por el área de ${areaName}.`, context: 'Basado en la solicitud recibida.' },
+        { id: 'a2', text: 'El desarrollo seguirá los estándares de SISEC existentes.', context: 'Para mantener consistencia con el sistema actual.' },
+      ],
+      screens: [],
+      _fallback: true,
+      _processDesc: processDesc.slice(0, 200),
+    };
+
+    await this.prisma.areaQuestionnaire.upsert({
+      where: { excel_upload_id: uploadId },
+      create: { excel_upload_id: uploadId, qa_document: JSON.stringify(qaDoc) },
+      update: { qa_document: JSON.stringify(qaDoc) },
     });
 
     await this.prisma.excelUpload.update({ where: { id: uploadId }, data: { status: 'CUESTIONARIO_GENERADO' } });
