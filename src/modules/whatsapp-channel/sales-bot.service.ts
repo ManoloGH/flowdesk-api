@@ -49,27 +49,6 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'generarMicroDiagnostico',
-      description:
-        'Genera el micro-diagnóstico de automatización con las respuestas recopiladas y devuelve el link público. Usar cuando el prospecto haya respondido todas las preguntas del diagnóstico.',
-      parameters: {
-        type: 'object',
-        properties: {
-          nombre:    { type: 'string', description: 'Nombre del prospecto' },
-          empresa:   { type: 'string', description: 'Nombre de la empresa' },
-          actividad: { type: 'string', description: 'A qué se dedica la empresa y años operando' },
-          empleados: { type: 'string', description: 'Número aproximado de empleados' },
-          herramientas: { type: 'string', description: 'Software o herramientas digitales que usan' },
-          programacion: { type: 'string', description: 'Si tienen área de programación propia' },
-          cuello_botella: { type: 'string', description: 'Proceso o tarea que genera cuello de botella' },
-        },
-        required: ['nombre', 'empresa'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
       name: 'calificar',
       description:
         'Calcula un score 1-10 del lead según el perfil ideal. Score ≥ 7 = procede a agendar. Score < 7 = responde con calidez, no agendes.',
@@ -197,6 +176,58 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'callBuiltinAction',
+      description:
+        'Ejecuta una acción pre-cargada de un skill (enviar imagen, video, notificar al equipo, botones personalizados, crear contacto CRM). Usar cuando la condición de disparo del skill correspondiente se cumpla.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action_type: { type: 'string', description: 'Tipo: send_image | send_video | create_crm_contact | notify_team | send_custom_buttons' },
+          skill_name:  { type: 'string', description: 'Nombre exacto del skill que tiene la configuración de esta acción' },
+        },
+        required: ['action_type', 'skill_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ofrecerEntregable',
+      description:
+        'Envía botones de WhatsApp para que el prospecto confirme si quiere recibir el entregable (diagnóstico, propuesta, etc.). Llamar cuando el prospecto muestre interés en recibir información personalizada o cuando el flujo lo indique.',
+      parameters: {
+        type: 'object',
+        properties: {
+          deliverable_id: { type: 'string', description: 'ID del entregable a ofrecer (obtenido del listado de entregables disponibles)' },
+        },
+        required: ['deliverable_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'completarEntregable',
+      description:
+        'Genera el documento del entregable con las respuestas recopiladas y devuelve la URL pública para enviársela al prospecto. Llamar SOLO cuando hayas hecho TODAS las preguntas del entregable y tengas todas las respuestas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          deliverable_id:  { type: 'string', description: 'ID del entregable' },
+          prospect_name:   { type: 'string', description: 'Nombre del prospecto' },
+          answers: {
+            type: 'object',
+            description: 'Respuestas del prospecto. Clave = field name de la pregunta, valor = respuesta.',
+            additionalProperties: { type: 'string' },
+          },
+        },
+        required: ['deliverable_id', 'answers'],
+      },
+    },
+  },
 ];
 
 // ─── servicio ─────────────────────────────────────────────────────────────────
@@ -243,7 +274,8 @@ export class SalesBotService {
         ADD COLUMN IF NOT EXISTS "etapa_seguimiento"           INTEGER   NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS "diagnostico_completado"      BOOLEAN   NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS "prospect_data"               TEXT      NOT NULL DEFAULT '{}',
-        ADD COLUMN IF NOT EXISTS "pending_skill_confirmation"  TEXT
+        ADD COLUMN IF NOT EXISTS "pending_skill_confirmation"  TEXT,
+        ADD COLUMN IF NOT EXISTS "active_deliverable_id"       TEXT
     `);
     this.tablesReady = true;
     this.logger.log('SalesBot: tablas auto-creadas/verificadas');
@@ -560,22 +592,29 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
   // ─── System prompt ─────────────────────────────────────────────────────────
 
   private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false, _activeDeliverableId: string | null = null): Promise<string> {
-    const slot = await this.prisma.teamSlot.findFirst({
-      where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
-      select: {
-        agent_config: true,
-        agent_skills: {
-          where: { action_type: { not: 'text' }, status: 'active' },
-          select: { action_type: true, trigger_condition: true, name: true },
+    const [slot, deliverables] = await Promise.all([
+      this.prisma.teamSlot.findFirst({
+        where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+        select: {
+          id: true,
+          agent_config: true,
+          agent_skills: {
+            where: { action_type: { not: 'text' }, status: 'active' },
+            select: { action_type: true, trigger_condition: true, name: true, action_config: true },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.agentDeliverable.findMany({
+        where: { tenant_id: tenantId, status: 'active' },
+        select: { id: true, name: true, description: true, offer_text: true, questions: true },
+        orderBy: { created_at: 'asc' },
+      }),
+    ]);
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
-    const nombre = cfg.nombre ?? 'Leo';
 
     // Skills de acción: generan instrucciones extra para el LLM
-    const actionSkills = (slot?.agent_skills ?? []) as { action_type: string; trigger_condition: string; name: string }[];
+    const actionSkills = (slot?.agent_skills ?? []) as { action_type: string; trigger_condition: string; name: string; action_config: any }[];
     const skillsSection = actionSkills.length > 0
       ? '\n\n## Skills de acción configurados\n' + actionSkills.map(s => {
           if (s.action_type === 'micro_diagnosis') {
@@ -587,8 +626,20 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
           if (s.action_type === 'webhook') {
             return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`callWebhook({ skill_name: "${s.name}" })\``;
           }
+          if (['send_image', 'send_video', 'create_crm_contact', 'notify_team', 'send_custom_buttons'].includes(s.action_type)) {
+            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`callBuiltinAction({ action_type: "${s.action_type}", skill_name: "${s.name}" })\``;
+          }
           return '';
         }).filter(Boolean).join('\n')
+      : '';
+
+    // Entregables configurables
+    const deliverablesSection = deliverables.length > 0
+      ? '\n\n## Entregables disponibles\nPuedes ofrecer estos entregables al prospecto. Primero ofrécelo con ofrecerEntregable(), espera confirmación, haz las preguntas una a una, y al tener todas llama completarEntregable().\n' +
+        deliverables.map(d => {
+          const qs = (d.questions as { field: string; question: string }[]) ?? [];
+          return `\n### ${d.name} (id: "${d.id}")\n${d.description}\nOfrece con: "${d.offer_text}"\nPreguntas a hacer (en orden, una por turno):\n${qs.map((q, i) => `  ${i + 1}. [${q.field}] ${q.question}`).join('\n')}`;
+        }).join('\n')
       : '';
 
     const misionSection = cfg.mision ? `\n## Misión\n${cfg.mision}` : '';
@@ -628,7 +679,7 @@ ${seguimientoSection}
 - Responde en español neutro, conversacional
 - Mensajes breves: 2 a 4 líneas máximo
 - No uses emojis en exceso
-- Una pregunta a la vez — espera la respuesta antes de continuar${skillsSection}`.trim();
+- Una pregunta a la vez — espera la respuesta antes de continuar${skillsSection}${deliverablesSection}`.trim();
     }
 
     const journeySection =
@@ -672,7 +723,7 @@ ${seguimientoSection}
 - **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
 - **calificar**: cuando tengas información suficiente para evaluar si encaja
 - **agendar**: SOLO si calificar() devolvió score ≥ 7
-- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}`.trim();
+- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}${deliverablesSection}`.trim();
   }
 
   private renderJourneyNodes(nodes: any[], indent: string): string {
