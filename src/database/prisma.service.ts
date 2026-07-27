@@ -126,6 +126,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Agent Panel ────────────────────────────────────────────────────────────
   get agentSkill() { return this.prisma.agentSkill; }
   get agentCorrection() { return this.prisma.agentCorrection; }
+  get agentCase() { return this.prisma.agentCase; }
+  get agentClassification() { return this.prisma.agentClassification; }
+  get agentDeliverable() { return this.prisma.agentDeliverable; }
+  get deliverableResponse() { return this.prisma.deliverableResponse; }
   get availableModel() { return this.prisma.availableModel; }
 
   // ── Web Builder ───────────────────────────────────────────────────────────
@@ -184,6 +188,15 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get socComment() { return this.prisma.socComment; }
   get socDocument() { return this.prisma.socDocument; }
   get socHistory() { return this.prisma.socHistory; }
+
+  // ── Proyectos SOC — Gestión de Requerimientos de Software ─────
+  get requirement() { return this.prisma.requirement; }
+  get businessRule() { return this.prisma.businessRule; }
+  get excelUpload() { return this.prisma.excelUpload; }
+  get intakeToken() { return this.prisma.intakeToken; }
+  get areaQuestionnaire() { return this.prisma.areaQuestionnaire; }
+  get sisecIntegration() { return this.prisma.sisecIntegration; }
+  get requirementHistory() { return this.prisma.requirementHistory; }
 
   // Raw SQL — necesario para operaciones vectoriales (pgvector)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

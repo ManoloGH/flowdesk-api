@@ -3,12 +3,14 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
   Query,
   Request,
 } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 
 function safeInt(val: string | undefined, fallback: number, max = Infinity): number {
   const n = parseInt(val ?? '', 10);
@@ -20,6 +22,12 @@ import {
   UpdateSkillDto,
   CreateCorrectionDto,
   UpdateAgentConfigDto,
+  TestMessageDto,
+  CreateCaseDto,
+  UpdateCaseDto,
+  CreateClassificationDto,
+  CreateDeliverableDto,
+  UpdateDeliverableDto,
 } from './dto/agent-panel.dto';
 
 @Controller('agent-panel')
@@ -178,6 +186,15 @@ export class AgentPanelController {
     return this.service.updateConfig(req.user.tenant_id, agentId, dto);
   }
 
+  @Post(':id/test-message')
+  testMessage(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Body() dto: TestMessageDto,
+  ) {
+    return this.service.testMessage(req.user.tenant_id, agentId, dto);
+  }
+
   @Get(':id/audit')
   getAuditLog(
     @Request() req: any,
@@ -185,5 +202,135 @@ export class AgentPanelController {
     @Query('limit') limit?: string,
   ) {
     return this.service.getAuditLog(req.user.tenant_id, agentId, safeInt(limit, 50, 200));
+  }
+
+  // ── Catálogo de casos ──────────────────────────────────────────────────────
+
+  @Get(':id/cases')
+  getCases(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Query('search') search?: string,
+  ) {
+    return this.service.getCases(req.user.tenant_id, agentId, search);
+  }
+
+  @Post(':id/cases')
+  createCase(@Request() req: any, @Param('id') agentId: string, @Body() dto: CreateCaseDto) {
+    return this.service.createCase(req.user.tenant_id, agentId, dto);
+  }
+
+  @Patch(':id/cases/:caseId')
+  updateCase(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('caseId') caseId: string,
+    @Body() dto: UpdateCaseDto,
+  ) {
+    return this.service.updateCase(req.user.tenant_id, agentId, caseId, dto);
+  }
+
+  @Delete(':id/cases/:caseId')
+  deleteCase(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('caseId') caseId: string,
+  ) {
+    return this.service.deleteCase(req.user.tenant_id, agentId, caseId);
+  }
+
+  @Post(':id/cases/search')
+  searchCase(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Body('query') query: string,
+  ) {
+    return this.service.searchCase(req.user.tenant_id, agentId, query);
+  }
+
+  // ── Clasificaciones ────────────────────────────────────────────────────────
+
+  @Get(':id/classifications')
+  getClassifications(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('source') source?: string,
+    @Query('resolution') resolution?: string,
+    @Query('feedback') feedback?: string,
+  ) {
+    return this.service.getClassifications(
+      req.user.tenant_id,
+      agentId,
+      safeInt(page, 1),
+      safeInt(limit, 20, 100),
+      source,
+      resolution,
+      feedback,
+    );
+  }
+
+  @Post(':id/classifications')
+  createClassification(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Body() dto: CreateClassificationDto,
+  ) {
+    return this.service.createClassification(req.user.tenant_id, agentId, dto);
+  }
+
+  @Patch(':id/classifications/:classId/feedback')
+  updateClassificationFeedback(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('classId') classId: string,
+    @Body('feedback') feedback: string,
+  ) {
+    return this.service.updateClassificationFeedback(req.user.tenant_id, agentId, classId, feedback);
+  }
+
+  // ── Entregables ────────────────────────────────────────────────────────────
+
+  @Get(':id/deliverables')
+  getDeliverables(@Request() req: any, @Param('id') agentId: string) {
+    return this.service.getDeliverables(req.user.tenant_id, agentId);
+  }
+
+  @Post(':id/deliverables')
+  createDeliverable(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Body() dto: CreateDeliverableDto,
+  ) {
+    return this.service.createDeliverable(req.user.tenant_id, agentId, dto);
+  }
+
+  @Patch(':id/deliverables/:deliverableId')
+  updateDeliverable(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('deliverableId') deliverableId: string,
+    @Body() dto: UpdateDeliverableDto,
+  ) {
+    return this.service.updateDeliverable(req.user.tenant_id, agentId, deliverableId, dto);
+  }
+
+  @Delete(':id/deliverables/:deliverableId')
+  deleteDeliverable(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('deliverableId') deliverableId: string,
+  ) {
+    return this.service.deleteDeliverable(req.user.tenant_id, agentId, deliverableId);
+  }
+
+  @Get(':id/deliverables/:deliverableId/responses')
+  getDeliverableResponses(
+    @Request() req: any,
+    @Param('id') agentId: string,
+    @Param('deliverableId') deliverableId: string,
+  ) {
+    return this.service.getDeliverableResponses(req.user.tenant_id, agentId, deliverableId);
   }
 }

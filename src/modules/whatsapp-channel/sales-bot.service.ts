@@ -25,6 +25,30 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'callWebhook',
+      description:
+        'Llama a un webhook externo configurado para este skill. Usar cuando el skill de tipo webhook deba activarse según su condición de disparo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_name: { type: 'string', description: 'Nombre exacto del skill que se está activando' },
+        },
+        required: ['skill_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ofrecerMicroDiagnostico',
+      description:
+        'Envía un botón de confirmación de WhatsApp al prospecto para que acepte o rechace el micro-diagnóstico gratuito. Usar cuando el prospecto muestre interés en conocer más o pida información sobre el servicio. NO usar si ya hay un diagnóstico completado.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'generarMicroDiagnostico',
       description:
         'Genera el micro-diagnóstico de automatización con las respuestas recopiladas y devuelve el link público. Usar cuando el prospecto haya respondido todas las preguntas del diagnóstico.',
@@ -214,21 +238,34 @@ export class SalesBotService {
     // Agregar columnas de seguimiento (idempotente en PostgreSQL)
     await this.prisma.$executeRawUnsafe(`
       ALTER TABLE "bot_conversations"
-        ADD COLUMN IF NOT EXISTS "seguimiento_activo"     BOOLEAN   NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS "seguimiento_inicio"     TIMESTAMP(3),
-        ADD COLUMN IF NOT EXISTS "etapa_seguimiento"      INTEGER   NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS "diagnostico_completado" BOOLEAN   NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS "prospect_data"          TEXT      NOT NULL DEFAULT '{}'
+        ADD COLUMN IF NOT EXISTS "seguimiento_activo"          BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "seguimiento_inicio"          TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "etapa_seguimiento"           INTEGER   NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "diagnostico_completado"      BOOLEAN   NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS "prospect_data"               TEXT      NOT NULL DEFAULT '{}',
+        ADD COLUMN IF NOT EXISTS "pending_skill_confirmation"  TEXT
     `);
     this.tablesReady = true;
     this.logger.log('SalesBot: tablas auto-creadas/verificadas');
   }
 
-  private async loadConvState(convId: string): Promise<{ diagnosticoCompletado: boolean }> {
+  private async loadConvState(convId: string): Promise<{
+    diagnosticoCompletado: boolean;
+    pendingSkillConfirmation: string | null;
+  }> {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT diagnostico_completado FROM "bot_conversations" WHERE id = $1`, convId,
+      `SELECT diagnostico_completado, pending_skill_confirmation FROM "bot_conversations" WHERE id = $1`, convId,
     );
-    return { diagnosticoCompletado: Boolean(rows[0]?.diagnostico_completado) };
+    return {
+      diagnosticoCompletado: Boolean(rows[0]?.diagnostico_completado),
+      pendingSkillConfirmation: rows[0]?.pending_skill_confirmation ?? null,
+    };
+  }
+
+  private async clearPendingSkill(convId: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "bot_conversations" SET pending_skill_confirmation = NULL WHERE id = $1`, convId,
+    );
   }
 
   private microTableReady = false;
@@ -293,16 +330,41 @@ export class SalesBotService {
       take: 20,
     });
 
-    // 5. Cargar estado de la conversación (diagnóstico completado, etc.)
+    // 5. Cargar estado de la conversación (diagnóstico completado, skill pendiente)
     const convState = await this.loadConvState(conversation.id);
 
+    // 5b. Manejar confirmación pendiente de skill
+    let systemNote = '';
+    let activeDeliverableId = convState.activeDeliverableId;
+    if (convState.pendingSkillConfirmation) {
+      const affirm = /\bsi\b|\bsí\b|\byes\b|✅|claro|quiero|adelante|confirmado|dale|ok\b/i.test(message);
+      const deny   = /\bno\b|\bnope\b|❌|ahora no|después|luego|tampoco|paso\b/i.test(message);
+      if (affirm) {
+        await this.clearPendingSkill(conversation.id);
+        if (convState.pendingSkillConfirmation === 'micro_diagnosis') {
+          systemNote = '\n\nNOTA DEL SISTEMA: El usuario acaba de confirmar que quiere el micro-diagnóstico. Comienza AHORA con la primera pregunta del diagnóstico. No envíes más preguntas de introducción.';
+        } else if (convState.pendingSkillConfirmation.startsWith('deliverable:')) {
+          const delivId = convState.pendingSkillConfirmation.split(':')[1];
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "bot_conversations" SET active_deliverable_id = $1 WHERE id = $2`, delivId, conversation.id,
+          );
+          activeDeliverableId = delivId;
+          systemNote = '\n\nNOTA DEL SISTEMA: El usuario acaba de confirmar el entregable. Comienza AHORA con la primera pregunta. Una a la vez, en el orden indicado.';
+        }
+      } else if (deny) {
+        await this.clearPendingSkill(conversation.id);
+        systemNote = '\n\nNOTA DEL SISTEMA: El usuario rechazó la propuesta anterior. Continúa la conversación de forma natural sin insistir en el mismo tema.';
+      }
+    }
+
     // 6. Obtener system prompt contextualizado
-    const systemPrompt = await this.buildSystemPrompt(tenantId, convState.diagnosticoCompletado);
+    const systemPrompt = (await this.buildSystemPrompt(tenantId, convState.diagnosticoCompletado, activeDeliverableId)) + systemNote;
 
     // 7. Llamar a OpenRouter con herramientas
-    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone, tenantId);
+    const reply = await this.runAgentLoop(systemPrompt, history, conversation.id, phone, tenantId, jid, instanceName);
 
-    if (!reply) return;
+    // Botón enviado — no hay texto adicional que guardar ni enviar
+    if (!reply || reply === '__BUTTON_SENT__') return;
 
     // 7. Guardar respuesta del asistente
     await this.prisma.botMessage.create({
@@ -498,11 +560,34 @@ Responde SOLO con el JSON válido. Sin markdown, sin explicación.`;
   private async buildSystemPrompt(tenantId: string, diagnosticoCompletado = false): Promise<string> {
     const slot = await this.prisma.teamSlot.findFirst({
       where: { tenant_id: tenantId, type: 'AI_AGENT', agent_role: 'sales' },
-      select: { agent_config: true },
+      select: {
+        agent_config: true,
+        agent_skills: {
+          where: { action_type: { not: 'text' }, status: 'active' },
+          select: { action_type: true, trigger_condition: true, name: true },
+        },
+      },
     });
 
     const cfg = (slot?.agent_config as Record<string, any>) ?? {};
     const nombre = cfg.nombre ?? 'Leo';
+
+    // Skills de acción: generan instrucciones extra para el LLM
+    const actionSkills = (slot?.agent_skills ?? []) as { action_type: string; trigger_condition: string; name: string }[];
+    const skillsSection = actionSkills.length > 0
+      ? '\n\n## Skills de acción configurados\n' + actionSkills.map(s => {
+          if (s.action_type === 'micro_diagnosis') {
+            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`ofrecerMicroDiagnostico()\``;
+          }
+          if (s.action_type === 'schedule_meeting') {
+            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`agendar()\` con el nombre del prospecto`;
+          }
+          if (s.action_type === 'webhook') {
+            return `- **${s.name}**: ${s.trigger_condition}\n  → Llama a \`callWebhook({ skill_name: "${s.name}" })\``;
+          }
+          return '';
+        }).filter(Boolean).join('\n')
+      : '';
 
     const misionSection = cfg.mision ? `\n## Misión\n${cfg.mision}` : '';
     const enfoqueSection = cfg.enfoque ? `\n## En qué enfocarse\n${cfg.enfoque}` : '';
@@ -541,7 +626,7 @@ ${seguimientoSection}
 - Responde en español neutro, conversacional
 - Mensajes breves: 2 a 4 líneas máximo
 - No uses emojis en exceso
-- Una pregunta a la vez — espera la respuesta antes de continuar`.trim();
+- Una pregunta a la vez — espera la respuesta antes de continuar${skillsSection}`.trim();
     }
 
     const journeySection =
@@ -585,7 +670,7 @@ ${seguimientoSection}
 - **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
 - **calificar**: cuando tengas información suficiente para evaluar si encaja
 - **agendar**: SOLO si calificar() devolvió score ≥ 7
-- **derivarHumano**: precios, quejas, casos fuera de guión`.trim();
+- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}`.trim();
   }
 
   private renderJourneyNodes(nodes: any[], indent: string): string {
@@ -644,6 +729,8 @@ ${preguntasList}
     conversationId: string,
     phone: string,
     tenantId: string,
+    jid: string,
+    instanceName: string,
   ): Promise<string | null> {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const agentSlot = await this.prisma.teamSlot.findFirst({
@@ -702,7 +789,8 @@ ${preguntasList}
         let args: any = {};
         try { args = JSON.parse(call.function.arguments); } catch {}
 
-        const result = await this.executeTool(call.function.name, args, conversationId, phone, tenantId);
+        const result = await this.executeTool(call.function.name, args, conversationId, phone, tenantId, jid, instanceName);
+        if (result?.__button_sent) return '__BUTTON_SENT__';
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
     }
@@ -717,9 +805,73 @@ ${preguntasList}
     args: any,
     conversationId: string,
     phone: string,
-    tenantId: string,
+    _tenantId: string,
+    jid: string,
+    instanceName: string,
   ): Promise<any> {
     switch (name) {
+
+      case 'callWebhook': {
+        // Buscar el skill por nombre para obtener su webhook_url desde action_config
+        const webhookSkill = await this.prisma.agentSkill.findFirst({
+          where: { name: args.skill_name, status: 'active', action_type: 'webhook' },
+          select: { action_config: true, name: true },
+        });
+        const config = (webhookSkill?.action_config as Record<string, string> | null) ?? {};
+        const webhookUrl = config.webhook_url;
+        if (!webhookUrl) return { ok: false, message: `Webhook no configurado para skill: ${args.skill_name}` };
+
+        // Recuperar datos del prospecto para enviarlos al webhook
+        const conv = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT prospect_data FROM "bot_conversations" WHERE id = $1 LIMIT 1`,
+          conversationId,
+        );
+        let prospectData: Record<string, string> = {};
+        try { prospectData = JSON.parse(conv?.[0]?.prospect_data ?? '{}'); } catch {}
+
+        const payload = {
+          skill: args.skill_name,
+          conversation_id: conversationId,
+          phone,
+          prospect: prospectData,
+          triggered_at: new Date().toISOString(),
+        };
+
+        try {
+          const res = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(10_000),
+          });
+          const data = res.ok ? await res.json().catch(() => ({})) : {};
+          // Si el webhook devuelve { reply: "..." }, envíalo directamente por WhatsApp
+          if (data?.reply && typeof data.reply === 'string') {
+            await this.evolution.sendText(instanceName, jid, data.reply);
+            return { __button_sent: true }; // reusar sentinel: ya enviamos la respuesta, no enviar nada más
+          }
+          return { ok: true, message: `Webhook ejecutado: ${webhookUrl}`, data };
+        } catch (err: any) {
+          this.logger.error(`callWebhook error: ${err?.message}`);
+          return { ok: false, message: 'No se pudo contactar el webhook en este momento.' };
+        }
+      }
+
+      case 'ofrecerMicroDiagnostico': {
+        await this.evolution.sendButtons(instanceName, jid, {
+          description: '¿Te gustaría que generemos un micro-diagnóstico gratuito de automatización para tu empresa? Es un análisis rápido con recomendaciones personalizadas. 🎯',
+          footer: 'MentorIA Systems',
+          buttons: [
+            { id: 'btn_micro_si', text: '✅ Sí, me interesa' },
+            { id: 'btn_micro_no', text: '❌ No por ahora' },
+          ],
+        });
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "bot_conversations" SET pending_skill_confirmation = 'micro_diagnosis' WHERE id = $1`,
+          conversationId,
+        );
+        return { __button_sent: true };
+      }
 
       case 'generarMicroDiagnostico': {
         try {

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AgentCalibrationService } from '../agent-calibration/agent-calibration.service';
 import { AgentEvolutionService } from '../agent-evolution/agent-evolution.service';
@@ -7,6 +7,12 @@ import {
   UpdateSkillDto,
   CreateCorrectionDto,
   UpdateAgentConfigDto,
+  TestMessageDto,
+  CreateCaseDto,
+  UpdateCaseDto,
+  CreateClassificationDto,
+  CreateDeliverableDto,
+  UpdateDeliverableDto,
 } from './dto/agent-panel.dto';
 
 @Injectable()
@@ -56,24 +62,47 @@ export class AgentPanelService {
       const instanceName = cfg.instance_name as string | undefined;
       const botWhere = { tenant_id: tenantId, ...(instanceName ? { instance_name: instanceName } : {}) };
 
-      const [totalConvs, monthConvs, corrections, skills] = await Promise.all([
-        this.prisma.botConversation.count({ where: botWhere }),
-        this.prisma.botConversation.count({
-          where: { ...botWhere, created_at: { gte: monthStart } },
-        }),
-        this.prisma.agentCorrection.count({
-          where: { tenant_id: tenantId, agent_id: agentId },
-        }),
-        this.prisma.agentSkill.count({
-          where: { tenant_id: tenantId, agent_id: agentId, status: 'active' },
-        }),
-      ]);
+      const since24h = new Date(now.getTime() - 24 * 3_600_000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 3_600_000);
+
+      const [totalConvs, monthConvs, corrections, skills, handoffs, activeConvs, recentConvs, modeDist] =
+        await Promise.all([
+          this.prisma.botConversation.count({ where: botWhere }),
+          this.prisma.botConversation.count({ where: { ...botWhere, created_at: { gte: monthStart } } }),
+          this.prisma.agentCorrection.count({ where: { tenant_id: tenantId, agent_id: agentId } }),
+          this.prisma.agentSkill.count({ where: { tenant_id: tenantId, agent_id: agentId, status: 'active' } }),
+          this.prisma.botConversation.count({ where: { ...botWhere, mode: { not: 'AI' } } }),
+          this.prisma.botConversation.count({ where: { ...botWhere, last_message_at: { gte: since24h } } }),
+          this.prisma.botConversation.findMany({
+            where: { ...botWhere, created_at: { gte: thirtyDaysAgo } },
+            select: { created_at: true },
+            orderBy: { created_at: 'asc' },
+          }),
+          this.prisma.botConversation.groupBy({ by: ['mode'], where: botWhere, _count: true }),
+        ]);
+
+      const dayMap: Record<string, number> = {};
+      for (const conv of recentConvs) {
+        const day = conv.created_at.toISOString().split('T')[0];
+        dayMap[day] = (dayMap[day] ?? 0) + 1;
+      }
+      const volume30: { date: string; count: number }[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 3_600_000);
+        const key = d.toISOString().split('T')[0];
+        volume30.push({ date: key, count: dayMap[key] ?? 0 });
+      }
+
       return {
         total_conversations: totalConvs,
         conversations_this_month: monthConvs,
         corrections_total: corrections,
         active_skills: skills,
         agent_role: slot.agent_role,
+        handoffs_total: handoffs,
+        active_conversations: activeConvs,
+        volume_30_days: volume30,
+        mode_distribution: modeDist.map(m => ({ mode: m.mode, count: m._count })),
       };
     }
 
@@ -114,11 +143,10 @@ export class AgentPanelService {
       const instanceName = cfg.instance_name as string | undefined;
       const botWhere = { tenant_id: tenantId, ...(instanceName ? { instance_name: instanceName } : {}) };
 
-      // BotConversation: id, phone, contact_name, mode, instance_name, last_message_at, created_at, updated_at
       const [items, total] = await Promise.all([
         this.prisma.botConversation.findMany({
           where: botWhere,
-          orderBy: { created_at: 'desc' },
+          orderBy: { last_message_at: 'desc' },
           skip,
           take: limit,
           select: {
@@ -130,11 +158,16 @@ export class AgentPanelService {
             last_message_at: true,
             created_at: true,
             updated_at: true,
+            _count: { select: { messages: true } },
           },
         }),
         this.prisma.botConversation.count({ where: botWhere }),
       ]);
-      return { items, total, page, limit };
+      const mapped = items.map((item) => {
+        const { _count, ...rest } = item as any;
+        return { ...rest, messages_count: _count?.messages ?? 0 };
+      });
+      return { items: mapped, total, page, limit };
     }
 
     const [items, total] = await Promise.all([
@@ -180,7 +213,12 @@ export class AgentPanelService {
   async createSkill(tenantId: string, agentId: string, dto: CreateSkillDto) {
     await this.ensureAgent(tenantId, agentId);
     return this.prisma.agentSkill.create({
-      data: { tenant_id: tenantId, agent_id: agentId, ...dto },
+      data: {
+        tenant_id: tenantId,
+        agent_id: agentId,
+        ...dto,
+        response_instructions: dto.response_instructions ?? '',
+      },
     });
   }
 
@@ -413,6 +451,214 @@ export class AgentPanelService {
         timestamp: true,
       },
     });
+  }
+
+  async testMessage(tenantId: string, agentId: string, dto: TestMessageDto) {
+    const slot = await this.prisma.teamSlot.findFirst({
+      where: { id: agentId, tenant_id: tenantId, type: 'AI_AGENT' },
+      select: { name: true, agent_config: true },
+    });
+    if (!slot) throw new NotFoundException('Agente no encontrado');
+
+    const cfg = (slot.agent_config as Record<string, unknown>) ?? {};
+    const model = (cfg.model as string) || 'openai/gpt-4o-mini';
+    const agentName = (cfg.nombre as string) || slot.name || 'Asistente';
+    const instructions = cfg.instructions as string | undefined;
+    const pitch = cfg.pitch as string | undefined;
+    const questions = Array.isArray(cfg.qualifying_questions)
+      ? (cfg.qualifying_questions as string[])
+      : [];
+
+    const systemPrompt = instructions?.trim()
+      ? instructions
+      : [
+          `Eres ${agentName}, un asistente de ventas.`,
+          pitch ? `\nAcerca de la empresa: ${pitch}` : '',
+          questions.length
+            ? `\nPreguntas de calificación (hazlas en orden):\n${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new BadRequestException('Clave de API de IA no configurada en el servidor');
+
+    const baseUrl = process.env.OPENROUTER_API_KEY
+      ? 'https://openrouter.ai/api/v1'
+      : 'https://api.openai.com/v1';
+
+    const history = (dto.history ?? []).slice(-20).map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://app.flowdesk.mx',
+        'X-Title': 'FlowDesk Agent Test',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...history,
+          { role: 'user', content: dto.message },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new BadRequestException(`Error del modelo IA: ${txt.slice(0, 150)}`);
+    }
+
+    const data = (await res.json()) as any;
+    const response = data.choices?.[0]?.message?.content ?? '(Sin respuesta)';
+    return { response };
+  }
+
+  // ── Catálogo de casos ──────────────────────────────────────────────────────
+
+  async getCases(tenantId: string, agentId: string, search?: string) {
+    await this.ensureAgent(tenantId, agentId);
+    const where: any = { tenant_id: tenantId, agent_id: agentId };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { linea: { contains: search, mode: 'insensitive' } },
+        { area: { contains: search, mode: 'insensitive' } },
+        { content: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    return this.prisma.agentCase.findMany({ where, orderBy: { created_at: 'asc' } });
+  }
+
+  async createCase(tenantId: string, agentId: string, dto: CreateCaseDto) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentCase.create({
+      data: { tenant_id: tenantId, agent_id: agentId, ...dto },
+    });
+  }
+
+  async updateCase(tenantId: string, agentId: string, caseId: string, dto: UpdateCaseDto) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentCase.update({
+      where: { id: caseId },
+      data: dto,
+    });
+  }
+
+  async deleteCase(tenantId: string, agentId: string, caseId: string) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentCase.delete({ where: { id: caseId } });
+  }
+
+  async searchCase(tenantId: string, agentId: string, query: string) {
+    const cases = await this.getCases(tenantId, agentId, query);
+    if (cases.length === 0) return { matched: null, all: [] };
+    const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY;
+    if (!apiKey) return { matched: cases[0], all: cases };
+    const caseList = cases.map((c, i) => `${i + 1}. [${c.name}] ${c.content.slice(0, 200)}`).join('\n');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'google/gemini-flash-1.5',
+        messages: [
+          { role: 'system', content: 'Eres un asistente que identifica el caso más relevante dado un mensaje. Responde solo con el número del caso (1, 2, 3...) o "ninguno".' },
+          { role: 'user', content: `Mensaje: "${query}"\n\nCasos disponibles:\n${caseList}` },
+        ],
+        max_tokens: 10,
+      }),
+    });
+    const data = (await res.json()) as any;
+    const idx = parseInt(data.choices?.[0]?.message?.content?.trim() ?? '0', 10) - 1;
+    return { matched: cases[idx] ?? cases[0], all: cases };
+  }
+
+  // ── Clasificaciones ────────────────────────────────────────────────────────
+
+  async getClassifications(tenantId: string, agentId: string, page = 1, limit = 20, source?: string, resolution?: string, feedback?: string) {
+    await this.ensureAgent(tenantId, agentId);
+    const where: any = { tenant_id: tenantId, agent_id: agentId };
+    if (source && source !== 'all') where.source = source;
+    if (resolution && resolution !== 'all') where.resolution = resolution;
+    if (feedback && feedback !== 'all') where.feedback = feedback;
+    const [items, total] = await Promise.all([
+      this.prisma.agentClassification.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.agentClassification.count({ where }),
+    ]);
+    return { items, total, page, limit };
+  }
+
+  async createClassification(tenantId: string, agentId: string, dto: CreateClassificationDto) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentClassification.create({
+      data: { tenant_id: tenantId, agent_id: agentId, ...dto },
+    });
+  }
+
+  async updateClassificationFeedback(tenantId: string, agentId: string, id: string, feedback: string) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentClassification.update({ where: { id }, data: { feedback } });
+  }
+
+  // ── Entregables ─────────────────────────────────────────────────────────────
+
+  async getDeliverables(tenantId: string, agentId: string) {
+    return this.prisma.agentDeliverable.findMany({
+      where: { tenant_id: tenantId, agent_id: agentId },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  async createDeliverable(tenantId: string, agentId: string, dto: CreateDeliverableDto) {
+    await this.ensureAgent(tenantId, agentId);
+    return this.prisma.agentDeliverable.create({
+      data: { tenant_id: tenantId, agent_id: agentId, ...dto },
+    });
+  }
+
+  async updateDeliverable(tenantId: string, agentId: string, deliverableId: string, dto: UpdateDeliverableDto) {
+    const del = await this.prisma.agentDeliverable.findFirst({
+      where: { id: deliverableId, agent_id: agentId, tenant_id: tenantId },
+    });
+    if (!del) throw new NotFoundException('Entregable no encontrado');
+    return this.prisma.agentDeliverable.update({ where: { id: deliverableId }, data: dto });
+  }
+
+  async deleteDeliverable(tenantId: string, agentId: string, deliverableId: string) {
+    const del = await this.prisma.agentDeliverable.findFirst({
+      where: { id: deliverableId, agent_id: agentId, tenant_id: tenantId },
+    });
+    if (!del) throw new NotFoundException('Entregable no encontrado');
+    return this.prisma.agentDeliverable.delete({ where: { id: deliverableId } });
+  }
+
+  async getDeliverableResponses(tenantId: string, agentId: string, deliverableId: string) {
+    return this.prisma.deliverableResponse.findMany({
+      where: { tenant_id: tenantId, agent_id: agentId, deliverable_id: deliverableId },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+    });
+  }
+
+  async getDeliverableResponseByToken(token: string) {
+    const response = await this.prisma.deliverableResponse.findUnique({
+      where: { token },
+      include: { deliverable: { select: { name: true, description: true, sections: true } } },
+    });
+    if (!response) throw new NotFoundException('Entregable no encontrado');
+    return response;
   }
 
   private async ensureAgent(tenantId: string, agentId: string) {

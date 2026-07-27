@@ -77,18 +77,62 @@ export class EvolutionAdapter {
     return res.json();
   }
 
+  // Enviar mensaje con botones interactivos de WhatsApp
+  async sendButtons(instanceName: string, to: string, opts: {
+    description: string;
+    footer?: string;
+    buttons: { id: string; text: string }[];
+  }): Promise<void> {
+    const number = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const url = `${this.baseUrl}/message/sendButtons/${instanceName}`;
+    const body = {
+      number,
+      buttonMessage: {
+        description: opts.description,
+        footer: opts.footer ?? '',
+        buttons: opts.buttons.map(b => ({
+          buttonId: b.id,
+          buttonText: { displayText: b.text },
+          type: 1,
+        })),
+      },
+    };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      // Fallback: send as plain text with options listed
+      const text = `${opts.description}\n\n${opts.buttons.map(b => `▸ ${b.text}`).join('\n')}`;
+      await this.sendText(instanceName, to, text);
+    }
+  }
+
   // Procesar webhook de Evolution API
   processWebhook(payload: any): {
     type: 'message' | 'status' | 'other';
     from?: string;
     content?: string;
+    buttonId?: string;
     instance?: string;
   } {
     if (payload.event === 'messages.upsert' && payload.data?.key?.fromMe === false) {
+      const msg = payload.data.message ?? {};
+      // Respuesta a botón interactivo
+      const buttonResponse = msg.buttonsResponseMessage?.selectedButtonId
+        ?? msg.listResponseMessage?.singleSelectReply?.selectedRowId;
+      const buttonText = msg.buttonsResponseMessage?.selectedDisplayText;
+      // Texto normal
+      const content = buttonText
+        ?? msg.conversation
+        ?? msg.extendedTextMessage?.text
+        ?? (buttonResponse ? `[btn:${buttonResponse}]` : undefined);
       return {
         type: 'message',
         from: payload.data.key.remoteJid?.replace('@s.whatsapp.net', ''),
-        content: payload.data.message?.conversation ?? payload.data.message?.extendedTextMessage?.text,
+        content,
+        buttonId: buttonResponse,
         instance: payload.instance,
       };
     }

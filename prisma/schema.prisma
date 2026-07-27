@@ -104,6 +104,14 @@ model Tenant {
   office_branches        OfficeBranch[]
   agent_skills           AgentSkill[]
   agent_corrections      AgentCorrection[]
+  agent_cases            AgentCase[]
+  agent_classifications  AgentClassification[]
+  agent_deliverables     AgentDeliverable[]
+  deliverable_responses  DeliverableResponse[]
+  requirements           Requirement[]
+  business_rules         BusinessRule[]
+  excel_uploads          ExcelUpload[]
+  intake_tokens          IntakeToken[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -257,6 +265,12 @@ model TeamSlot {
   erp_feedbacks            ErpFeedback[]
   agent_skills             AgentSkill[]
   agent_corrections        AgentCorrection[]
+  agent_cases              AgentCase[]
+  agent_classifications    AgentClassification[]
+  agent_deliverables       AgentDeliverable[]
+  deliverable_responses    DeliverableResponse[]
+  requirements_as_pm       Requirement[]        @relation("ReqPm")
+  requirement_history      RequirementHistory[]
 
   @@index([tenant_id, type])
   @@index([tenant_id, status])
@@ -2528,6 +2542,8 @@ model AgentSkill {
   trigger_condition     String
   response_instructions String   @db.Text
   example_conversation  String?  @db.Text
+  action_type           String   @default("text")
+  action_config         Json?
   status                String   @default("active")
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
@@ -2565,4 +2581,336 @@ model AvailableModel {
   updated_at    DateTime  @updatedAt
 
   @@index([active])
+}
+
+model AgentCase {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  tenant      Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id    String
+  agent       TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  name        String
+  linea       String?
+  area        String?
+  content     String   @db.Text
+  disposition String   @default("reply")
+  status      String   @default("active")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([tenant_id, agent_id])
+  @@map("agent_cases")
+}
+
+model AgentClassification {
+  id              String   @id @default(cuid())
+  tenant_id       String
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id        String
+  agent           TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  conversation_id String?
+  message_id      String?
+  source          String   @default("live")
+  message_text    String?  @db.Text
+  resolution      String   @default("reply")
+  caso            String?
+  feedback        String?
+  created_at      DateTime @default(now())
+
+  @@index([tenant_id, agent_id])
+  @@map("agent_classifications")
+}
+
+// Entregables configurables (micro-diagnósticos, reportes, propuestas, etc.)
+model AgentDeliverable {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  tenant      Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  agent_id    String
+  agent       TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  name        String
+  description String   @db.Text
+  offer_text  String   @db.Text  // Texto que el agente usa al ofrecer el entregable
+  questions   Json     // [{field: string, question: string, order: number}]
+  sections    Json     // [{title: string, prompt: string}] — secciones que LLM rellena
+  status      String   @default("active")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  responses   DeliverableResponse[]
+
+  @@index([tenant_id, agent_id])
+  @@map("agent_deliverables")
+}
+
+// Respuestas generadas de un entregable (una por conversación/prospecto)
+model DeliverableResponse {
+  id              String   @id @default(cuid())
+  token           String   @unique
+  tenant_id       String
+  tenant          Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  deliverable_id  String
+  deliverable     AgentDeliverable @relation(fields: [deliverable_id], references: [id], onDelete: Cascade)
+  agent_id        String
+  agent           TeamSlot @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  conversation_id String?
+  prospect_name   String?
+  answers         Json     // { field: value }
+  content         Json?    // { section_title: generated_text }
+  created_at      DateTime @default(now())
+
+  @@index([tenant_id, deliverable_id])
+  @@map("deliverable_responses")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROYECTOS SOC — Sistema de gestión de requerimientos de software
+// ISO/IEC 20000 — Mejoras · Nuevos desarrollos · Correcciones
+// ═══════════════════════════════════════════════════════════════════
+
+enum PrDocType {
+  MEJORA
+  NUEVO_DESARROLLO
+  CORRECCION
+  MANTENIMIENTO
+}
+
+enum PrStatus {
+  BORRADOR
+  EN_REVISION
+  APROBADO
+  EN_DESARROLLO
+  EN_PRUEBAS
+  LISTO
+  CANCELADO
+}
+
+enum PrIntakeSource {
+  FORMULARIO
+  EXCEL_AREA
+  DIAGNOSTICO
+}
+
+enum PrExcelStatus {
+  PENDIENTE_SUBIDA
+  SUBIDO
+  ANALIZANDO
+  ANALIZADO
+  CUESTIONARIO_GENERADO
+  RESPONDIDO
+  REQUERIMIENTO_GENERADO
+}
+
+enum PrRuleCategory {
+  REGLA_NEGOCIO
+  POLITICA_OPERATIVA
+  CALCULO
+  VALIDACION_DATOS
+  RESTRICCION_SISTEMA
+  CUMPLIMIENTO
+  OTRO
+}
+
+enum PrRuleSource {
+  MANUAL
+  ARCHIVO_IMPORTADO
+}
+
+// Requerimiento de software (documento ISO/IEC 20000)
+model Requirement {
+  id          String    @id @default(cuid())
+  folio       String    // REQ-SOC-2026-0001
+  tenant_id   String
+  tenant      Tenant    @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  pm_slot_id  String?
+  pm_slot     TeamSlot? @relation("ReqPm", fields: [pm_slot_id], references: [id])
+
+  doc_type       PrDocType      @default(MEJORA)
+  doc_version    String         @default("1.0")
+  intake_source  PrIntakeSource @default(FORMULARIO)
+  status         PrStatus       @default(BORRADOR)
+
+  // Link al Excel que originó este requerimiento (solo intake EXCEL_AREA)
+  excel_upload_id String?      @unique
+  excel_upload    ExcelUpload? @relation(fields: [excel_upload_id], references: [id])
+
+  // Sección 1 — Introducción
+  title             String
+  current_situation String? @db.Text
+  problem_statement String? @db.Text
+
+  // Sección 3 — Objetivo
+  objective String? @db.Text
+
+  // Sección 4 — Políticas y reglas de negocio
+  business_policies String? @db.Text
+
+  // Sección 5 — Sistemas relacionados
+  related_systems String? @db.Text
+
+  // Sección 6 — Datos: SISEC (JSON Sprint 1, migrar a SisecIntegration en Sprint 2)
+  sisec_integrations Json? // [{data_name, direction, sync_frequency, endpoint_hint, fields, fallback_behavior}]
+  event_triggers     Json? // [{action, target_field, new_value, condition}]
+  libreta_notes      String? @db.Text // campos que llena el asesor en su trabajo diario
+
+  // Sección 7 — Compromisos y fechas
+  committed_dates String? @db.Text
+
+  // Alcance técnico
+  scope        String? @db.Text
+  out_of_scope String? @db.Text
+  assumptions  String? @db.Text
+  constraints  String? @db.Text
+
+  // Sección 2 — Responsables
+  requested_by         String?
+  requested_by_email   String?
+  responsible_systems  String?
+  responsible_business String?
+
+  // Planeación
+  estimated_effort_days Int?
+  estimated_duration    String?
+  start_date            DateTime?
+  due_date              DateTime?
+
+  // Documento HTML generado por IA (R-ISO)
+  ai_generated_doc Json? // { json: {...}, html: "<html>..." }
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  history     RequirementHistory[]
+  sisec_items SisecIntegration[]
+
+  @@index([tenant_id])
+  @@index([tenant_id, status])
+  @@map("requirements")
+}
+
+// Base de conocimiento de reglas de negocio — usada por el agente IA para generar documentos
+model BusinessRule {
+  id        String @id @default(cuid())
+  tenant_id String
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  name             String
+  description      String         @db.Text
+  category         PrRuleCategory @default(REGLA_NEGOCIO)
+  affected_areas   Json?          // string[]
+  related_systems  Json?          // string[]
+  original_text    String?        @db.Text
+  source_file_name String?
+  source           PrRuleSource   @default(MANUAL)
+  is_active        Boolean        @default(true)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([tenant_id])
+  @@index([tenant_id, is_active])
+  @@map("business_rules")
+}
+
+// Subida de Excel por área (vía link tokenizado)
+model ExcelUpload {
+  id        String @id @default(cuid())
+  token     String @unique @default(cuid()) // token para el link público /area/[token]
+  tenant_id String
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  area_name      String
+  area_email     String
+  file_name      String?
+  raw_content    String?       @db.Text
+  column_map     Json?         // { "NombreColumna": "SISEC_FUENTE|EVENTO|CAPTURA_MANUAL|CALCULADO|CONFIRMAR" }
+  analysis_notes String?       @db.Text
+  status         PrExcelStatus @default(PENDIENTE_SUBIDA)
+
+  uploaded_at DateTime?
+  analyzed_at DateTime?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  requirement   Requirement?       // back-relation — FK está en Requirement
+  questionnaire AreaQuestionnaire?
+  intake_tokens IntakeToken[]
+
+  @@index([tenant_id])
+  @@index([token])
+  @@map("excel_uploads")
+}
+
+// Token para que un área suba su Excel sin necesidad de login
+model IntakeToken {
+  id        String @id @default(cuid())
+  token     String @unique @default(cuid())
+  tenant_id String
+  tenant    Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  area_name       String
+  area_email      String
+  excel_upload_id String?
+  excel_upload    ExcelUpload? @relation(fields: [excel_upload_id], references: [id])
+
+  is_used    Boolean  @default(false)
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([token])
+  @@index([tenant_id])
+  @@map("intake_tokens")
+}
+
+// Cuestionario generado por IA a partir del análisis del Excel
+model AreaQuestionnaire {
+  id              String      @id @default(cuid())
+  excel_upload_id String      @unique
+  excel_upload    ExcelUpload @relation(fields: [excel_upload_id], references: [id], onDelete: Cascade)
+
+  qa_document  String  @db.Text // { questions, screens, assumptions } (JSON)
+  area_answers Json?            // { question_answers, screen_reviews, assumption_reviews }
+  status       String  @default("PENDIENTE") // PENDIENTE | EN_REVISION | APROBADO
+
+  generated_at DateTime  @default(now())
+  answered_at  DateTime?
+
+  @@map("area_questionnaires")
+}
+
+// Especificación de integración SISEC por campo (Sprint 2 — el Sprint 1 usa JSON en Requirement)
+model SisecIntegration {
+  id             String      @id @default(cuid())
+  requirement_id String
+  requirement    Requirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+
+  data_name         String
+  direction         String  // READ | WRITE | BIDIRECTIONAL
+  sync_frequency    String  // REALTIME | DAILY | ON_DEMAND | ON_ACTION
+  endpoint_hint     String?
+  fields            Json?   // [{name, type, description}]
+  is_editable       Boolean @default(false)
+  fallback_behavior String?
+
+  created_at DateTime @default(now())
+
+  @@index([requirement_id])
+  @@map("sisec_integrations")
+}
+
+// Historial de cambios de estado de un requerimiento
+model RequirementHistory {
+  id             String      @id @default(cuid())
+  requirement_id String
+  requirement    Requirement @relation(fields: [requirement_id], references: [id], onDelete: Cascade)
+  slot_id        String?
+  slot           TeamSlot?   @relation(fields: [slot_id], references: [id])
+
+  action     String  // created | status_changed | ai_generated | edited | doc_exported
+  from_value String?
+  to_value   String?
+  notes      String?
+  created_at DateTime @default(now())
+
+  @@index([requirement_id])
+  @@map("requirement_history")
 }

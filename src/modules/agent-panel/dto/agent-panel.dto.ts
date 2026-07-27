@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsObject } from 'class-validator';
 
 export class CreateSkillDto {
   @IsString()
@@ -7,12 +7,21 @@ export class CreateSkillDto {
   @IsString()
   trigger_condition: string;
 
+  @IsOptional()
   @IsString()
-  response_instructions: string;
+  response_instructions?: string;
 
   @IsOptional()
   @IsString()
   example_conversation?: string;
+
+  @IsOptional()
+  @IsString()
+  action_type?: string;
+
+  @IsOptional()
+  @IsObject()
+  action_config?: Record<string, string>;
 
   @IsOptional()
   @IsString()
@@ -35,6 +44,14 @@ export class UpdateSkillDto {
   @IsOptional()
   @IsString()
   example_conversation?: string;
+
+  @IsOptional()
+  @IsString()
+  action_type?: string;
+
+  @IsOptional()
+  @IsObject()
+  action_config?: Record<string, string>;
 
   @IsOptional()
   @IsString()
@@ -149,4 +166,144 @@ export class UpdateAgentConfigDto {
   @IsOptional()
   @IsString()
   deliverable_description?: string;
+}
+
+export class TestMessageDto {
+  @IsString()
+  message: string;
+
+  @IsOptional()
+  @IsArray()
+  history?: { role: string; content: string }[];
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
+export class CreateCaseDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  linea?: string;
+
+  @IsOptional()
+  @IsString()
+  area?: string;
+
+  @IsString()
+  content: string;
+
+  @IsOptional()
+  @IsString()
+  disposition?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class UpdateCaseDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  linea?: string;
+
+  @IsOptional()
+  @IsString()
+  area?: string;
+
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsString()
+  disposition?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class CreateClassificationDto {
+  @IsOptional()
+  @IsString()
+  conversation_id?: string;
+
+  @IsOptional()
+  @IsString()
+  message_id?: string;
+
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  @IsOptional()
+  @IsString()
+  message_text?: string;
+
+  @IsOptional()
+  @IsString()
+  resolution?: string;
+
+  @IsOptional()
+  @IsString()
+  caso?: string;
+
+  @IsOptional()
+  @IsString()
+  feedback?: string;
+}
+
+export class CreateDeliverableDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  description: string;
+
+  @IsString()
+  offer_text: string;
+
+  @IsArray()
+  questions: { field: string; question: string; order: number }[];
+
+  @IsArray()
+  sections: { title: string; prompt: string }[];
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class UpdateDeliverableDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  offer_text?: string;
+
+  @IsOptional()
+  @IsArray()
+  questions?: { field: string; question: string; order: number }[];
+
+  @IsOptional()
+  @IsArray()
+  sections?: { title: string; prompt: string }[];
+
+  @IsOptional()
+  @IsString()
+  status?: string;
 }
