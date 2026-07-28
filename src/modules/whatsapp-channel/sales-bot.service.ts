@@ -764,7 +764,9 @@ ${seguimientoSection}
           lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Espera respuesta libre.`);
         }
       } else if (node.type === 'entregable') {
-        lines.push(`${indent}[${node.label}] — Llama a generarMicroDiagnostico() con las respuestas recopiladas. Cuando obtengas el link, envíaselo al prospecto.`);
+        lines.push(`${indent}[${node.label}] — Llama a ofrecerEntregable({ deliverable_id: "${node.deliverable_id ?? ''}" }) para ofrecer el diagnóstico al prospecto. Cuando acepte, recopila sus respuestas con completarEntregable() y envíale el link.`);
+      } else if (node.type === 'agendar') {
+        lines.push(`${indent}[${node.label}] — Califica con calificar(). Si score ≥ 7, llama a agendar() con la URL de Cal.com configurada. Si no califica, cierra con calidez.`);
       }
     }
     return lines.join('\n');
