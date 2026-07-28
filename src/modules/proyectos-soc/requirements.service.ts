@@ -80,6 +80,13 @@ export class RequirementsService {
   }
 
   async createFromIntake(tenantId: string, slotId: string | null, uploadId: string) {
+    // Idempotente: si ya existe un requirement para este upload, devolverlo
+    const existing = await this.prisma.requirement.findFirst({
+      where: { excel_upload_id: uploadId },
+      select: { id: true, folio: true },
+    });
+    if (existing) return existing;
+
     const upload = await this.prisma.excelUpload.findFirst({
       where: { id: uploadId, tenant_id: tenantId },
       include: { questionnaire: true },
