@@ -178,13 +178,36 @@ export class RequirementsService {
       });
       if (excelData) {
         const colMap = excelData.column_map ?? {};
-        const answers = excelData.questionnaire?.area_answers ?? {};
+        const rawAnswers = (excelData.questionnaire?.area_answers ?? {}) as Record<string, any>;
+
+        // Parsear qa_document para cruzar preguntas con respuestas
+        let qaDoc: any = {};
+        try { qaDoc = JSON.parse(excelData.questionnaire?.qa_document ?? '{}'); } catch { /* ignore */ }
+        const questions: any[] = qaDoc.questions ?? [];
+        const assumptions: any[] = qaDoc.assumptions ?? [];
+
+        const qaLines: string[] = [];
+        const qaAnswers = rawAnswers.question_answers ?? rawAnswers; // soporta ambos formatos
+        for (const [k, v] of Object.entries(qaAnswers)) {
+          if (k === 'screen_reviews' || k === 'assumption_reviews') continue;
+          const q = questions.find((q: any) => q.id === k);
+          const label = q?.question ?? k;
+          if (v && String(v).trim()) qaLines.push(`  P: ${label}\n  R: ${String(v).trim()}`);
+        }
+
+        const assumptionLines = assumptions.map((a: any) => `  - ${a.text}`).join('\n');
+        const rawExcel = excelData.raw_content?.slice(0, 3000) ?? '';
+
         excelContext = `\n\nEXCEL DEL ÁREA:
 Área: ${excelData.area_name}
 Columnas clasificadas:
-${Object.entries(colMap).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
-Respuestas del área:
-${Object.entries(answers).map(([k, v]) => `  ${k}: ${v}`).join('\n') || '  (sin respuestas aún)'}
+${Object.entries(colMap).map(([k, v]) => `  ${k}: ${v}`).join('\n') || '  (sin columnas)'}
+Respuestas del área al cuestionario de análisis:
+${qaLines.join('\n\n') || '  (sin respuestas)'}
+Supuestos del agente de análisis:
+${assumptionLines || '  (ninguno)'}
+Contenido del proceso (de la solicitud original):
+${rawExcel}
 Notas del análisis: ${excelData.analysis_notes?.slice(0, 600) ?? '(ninguna)'}`;
       }
     }
