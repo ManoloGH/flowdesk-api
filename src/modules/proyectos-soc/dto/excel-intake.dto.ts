@@ -1,9 +1,9 @@
-import { IsString, IsEmail, IsOptional, IsDateString, IsObject } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsDateString, IsObject, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateIntakeTokenDto {
   @ApiProperty() @IsString() area_name: string;
-  @ApiPropertyOptional() @IsOptional() @IsEmail() area_email?: string;
+  @ApiPropertyOptional() @ValidateIf((o) => !!o.area_email) @IsEmail() area_email?: string;
   @ApiPropertyOptional({ description: 'Días de validez del link (default 7)' })
   @IsOptional()
   expires_days?: number;
