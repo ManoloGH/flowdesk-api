@@ -771,6 +771,18 @@ ${seguimientoSection}
   }
 
   private buildLegacyJourneySection(cfg: Record<string, any>): string {
+    // Si el admin configuró etapas con scripts, úsalos
+    const journeyStages = cfg.journey_stages as Array<{ n: number; label: string; desc: string; script: string; crm_stage?: string }> | undefined;
+    if (Array.isArray(journeyStages) && journeyStages.some(s => s.script?.trim())) {
+      return journeyStages
+        .map(s => {
+          const crmNote = s.crm_stage ? ` [CRM → ${s.crm_stage}]` : '';
+          return `${s.n}. [${s.label}]${crmNote} — ${s.desc}${s.script ? `\n   ${s.script}` : ''}`;
+        })
+        .join('\n');
+    }
+
+    // Fallback legacy
     const preguntas = (cfg.preguntas_calificacion ?? cfg.preguntas_microdiagnostico ?? []) as any[];
     const preguntasList = preguntas.length
       ? preguntas.map((p: any, i: number) => `  ${i + 1}. ${typeof p === 'string' ? p : p.text ?? p}`).join('\n')
