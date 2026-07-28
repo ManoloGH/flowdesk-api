@@ -300,9 +300,10 @@ Genera 2 pantallas clave. Responde SOLO con JSON válido:
       Object.values(screenReviews).every((r: any) => r?.status === 'approved');
     const qaStatus = allApproved ? 'APROBADO' : 'EN_REVISION';
 
-    await this.prisma.areaQuestionnaire.update({
+    await this.prisma.areaQuestionnaire.upsert({
       where: { excel_upload_id: uploadId },
-      data: { area_answers: dto.area_answers, answered_at: new Date(), status: qaStatus },
+      create: { excel_upload_id: uploadId, qa_document: '{}', area_answers: dto.area_answers as any, answered_at: new Date(), status: qaStatus },
+      update: { area_answers: dto.area_answers as any, answered_at: new Date(), status: qaStatus },
     });
 
     await this.prisma.excelUpload.update({ where: { id: uploadId }, data: { status: 'RESPONDIDO' } });
