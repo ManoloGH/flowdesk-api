@@ -22,7 +22,7 @@ export class ExcelIntakeService {
       data: {
         tenant_id: tenantId,
         area_name: dto.area_name,
-        area_email: dto.area_email,
+        area_email: dto.area_email ?? '',
         status: 'PENDIENTE_SUBIDA',
       },
     });
@@ -31,7 +31,7 @@ export class ExcelIntakeService {
       data: {
         tenant_id: tenantId,
         area_name: dto.area_name,
-        area_email: dto.area_email,
+        area_email: dto.area_email ?? '',
         excel_upload_id: upload.id,
         expires_at: expiresAt,
       },
