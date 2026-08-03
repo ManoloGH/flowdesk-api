@@ -20,7 +20,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .doc-title{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.02em;}
 .doc-sub{font-size:11px;color:rgba(255,255,255,.55);margin-top:3px;}
 .cmp{background:#0C1828;display:flex;overflow-x:auto;border-bottom:1px solid #1E2840;}
-.cmp-col{flex:1;padding:14px 20px;border-right:1px solid #1E2840;min-width:180px;}
+.cmp-col{flex:1;padding:14px 20px;border-right:1px solid #1E2840;min-width:170px;}
 .cmp-col:last-child{border-right:none;}
 .cmp-tag{font-size:8px;font-family:monospace;letter-spacing:.15em;text-transform:uppercase;margin-bottom:8px;font-weight:800;}
 .cmp-tag.ai{color:#F87171;}.cmp-tag.f1{color:#C4B5FD;}.cmp-tag.f2{color:#67E8F9;}
@@ -36,8 +36,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .tb.on.f2{color:#A5F3FC;border-bottom-color:#06B6D4;}
 .tp{display:none;padding:20px 0 60px;}
 .tp.on{display:block;}
-.dw{width:100%;}
-svg{display:block;width:100%;height:auto;}
+.dw{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+svg{display:block;width:100%;height:auto;min-width:620px;}
 </style>
 <script>
 function showTab(id,el){
