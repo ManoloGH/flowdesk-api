@@ -65,6 +65,14 @@ export class MentoriaController {
   // ── WEBHOOK: recibe leads del Agente de Prospección ────────────────────────
   // Este endpoint es público (sin JWT) para que el HTML del agente pueda llamarlo
 
+  @Post('webhook/diagnostico')
+  async webhookDiagnostico(@Body() body: { clienteId: string; area: string; datos: any }) {
+    if (!body.clienteId || !body.area || !body.datos) {
+      throw new HttpException('clienteId, area y datos son requeridos', HttpStatus.BAD_REQUEST);
+    }
+    return this.service.saveDiagnosticoPublic(body.clienteId, body.area, body.datos);
+  }
+
   @Post('webhook/lead')
   async recibirLead(@Body() body: any) {
     // El agente de prospección envía: { trigger, lead: { nombre, canal, contacto, empresa, answers, hallazgos, roi } }
@@ -227,6 +235,20 @@ export class MentoriaController {
   }
 
   // ── PROCESAMIENTO AUTOMÁTICO CON IA ─────────────────────────────────────────
+
+  @Patch('clientes/:id/cubo')
+  updateCubo(@Req() req: any, @Param('id') id: string, @Body() body: { cubo: Record<string, string> }) {
+    return this.service.updateCubo(req.user.tenant_id, id, body.cubo);
+  }
+
+  @Post('clientes/:id/enviar-cuestionario')
+  enviarCuestionario(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { nombre: string; cargo?: string; whatsapp?: string; email?: string; tipo: 'gerente' | 'operador'; instanceName?: string },
+  ) {
+    return this.service.enviarCuestionario(req.user.tenant_id, id, body);
+  }
 
   @Post('clientes/:id/procesar')
   async procesarDiagnostico(@Req() req: any, @Param('id') id: string) {

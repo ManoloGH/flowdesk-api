@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { EvolutionAdapter } from '../../integrations/evolution/evolution.adapter';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class MentoriaService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MentoriaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly evolution: EvolutionAdapter,
+    private readonly email: EmailService,
+  ) {}
 
   // ── PROSPECTOS ──────────────────────────────────────────────────────────────
 
@@ -426,5 +434,165 @@ export class MentoriaService {
     const auto = await this.prisma.mentoriaAutomatizacion.findFirst({ where: { id, tenant_id: tenantId } });
     if (!auto) throw new Error('Automatización no encontrada');
     return this.prisma.mentoriaAutomatizacion.delete({ where: { id } });
+  }
+
+  // ── CUBO DE INFORMACIÓN ─────────────────────────────────────────────────────
+
+  async updateCubo(tenantId: string, clienteId: string, cubo: Record<string, string>) {
+    await this.getCliente(tenantId, clienteId);
+    return this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo } });
+  }
+
+  async saveDiagnosticoPublic(clienteId: string, area: string, datos: any) {
+    const cliente = await this.prisma.mentoriaCliente.findUnique({ where: { id: clienteId } });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const existing = await this.prisma.mentoriaDiagnostico.findFirst({ where: { cliente_id: clienteId, area } });
+    if (existing) {
+      await this.prisma.mentoriaDiagnostico.update({ where: { id: existing.id }, data: { datos, procesado: false } });
+    } else {
+      await this.prisma.mentoriaDiagnostico.create({ data: { cliente_id: clienteId, area, datos } });
+    }
+
+    const cuboActual = (cliente.cubo as Record<string, string>) ?? {};
+    const cuboNuevo = this.mergeCuboSection(area, datos, cuboActual, cliente.empresa);
+    await this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo: cuboNuevo } });
+
+    return { ok: true };
+  }
+
+  private mergeCuboSection(area: string, datos: any, cubo: Record<string, string>, empresa: string): Record<string, string> {
+    const next = { ...cubo };
+
+    if (area === 'dg') {
+      const sistemas = Array.isArray(datos.sistemas) ? datos.sistemas.join(', ') : (datos.sistemas ?? '');
+      const directivos = Array.isArray(datos.directivos)
+        ? datos.directivos.map((d: any) => `  • ${d.nombre ?? ''} — ${d.cargo ?? ''} (${d.contacto ?? ''})`).join('\n')
+        : '';
+      next['contexto'] = [
+        `Empresa: ${empresa}`,
+        `Giro: ${datos.dg?.giro ?? ''}`,
+        `Fecha sesión: ${datos.fecha ?? ''}`,
+        `Director General: ${datos.dg?.nombre ?? ''}`,
+        `Ejecutivo MentorIA: ${datos.dg?.ejecutivo_mentoria ?? ''}`,
+        '',
+        `Sistemas IT: ${sistemas}`,
+        '',
+        `Objetivos (12 meses):\n${datos.objetivos ?? ''}`,
+        '',
+        `Principales retos:\n${datos.retos ?? ''}`,
+        '',
+        `KPIs actuales:\n${datos.kpis ?? ''}`,
+        '',
+        `Resultado esperado:\n${datos.resultado ?? ''}`,
+        '',
+        `Resistencias al cambio:\n${datos.resistencia ?? ''}`,
+        '',
+        `Quick wins identificados:\n${datos.quickwins ?? ''}`,
+        directivos ? `\nDirectivos:\n${directivos}` : '',
+      ].filter(Boolean).join('\n').trim();
+    }
+
+    else if (area.startsWith('gerente')) {
+      const seccion = datos.seccion ?? {};
+      const procesos: any[] = Array.isArray(datos.procesos) ? datos.procesos : [];
+      const flujos = datos.flujos ?? {};
+
+      const procesosText = procesos.map((p: any) =>
+        `  • ${p.nombre ?? ''}: ${p.ejecutor ?? ''}, ${p.frecuencia ?? ''}, ` +
+        `Sistema: ${p.sistema ?? ''}, Tiempo: ${p.tiempo ?? ''}` +
+        (p.sop === 'si' ? ' [SOP ✓]' : ' [Sin SOP]')
+      ).join('\n');
+
+      const recibeText = Array.isArray(flujos.recibe_de)
+        ? flujos.recibe_de.map((f: any) => `  ← ${f[0] ?? ''}: ${f[1] ?? ''}`).join('\n') : '';
+      const enviaText = Array.isArray(flujos.envia_a)
+        ? flujos.envia_a.map((f: any) => `  → ${f[0] ?? ''}: ${f[1] ?? ''}`).join('\n') : '';
+
+      const bloqueArea = [
+        `${(seccion.area_label ?? area).toUpperCase()} — ${seccion.gerente ?? ''}`,
+        `Personas a cargo: ${seccion.nprs ?? 0}`,
+        seccion.roles ? `Roles: ${seccion.roles}` : '',
+        seccion.sistemas?.length ? `Sistemas: ${(seccion.sistemas as string[]).join(', ')}` : '',
+        procesos.length ? `\nProcesos:\n${procesosText}` : '',
+        datos.cuellos ? `\nCuellos de botella:\n${datos.cuellos}` : '',
+        datos.errores ? `\nErrores frecuentes:\n${datos.errores}` : '',
+        recibeText ? `\nRecibe de:\n${recibeText}` : '',
+        enviaText ? `\nEnvía a:\n${enviaText}` : '',
+      ].filter(Boolean).join('\n');
+
+      next['areas_procesos'] = ((next['areas_procesos'] ?? '') + '\n\n' + bloqueArea).trim();
+
+      const orgBloque = [
+        `${(seccion.area_label ?? area).toUpperCase()} — ${seccion.gerente ?? ''} (${seccion.nivel ?? ''})`,
+        `  ${seccion.nprs ?? 0} personas a cargo`,
+        seccion.roles ? `  Roles: ${seccion.roles}` : '',
+        `  ⚠️ Pendiente: confirmar sueldos con RRHH`,
+      ].filter(Boolean).join('\n');
+
+      next['organigrama'] = ((next['organigrama'] ?? '') + '\n\n' + orgBloque).trim();
+    }
+
+    else if (area.startsWith('operador')) {
+      const seccion = datos.seccion ?? datos.puesto ?? {};
+      const docs: any[] = Array.isArray(datos.documentos) ? datos.documentos : [];
+      const docsText = docs.map((d: any) =>
+        `  • ${d.nombre ?? ''} (${d.tipo ?? ''}) — creado por: ${d.creador ?? ''}`
+      ).join('\n');
+
+      const bloqueOrg = [
+        `${(seccion.area_label ?? area).toUpperCase()} — ${seccion.puesto ?? ''}`,
+        seccion.sub_depto ? `  Sub-depto: ${seccion.sub_depto}` : '',
+        datos.actividades_dia ? `  Actividades: ${datos.actividades_dia}` : '',
+        datos.herramientas ? `  Herramientas: ${datos.herramientas}` : '',
+        `  ⚠️ Pendiente: sueldo`,
+      ].filter(Boolean).join('\n');
+
+      next['organigrama'] = ((next['organigrama'] ?? '') + '\n' + bloqueOrg).trim();
+
+      if (docs.length) {
+        next['sistemas'] = ((next['sistemas'] ?? '') + `\n\nDOCUMENTOS — ${seccion.area_label ?? area}\n${docsText}`).trim();
+      }
+    }
+
+    return next;
+  }
+
+  // ── ENVÍO DE CUESTIONARIOS ──────────────────────────────────────────────────
+
+  async enviarCuestionario(tenantId: string, clienteId: string, opts: {
+    nombre: string;
+    cargo?: string;
+    whatsapp?: string;
+    email?: string;
+    tipo: 'gerente' | 'operador';
+    instanceName?: string;
+  }) {
+    const cliente = await this.getCliente(tenantId, clienteId);
+    const archivo = opts.tipo === 'gerente' ? 'cuestionario-gerente.html' : 'cuestionario-operador.html';
+    const url = `https://flowdesk.mx/flowdesk/diagnosticos/${archivo}?clienteId=${clienteId}&empresa=${encodeURIComponent(cliente.empresa)}`;
+
+    const mensaje = `Hola ${opts.nombre}, te escribimos de MentorIA Systems.\n\nEstamos realizando el diagnóstico operativo de ${cliente.empresa} y necesitamos tu participación.\n\nPor favor completa el siguiente cuestionario (toma ~10 min):\n${url}\n\nGracias 🙏`;
+
+    if (opts.whatsapp && opts.instanceName) {
+      try {
+        await this.evolution.sendText(opts.instanceName, opts.whatsapp, mensaje);
+        this.logger.log(`Cuestionario enviado por WhatsApp a ${opts.whatsapp}`);
+      } catch (e) {
+        this.logger.warn(`Error WhatsApp a ${opts.whatsapp}: ${(e as any)?.message}`);
+      }
+    }
+
+    if (opts.email) {
+      await this.email.sendCuestionario({
+        to: opts.email,
+        nombre: opts.nombre,
+        empresa: cliente.empresa,
+        tipo: opts.tipo,
+        url,
+      });
+    }
+
+    return { ok: true, url, mensaje };
   }
 }

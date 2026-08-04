@@ -38,6 +38,28 @@ export class EmailService {
     }
   }
 
+  async sendCuestionario(opts: {
+    to: string;
+    nombre: string;
+    empresa: string;
+    tipo: 'gerente' | 'operador';
+    url: string;
+    remitente?: string;
+  }) {
+    if (!this.resend) return;
+    const tipoLabel = opts.tipo === 'gerente' ? 'Gerente / Responsable de área' : 'Colaborador';
+    try {
+      await this.resend.emails.send({
+        from: this.from,
+        to: opts.to,
+        subject: `Cuestionario de diagnóstico — ${opts.empresa}`,
+        html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:sans-serif;background:#0f0f10;color:#e2e8f0;padding:40px 0;margin:0"><div style="max-width:560px;margin:0 auto;background:#1a1a2e;border-radius:16px;overflow:hidden"><div style="background:linear-gradient(135deg,#6c4de6,#3b82f6);padding:32px 40px"><div style="font-size:22px;font-weight:700;color:#fff">MentorIA Systems</div><div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px">Diagnóstico Organizacional</div></div><div style="padding:32px 40px"><p style="margin:0 0 16px;font-size:15px">Hola <strong>${opts.nombre}</strong>,</p><p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.6">Estamos realizando el diagnóstico operativo de <strong style="color:#e2e8f0">${opts.empresa}</strong> y nos gustaría conocer tu perspectiva como <strong style="color:#e2e8f0">${tipoLabel}</strong>.</p><p style="margin:0 0 24px;color:#94a3b8;font-size:14px">El cuestionario toma aproximadamente 10 minutos.</p><a href="${opts.url}" style="display:inline-block;background:linear-gradient(135deg,#6c4de6,#3b82f6);color:#fff;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:600;font-size:14px">Abrir cuestionario →</a><p style="margin:24px 0 0;font-size:12px;color:#475569">Enviado por ${opts.remitente ?? 'MentorIA Systems'} · <a href="${opts.url}" style="color:#6c4de6">${opts.url}</a></p></div></div></body></html>`,
+      });
+    } catch (err: any) {
+      this.logger.error(`Error al enviar cuestionario a ${opts.to}: ${err?.message}`);
+    }
+  }
+
   private welcomeHtml(opts: { to: string; name: string; tempPassword: string; tenantName: string; loginUrl: string }) {
     return `<!DOCTYPE html>
 <html lang="es">

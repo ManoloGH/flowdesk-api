@@ -3,9 +3,10 @@ import { MentoriaController } from './mentoria.controller';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
 import { AiModule } from '../../ai/ai.module';
+import { IntegrationsModule } from '../../integrations/integrations.module';
 
 @Module({
-  imports: [AiModule],
+  imports: [AiModule, IntegrationsModule],
   controllers: [MentoriaController],
   providers: [MentoriaService, MentoriaProcesamientoService],
   exports: [MentoriaService],

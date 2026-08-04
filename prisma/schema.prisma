@@ -1999,6 +1999,7 @@ model MentoriaCliente {
   areas_diagnosticadas String[] @default([])
   precio              Int      @default(0)
   notas               String?
+  cubo                Json?
   fecha_inicio        DateTime @default(now())
   fecha_fin           DateTime?
   created_at          DateTime @default(now())
