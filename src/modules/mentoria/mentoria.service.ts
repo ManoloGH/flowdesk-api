@@ -587,6 +587,10 @@ export class MentoriaService {
 
     const mensaje = `Hola ${opts.nombre}, te escribimos de MentorIA Systems.\n\nEstamos realizando el diagnóstico operativo de ${empresaNombre} y necesitamos tu participación.\n\nPor favor completa el siguiente cuestionario (toma ~10 min):\n${url}\n\nGracias 🙏`;
 
+    let wa_enviado = false;
+    let wa_error: string | null = null;
+    let email_enviado = false;
+
     if (opts.whatsapp) {
       let instanceName = opts.instanceName;
       if (!instanceName) {
@@ -599,25 +603,33 @@ export class MentoriaService {
       if (instanceName) {
         try {
           await this.evolution.sendText(instanceName, opts.whatsapp, mensaje);
+          wa_enviado = true;
           this.logger.log(`Cuestionario enviado por WhatsApp a ${opts.whatsapp}`);
         } catch (e) {
-          this.logger.warn(`Error WhatsApp a ${opts.whatsapp}: ${(e as any)?.message}`);
+          wa_error = (e as any)?.message ?? 'Error al enviar WhatsApp';
+          this.logger.warn(`Error WhatsApp a ${opts.whatsapp}: ${wa_error}`);
         }
       } else {
+        wa_error = 'Sin instancia WhatsApp configurada para este tenant';
         this.logger.warn(`enviarCuestionario: sin instancia Evolution para tenant ${tenantId}`);
       }
     }
 
     if (opts.email) {
-      await this.email.sendCuestionario({
-        to: opts.email,
-        nombre: opts.nombre,
-        empresa: empresaNombre,
-        tipo: opts.tipo,
-        url,
-      });
+      try {
+        await this.email.sendCuestionario({
+          to: opts.email,
+          nombre: opts.nombre,
+          empresa: empresaNombre,
+          tipo: opts.tipo,
+          url,
+        });
+        email_enviado = true;
+      } catch (e) {
+        this.logger.warn(`Error email a ${opts.email}: ${(e as any)?.message}`);
+      }
     }
 
-    return { ok: true, url, mensaje };
+    return { ok: true, url, mensaje, wa_enviado, wa_error, email_enviado };
   }
 }
