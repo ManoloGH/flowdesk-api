@@ -445,18 +445,24 @@ export class MentoriaService {
 
   async saveDiagnosticoPublic(clienteId: string, area: string, datos: any) {
     const cliente = await this.prisma.mentoriaCliente.findUnique({ where: { id: clienteId } });
-    if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    const existing = await this.prisma.mentoriaDiagnostico.findFirst({ where: { cliente_id: clienteId, area } });
-    if (existing) {
-      await this.prisma.mentoriaDiagnostico.update({ where: { id: existing.id }, data: { datos, procesado: false } });
+    if (cliente) {
+      try {
+        const existing = await this.prisma.mentoriaDiagnostico.findFirst({ where: { cliente_id: clienteId, area } });
+        if (existing) {
+          await this.prisma.mentoriaDiagnostico.update({ where: { id: existing.id }, data: { datos, procesado: false } });
+        } else {
+          await this.prisma.mentoriaDiagnostico.create({ data: { cliente_id: clienteId, area, datos } });
+        }
+        const cuboActual = (cliente.cubo as Record<string, string>) ?? {};
+        const cuboNuevo = this.mergeCuboSection(area, datos, cuboActual, cliente.empresa);
+        await this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo: cuboNuevo } });
+      } catch (e) {
+        this.logger.warn(`saveDiagnosticoPublic error para ${clienteId}: ${(e as any)?.message}`);
+      }
     } else {
-      await this.prisma.mentoriaDiagnostico.create({ data: { cliente_id: clienteId, area, datos } });
+      this.logger.warn(`saveDiagnosticoPublic: clienteId ${clienteId} no encontrado, datos descartados`);
     }
-
-    const cuboActual = (cliente.cubo as Record<string, string>) ?? {};
-    const cuboNuevo = this.mergeCuboSection(area, datos, cuboActual, cliente.empresa);
-    await this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo: cuboNuevo } });
 
     return { ok: true };
   }
@@ -567,12 +573,19 @@ export class MentoriaService {
     email?: string;
     tipo: 'gerente' | 'operador';
     instanceName?: string;
+    empresa?: string;
   }) {
-    const cliente = await this.getCliente(tenantId, clienteId);
+    let empresaNombre = opts.empresa ?? '';
+    try {
+      const cliente = await this.getCliente(tenantId, clienteId);
+      empresaNombre = cliente.empresa;
+    } catch {
+      if (!empresaNombre) throw new NotFoundException('Cliente no encontrado y no se proporcionó empresa');
+    }
     const archivo = opts.tipo === 'gerente' ? 'cuestionario-gerente.html' : 'cuestionario-operador.html';
-    const url = `https://flowdesk.mx/flowdesk/diagnosticos/${archivo}?clienteId=${clienteId}&empresa=${encodeURIComponent(cliente.empresa)}`;
+    const url = `https://flowdesk.mx/flowdesk/diagnosticos/${archivo}?clienteId=${clienteId}&empresa=${encodeURIComponent(empresaNombre)}`;
 
-    const mensaje = `Hola ${opts.nombre}, te escribimos de MentorIA Systems.\n\nEstamos realizando el diagnóstico operativo de ${cliente.empresa} y necesitamos tu participación.\n\nPor favor completa el siguiente cuestionario (toma ~10 min):\n${url}\n\nGracias 🙏`;
+    const mensaje = `Hola ${opts.nombre}, te escribimos de MentorIA Systems.\n\nEstamos realizando el diagnóstico operativo de ${empresaNombre} y necesitamos tu participación.\n\nPor favor completa el siguiente cuestionario (toma ~10 min):\n${url}\n\nGracias 🙏`;
 
     if (opts.whatsapp && opts.instanceName) {
       try {
@@ -587,7 +600,7 @@ export class MentoriaService {
       await this.email.sendCuestionario({
         to: opts.email,
         nombre: opts.nombre,
-        empresa: cliente.empresa,
+        empresa: empresaNombre,
         tipo: opts.tipo,
         url,
       });
