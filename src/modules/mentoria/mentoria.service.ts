@@ -587,12 +587,24 @@ export class MentoriaService {
 
     const mensaje = `Hola ${opts.nombre}, te escribimos de MentorIA Systems.\n\nEstamos realizando el diagnóstico operativo de ${empresaNombre} y necesitamos tu participación.\n\nPor favor completa el siguiente cuestionario (toma ~10 min):\n${url}\n\nGracias 🙏`;
 
-    if (opts.whatsapp && opts.instanceName) {
-      try {
-        await this.evolution.sendText(opts.instanceName, opts.whatsapp, mensaje);
-        this.logger.log(`Cuestionario enviado por WhatsApp a ${opts.whatsapp}`);
-      } catch (e) {
-        this.logger.warn(`Error WhatsApp a ${opts.whatsapp}: ${(e as any)?.message}`);
+    if (opts.whatsapp) {
+      let instanceName = opts.instanceName;
+      if (!instanceName) {
+        const cfg = await this.prisma.secretaryConfig.findUnique({
+          where: { tenant_id: tenantId },
+          select: { evolution_instance: true },
+        });
+        instanceName = cfg?.evolution_instance ?? undefined;
+      }
+      if (instanceName) {
+        try {
+          await this.evolution.sendText(instanceName, opts.whatsapp, mensaje);
+          this.logger.log(`Cuestionario enviado por WhatsApp a ${opts.whatsapp}`);
+        } catch (e) {
+          this.logger.warn(`Error WhatsApp a ${opts.whatsapp}: ${(e as any)?.message}`);
+        }
+      } else {
+        this.logger.warn(`enviarCuestionario: sin instancia Evolution para tenant ${tenantId}`);
       }
     }
 
