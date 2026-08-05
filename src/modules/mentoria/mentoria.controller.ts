@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
 
@@ -65,6 +66,7 @@ export class MentoriaController {
   // ── WEBHOOK: recibe leads del Agente de Prospección ────────────────────────
   // Este endpoint es público (sin JWT) para que el HTML del agente pueda llamarlo
 
+  @Public()
   @Post('webhook/diagnostico')
   async webhookDiagnostico(@Body() body: { clienteId: string; area: string; datos: any }) {
     if (!body.clienteId || !body.area || !body.datos) {
@@ -73,6 +75,7 @@ export class MentoriaController {
     return this.service.saveDiagnosticoPublic(body.clienteId, body.area, body.datos);
   }
 
+  @Public()
   @Post('webhook/lead')
   async recibirLead(@Body() body: any) {
     // El agente de prospección envía: { trigger, lead: { nombre, canal, contacto, empresa, answers, hallazgos, roi } }
