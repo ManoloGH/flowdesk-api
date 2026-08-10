@@ -1,13 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, Res, HttpException, HttpStatus } from '@nestjs/common';
+import { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
+import { MentoriaSesionService } from './mentoria-sesion.service';
 
 @Controller('mentoria')
 export class MentoriaController {
   constructor(
     private readonly service: MentoriaService,
     private readonly procesamiento: MentoriaProcesamientoService,
+    private readonly sesion: MentoriaSesionService,
   ) {}
 
   // ── DEBUG (borrar después de verificar) ────────────────────────────────────
@@ -256,6 +259,24 @@ export class MentoriaController {
   @Post('clientes/:id/procesar')
   async procesarDiagnostico(@Req() req: any, @Param('id') id: string) {
     return this.procesamiento.procesarDiagnostico(req.user.tenant_id, id);
+  }
+
+  // ── SESIÓN IA (chat streaming) ───────────────────────────────────────────────
+
+  @Post('clientes/:id/chat')
+  async chatSesion(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; tipo: string },
+    @Res() res: Response,
+  ) {
+    return this.sesion.chatSesion({
+      tenantId: req.user.tenant_id,
+      clienteId: id,
+      messages: body.messages ?? [],
+      tipo: body.tipo ?? 'dg',
+      res,
+    });
   }
 
   // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
