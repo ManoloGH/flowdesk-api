@@ -1,5 +1,4 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, Res, HttpException, HttpStatus } from '@nestjs/common';
-import { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
@@ -268,7 +267,7 @@ export class MentoriaController {
     @Req() req: any,
     @Param('id') id: string,
     @Body() body: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; tipo: string },
-    @Res() res: Response,
+    @Res() res: any,
   ) {
     return this.sesion.chatSesion({
       tenantId: req.user.tenant_id,
