@@ -107,12 +107,16 @@ export class MentoriaSesionService {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'X-Robots-Tag': 'noindex',
     });
+    // Disable Nagle buffering at TCP level
+    res.socket?.setNoDelay(true);
     res.flushHeaders?.();
 
-    // Keep-alive ping every 10s to prevent Railway/proxy from closing idle SSE
-    const keepAlive = setInterval(() => ping(res), 10_000);
+    // Immediate start event so client knows SSE connection is alive before Anthropic call
+    sse(res, { type: 'start' });
+
+    // Keep-alive ping every 15s to prevent Railway/proxy from closing idle SSE
+    const keepAlive = setInterval(() => ping(res), 15_000);
 
     try {
       const cliente = await this.prisma.mentoriaCliente.findFirst({
