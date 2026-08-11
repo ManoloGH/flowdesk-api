@@ -76,6 +76,15 @@ Reglas:
 function sse(res: any, data: object) {
   if (!res.writableEnded) {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+    // Explicit flush required for Railway/Nginx SSE buffering
+    if (typeof res.flush === 'function') res.flush();
+  }
+}
+
+function ping(res: any) {
+  if (!res.writableEnded) {
+    res.write(': ping\n\n');
+    if (typeof res.flush === 'function') res.flush();
   }
 }
 
@@ -98,8 +107,12 @@ export class MentoriaSesionService {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'X-Robots-Tag': 'noindex',
     });
     res.flushHeaders?.();
+
+    // Keep-alive ping every 10s to prevent Railway/proxy from closing idle SSE
+    const keepAlive = setInterval(() => ping(res), 10_000);
 
     try {
       const cliente = await this.prisma.mentoriaCliente.findFirst({
@@ -122,12 +135,14 @@ export class MentoriaSesionService {
       const anthropic = new Anthropic({ apiKey: anthropicKey });
       let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
 
-      // Load existing chat history from DB
-      const existingHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
+      // Load existing chat history from DB, capped to last 20 entries (~10 exchanges)
+      const fullHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
+      const existingHistory = fullHistory;
+      const recentHistory   = fullHistory.slice(-20);
 
-      // Build messages array: stored history + new user message
+      // Build messages array: recent history + new user message
       let currentMessages: Anthropic.MessageParam[] = [
-        ...existingHistory.map(m => ({ role: m.role, content: m.content })),
+        ...recentHistory.map(m => ({ role: m.role, content: m.content })),
         { role: 'user' as const, content: message },
       ];
 
@@ -209,6 +224,7 @@ export class MentoriaSesionService {
       this.logger.error('chatSesion error', e);
       sse(res, { type: 'error', message: (e as any)?.message ?? 'Error inesperado' });
     } finally {
+      clearInterval(keepAlive);
       if (!res.writableEnded) res.end();
     }
   }
