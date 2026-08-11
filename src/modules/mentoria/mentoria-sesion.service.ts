@@ -13,9 +13,9 @@ interface ChatEntry {
 const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
   name: 'actualizar_cubo',
   description:
-    'Guarda o actualiza información extraída de la conversación en una sección del cubo del cliente. ' +
-    'Úsalo cada vez que el usuario comparta datos relevantes sobre la empresa. ' +
-    'Si la sección ya tiene contenido, incluye el contenido previo más la nueva información.',
+    'Guarda o actualiza informacion extraida de la conversacion en una seccion del cubo del cliente. ' +
+    'Usalo cada vez que el usuario comparta datos relevantes sobre la empresa. ' +
+    'Si la seccion ya tiene contenido, incluye el contenido previo mas la nueva informacion.',
   input_schema: {
     type: 'object',
     properties: {
@@ -23,16 +23,16 @@ const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
         type: 'string',
         enum: ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'],
         description:
-          'contexto = empresa, DG, objetivos | areas_procesos = áreas, procesos, problemas | ' +
+          'contexto = empresa, DG, objetivos | areas_procesos = areas, procesos, problemas | ' +
           'organigrama = personas, cargos, sueldos | sistemas = software, herramientas, costos | ' +
           'brechas = gaps, ineficiencias detectadas | agentes = automatizaciones propuestas',
       },
       contenido: {
         type: 'string',
         description:
-          'Texto completo y bien formateado para esa sección. ' +
-          'Usa el formato de la sección (ver placeholders). ' +
-          'Incluye TODO el contenido previo de la sección más la nueva información.',
+          'Texto completo y bien formateado para esa seccion. ' +
+          'Usa el formato de la seccion (ver placeholders). ' +
+          'Incluye TODO el contenido previo de la seccion mas la nueva informacion.',
       },
     },
     required: ['seccion', 'contenido'],
@@ -43,40 +43,44 @@ function buildSystemPrompt(empresa: string, cubo: Record<string, string>): strin
   const cuboState = Object.entries(cubo)
     .filter(([, v]) => v?.trim())
     .map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`)
-    .join('\n') || '(vacío — primera sesión)';
+    .join('\n') || '(vacio - primera sesion)';
 
-  return `Eres el asistente de diagnóstico del asesor de MentorIA Systems. Tu interlocutor es SIEMPRE el asesor, nunca el cliente.
+  return `Eres el asistente de diagnostico del asesor de MentorIA Systems. Tu interlocutor es SIEMPRE el asesor, nunca el cliente.
 
-El asesor conduce las entrevistas con el cliente (empresa: "${empresa}") y te trae la información: puede contarte lo que le dijeron, dictar notas en tiempo real durante una sesión, o pedirte que le sugieras qué preguntar a continuación.
+El asesor conduce las entrevistas con el cliente (empresa: "${empresa}") y te trae la informacion: puede contarte lo que le dijeron, dictar notas en tiempo real durante una sesion, o pedirte que le sugiera que preguntar a continuacion.
 
-Estado actual del cubo de información:
+Estado actual del cubo de informacion:
 ${cuboState}
 
 Tu rol:
-1. DOCUMENTAR — cuando el asesor comparte datos del cliente, usa \`actualizar_cubo\` INMEDIATAMENTE para capturarlos en la sección correcta.
-2. ORIENTAR — detecta qué secciones del cubo están vacías o incompletas y sugiere al asesor qué temas explorar en la próxima sesión.
-3. SUGERIR PREGUNTAS — si el asesor lo pide (o si hay huecos evidentes), propón 2-3 preguntas concretas que podría hacer al cliente.
-4. ANALIZAR — identifica brechas, ineficiencias o oportunidades de automatización a partir de lo que el asesor reporta.
+1. DOCUMENTAR - cuando el asesor comparte datos del cliente, usa la herramienta actualizar_cubo para capturarlos.
+2. ORIENTAR - detecta que secciones del cubo estan vacias o incompletas y sugiere al asesor que temas explorar.
+3. SUGERIR PREGUNTAS - si el asesor lo pide (o si hay huecos evidentes), propone 2-3 preguntas concretas.
+4. ANALIZAR - identifica brechas, ineficiencias o oportunidades de automatizacion.
 
 Cubo que necesitas llenar:
-- contexto: empresa, giro, empleados, facturación, objetivos del DG
-- areas_procesos: áreas, flujos de trabajo, cuellos de botella
+- contexto: empresa, giro, empleados, facturacion, objetivos del DG
+- areas_procesos: areas, flujos de trabajo, cuellos de botella
 - organigrama: personas, cargos, responsabilidades, sueldos
 - sistemas: software, herramientas, costos, integraciones manuales
 - brechas: ineficiencias, tiempo perdido, errores frecuentes
 - agentes: automatizaciones propuestas, procesos candidatos a IA
 
-Reglas:
-- Usa \`actualizar_cubo\` siempre que el asesor comparta información nueva del cliente.
-- Cuando el cubo esté incompleto, al final de tu respuesta menciona brevemente qué falta.
-- Sé conciso y útil: el asesor está en medio de un proceso de consultoría.
-- Responde siempre en español.`;
+REGLA CRITICA - USO DE HERRAMIENTAS:
+- Cuando vayas a usar actualizar_cubo, HAZLO DIRECTAMENTE sin escribir ningun texto previo.
+- Ejecuta TODAS las llamadas a actualizar_cubo que necesites (una por seccion) sin ningun texto entre ellas.
+- SOLO escribe texto DESPUES de haber completado TODAS las actualizaciones del cubo.
+- NUNCA escribas frases como "Dejame guardar esto", "Voy a registrar" o "Excelente sesion" antes de usar la herramienta. Simplemente usala.
+
+Reglas adicionales:
+- Al final de tu respuesta menciona brevemente que secciones del cubo aun faltan por completar.
+- Se conciso y util: el asesor esta en medio de un proceso de consultoria.
+- Responde siempre en espanol.`;
 }
 
 function sse(res: any, data: object) {
   if (!res.writableEnded) {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
-    // Explicit flush required for Railway/Nginx SSE buffering
     if (typeof res.flush === 'function') res.flush();
   }
 }
@@ -108,11 +112,10 @@ export class MentoriaSesionService {
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    // Disable Nagle buffering at TCP level
     res.socket?.setNoDelay(true);
     res.flushHeaders?.();
 
-    // Immediate start event so client knows SSE connection is alive before Anthropic call
+    // Immediate start event so client resets its stall timer before Anthropic call
     sse(res, { type: 'start' });
 
     // Keep-alive ping every 15s to prevent Railway/proxy from closing idle SSE
@@ -139,12 +142,10 @@ export class MentoriaSesionService {
       const anthropic = new Anthropic({ apiKey: anthropicKey });
       let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
 
-      // Load existing chat history from DB, capped to last 20 entries (~10 exchanges)
+      // Load existing chat history, capped to last 20 entries (~10 exchanges)
       const fullHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
-      const existingHistory = fullHistory;
-      const recentHistory   = fullHistory.slice(-20);
+      const recentHistory = fullHistory.slice(-20);
 
-      // Build messages array: recent history + new user message
       let currentMessages: Anthropic.MessageParam[] = [
         ...recentHistory.map(m => ({ role: m.role, content: m.content })),
         { role: 'user' as const, content: message },
@@ -153,8 +154,12 @@ export class MentoriaSesionService {
       const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo);
       let assistantText = '';
 
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         if (res.writableEnded) break;
+
+        // Collect text for THIS turn only — do NOT emit SSE yet
+        // (Anthropic may write preamble text before tool calls that we want to discard)
+        let turnText = '';
 
         const stream = anthropic.messages.stream({
           model: 'claude-sonnet-4-6',
@@ -164,17 +169,18 @@ export class MentoriaSesionService {
           messages: currentMessages,
         });
 
-        stream.on('text', (text) => {
-          assistantText += text;
-          sse(res, { type: 'text', text });
-        });
+        stream.on('text', (text) => { turnText += text; });
 
         const finalMsg = await stream.finalMessage();
 
         if (finalMsg.stop_reason === 'end_turn') {
-          // Save updated history to DB
+          // Final response — emit to client and save
+          assistantText = turnText;
+          if (assistantText) {
+            sse(res, { type: 'text', text: assistantText });
+          }
           const newHistory: ChatEntry[] = [
-            ...existingHistory,
+            ...fullHistory,
             { role: 'user', content: message, ts: new Date().toISOString() },
             { role: 'assistant', content: assistantText, ts: new Date().toISOString() },
           ];
@@ -190,6 +196,7 @@ export class MentoriaSesionService {
         }
 
         if (finalMsg.stop_reason === 'tool_use') {
+          // turnText is discarded — it was preamble before tool calls
           currentMessages.push({ role: 'assistant', content: finalMsg.content });
 
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
