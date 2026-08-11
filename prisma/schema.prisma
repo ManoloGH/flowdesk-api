@@ -2000,6 +2000,7 @@ model MentoriaCliente {
   precio              Int      @default(0)
   notas               String?
   cubo                Json?
+  chat_history        Json?    // Array<{role:'user'|'assistant', content:string, ts:string}>
   fecha_inicio        DateTime @default(now())
   fecha_fin           DateTime?
   created_at          DateTime @default(now())

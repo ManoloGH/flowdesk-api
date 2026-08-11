@@ -266,14 +266,13 @@ export class MentoriaController {
   async chatSesion(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; tipo: string },
+    @Body() body: { message: string },
     @Res() res: any,
   ) {
     return this.sesion.chatSesion({
       tenantId: req.user.tenant_id,
       clienteId: id,
-      messages: body.messages ?? [],
-      tipo: body.tipo ?? 'dg',
+      message: body.message ?? '',
       res,
     });
   }

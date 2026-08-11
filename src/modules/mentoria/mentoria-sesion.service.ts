@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../database/prisma.service';
-import { Response } from 'express';
 
 type CuboKey = 'contexto' | 'areas_procesos' | 'organigrama' | 'sistemas' | 'brechas' | 'agentes';
+
+interface ChatEntry {
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+}
 
 const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
   name: 'actualizar_cubo',
@@ -34,79 +39,40 @@ const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
   },
 };
 
-const SYSTEM_PROMPTS: Record<string, (empresa: string, cubo: Record<string, string>) => string> = {
-  dg: (empresa, cubo) => `Eres un consultor de transformación digital de MentorIA Systems conduciendo la sesión de diagnóstico con el Director General de "${empresa}".
+function buildSystemPrompt(empresa: string, cubo: Record<string, string>): string {
+  const cuboState = Object.entries(cubo)
+    .filter(([, v]) => v?.trim())
+    .map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`)
+    .join('\n') || '(vacío — primera sesión)';
+
+  return `Eres un consultor senior de transformación digital de MentorIA Systems conduciendo la sesión de diagnóstico completa con "${empresa}".
+
+Este es un hilo continuo de diagnóstico que puede incluir distintos interlocutores a lo largo del tiempo: el Director General, gerentes de área, operadores, o notas libres del asesor. Tú manejas el hilo completo.
 
 Estado actual del cubo de información:
-${Object.entries(cubo).filter(([, v]) => v?.trim()).map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`).join('\n') || '(vacío — primera sesión)'}
+${cuboState}
 
-Tu objetivo: mapear el estado completo de la empresa en una conversación fluida de ~30 minutos.
+Tu objetivo: construir el cubo completo para diseñar la propuesta de transformación digital.
 
-Áreas que DEBES cubrir en orden natural:
-1. Contexto general → ¿A qué se dedica? ¿Cuántos empleados? ¿Dónde opera? ¿Facturación aproximada?
-2. Dolores principales → ¿Qué procesos son un cuello de botella? ¿Qué te quita el sueño?
-3. Objetivos 12 meses → ¿A dónde quieres llegar? ¿Qué métricas mejorar?
-4. Organización → ¿Cómo están organizados? ¿Cuáles son las áreas y sus responsables?
-5. Sistemas actuales → ¿Qué software usa el equipo? ¿ERP, CRM, herramientas operativas?
-6. Presupuesto y expectativas → ¿Cuánto están dispuestos a invertir? ¿Qué esperan de MentorIA?
+Áreas que debes cubrir en el transcurso de la conversación (en orden natural, no de golpe):
 
-Cuando el usuario comparte información relevante, usa la herramienta \`actualizar_cubo\` INMEDIATAMENTE para documentarla en la sección correcta antes de hacer la siguiente pregunta.
+[CONTEXTO] → ¿A qué se dedica la empresa? ¿Cuántos empleados? ¿Dónde opera? ¿Facturación aprox.? ¿Objetivos del DG?
+[ÁREAS & PROCESOS] → ¿Cuáles son las áreas? ¿Cómo fluye el trabajo? ¿Dónde están los cuellos de botella?
+[ORGANIGRAMA] → ¿Quién hace qué? ¿Cargos, responsables, sueldos?
+[SISTEMAS] → ¿Qué software usan? ¿Cuánto cuesta? ¿Dónde copian datos manualmente entre sistemas?
+[BRECHAS] → ¿Qué falla? ¿Qué tiempo/dinero se pierde? ¿Qué frustra más al equipo?
+[AGENTES IA] → ¿Qué procesos se pueden automatizar? ¿Qué agentes tiene sentido construir?
 
-Guía la conversación de forma natural. Empieza con algo abierto. No hagas todas las preguntas de golpe. Escucha, profundiza, y muévete a la siguiente área cuando la actual esté clara.
+Reglas:
+- Cuando alguien comparte información relevante, usa \`actualizar_cubo\` INMEDIATAMENTE antes de responder.
+- Adapta tu tono al interlocutor: ejecutivo = estratégico, gerente = operativo, operador = concreto.
+- Haz una o dos preguntas a la vez, nunca un interrogatorio.
+- Escucha y profundiza antes de avanzar al siguiente tema.
+- Si detectas brechas u oportunidades de automatización, documéntalas en las secciones correctas.
+- Responde siempre en español. Sé empático, directo y profesional.`;
+}
 
-Responde siempre en español. Sé empático, directo y profesional.`,
-
-  gerente: (empresa, cubo) => `Eres un consultor de MentorIA Systems conduciendo la sesión de diagnóstico con un gerente o jefe de área de "${empresa}".
-
-Estado actual del cubo:
-${Object.entries(cubo).filter(([, v]) => v?.trim()).map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`).join('\n') || '(vacío)'}
-
-Tu objetivo: mapear el área específica del gerente con detalle operativo.
-
-Temas a cubrir:
-1. ¿Qué área lideras y cuál es su función principal?
-2. ¿Cómo fluye el trabajo día a día? ¿Cuáles son los procesos clave?
-3. ¿Cuántas personas tienes en tu equipo y qué hace cada quien?
-4. ¿Qué herramientas y software usan?
-5. ¿Dónde se pierde más tiempo? ¿Qué falla con frecuencia?
-6. ¿Cómo miden el éxito del área?
-
-Usa \`actualizar_cubo\` para documentar en \`areas_procesos\` y \`organigrama\`. Responde en español.`,
-
-  operador: (empresa, cubo) => `Eres un consultor de MentorIA Systems tomando nota del trabajo diario de un colaborador de "${empresa}".
-
-Estado actual del cubo:
-${Object.entries(cubo).filter(([, v]) => v?.trim()).map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`).join('\n') || '(vacío)'}
-
-Tu objetivo: entender exactamente qué hace esta persona y dónde pierde tiempo.
-
-Preguntas clave:
-1. ¿Cuál es tu puesto y en qué área trabajas?
-2. Descríbeme un día típico de trabajo, paso a paso.
-3. ¿Qué tarea haces más veces a la semana?
-4. ¿Qué programas y apps usas? ¿Copias información entre sistemas?
-5. ¿Qué proceso te frustra más? ¿Dónde se cometen más errores?
-6. ¿Cuántas horas a la semana crees que dedicas a tareas repetitivas?
-
-Usa \`actualizar_cubo\` para documentar en \`organigrama\` y \`sistemas\`. Responde en español.`,
-
-  levantamiento: (empresa, cubo) => `Eres el asistente de sesión de diagnóstico de MentorIA Systems. Apoyas al asesor durante la sesión presencial con "${empresa}".
-
-Estado actual del cubo:
-${Object.entries(cubo).filter(([, v]) => v?.trim()).map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`).join('\n') || '(vacío — inicio de levantamiento)'}
-
-Tu función:
-- Documentar automáticamente todo lo que se va revelando en la conversación
-- Hacer preguntas de seguimiento cuando el asesor lo indique
-- Identificar brechas y oportunidades de automatización
-- Sugerir preguntas de profundización cuando detectes algo interesante
-
-Usa \`actualizar_cubo\` constantemente para capturar información en tiempo real. Cuando detectes una brecha o ineficiencia evidente, documéntala en la sección \`brechas\`. Cuando identifiques una automatización posible, documéntala en \`agentes\`.
-
-Responde en español. Sé un copiloto activo del asesor.`,
-};
-
-function sse(res: Response, data: object) {
+function sse(res: any, data: object) {
   if (!res.writableEnded) {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   }
@@ -121,13 +87,11 @@ export class MentoriaSesionService {
   async chatSesion(params: {
     tenantId: string;
     clienteId: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-    tipo: string;
-    res: Response;
+    message: string;
+    res: any;
   }): Promise<void> {
-    const { tenantId, clienteId, messages, tipo, res } = params;
+    const { tenantId, clienteId, message, res } = params;
 
-    // SSE headers
     res.set({
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -156,13 +120,18 @@ export class MentoriaSesionService {
 
       const anthropic = new Anthropic({ apiKey: anthropicKey });
       let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
-      const tipoKey = (tipo in SYSTEM_PROMPTS) ? tipo : 'dg';
-      const systemPrompt = SYSTEM_PROMPTS[tipoKey](cliente.empresa, currentCubo);
 
-      let currentMessages: Anthropic.MessageParam[] = messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // Load existing chat history from DB
+      const existingHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
+
+      // Build messages array: stored history + new user message
+      let currentMessages: Anthropic.MessageParam[] = [
+        ...existingHistory.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user' as const, content: message },
+      ];
+
+      const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo);
+      let assistantText = '';
 
       for (let i = 0; i < 6; i++) {
         if (res.writableEnded) break;
@@ -176,12 +145,27 @@ export class MentoriaSesionService {
         });
 
         stream.on('text', (text) => {
+          assistantText += text;
           sse(res, { type: 'text', text });
         });
 
         const finalMsg = await stream.finalMessage();
 
         if (finalMsg.stop_reason === 'end_turn') {
+          // Save updated history to DB
+          const newHistory: ChatEntry[] = [
+            ...existingHistory,
+            { role: 'user', content: message, ts: new Date().toISOString() },
+            { role: 'assistant', content: assistantText, ts: new Date().toISOString() },
+          ];
+          try {
+            await this.prisma.mentoriaCliente.update({
+              where: { id: clienteId },
+              data: { chat_history: newHistory as any },
+            });
+          } catch (e) {
+            this.logger.warn(`Error guardando chat_history: ${(e as any)?.message}`);
+          }
           break;
         }
 
@@ -195,7 +179,6 @@ export class MentoriaSesionService {
             if (block.name !== 'actualizar_cubo') continue;
 
             const input = block.input as { seccion: CuboKey; contenido: string };
-
             currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
 
             try {
