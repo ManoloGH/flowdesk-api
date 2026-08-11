@@ -1211,4 +1211,12 @@ curl -s https://api.anthropic.com/v1/messages \\
 
     return { ...slot, temp_password: tempPassword };
   }
+
+  async deleteTenantSlot(callerTenantId: string, slotId: string) {
+    await this.assertPlatform(callerTenantId);
+    const slot = await this.prisma.teamSlot.findUnique({ where: { id: slotId } });
+    if (!slot) throw new NotFoundException(`Usuario ${slotId} no encontrado`);
+    await this.prisma.teamSlot.delete({ where: { id: slotId } });
+    return { message: `${slot.name} eliminado` };
+  }
 }

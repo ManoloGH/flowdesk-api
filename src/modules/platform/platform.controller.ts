@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Request, BadRequestException, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Request, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { IsString, IsOptional, IsIn, IsEmail, MinLength } from 'class-validator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -174,6 +174,20 @@ export class PlatformController {
       return await this.service.createTenantSlot(req.user.tenant_id, tenantId, dto);
     } catch (err: any) {
       throw new BadRequestException(err?.message ?? 'Error al crear usuario');
+    }
+  }
+
+  @Delete('platform/network/:tenantId/team-slots/:slotId')
+  @ApiOperation({ summary: '[PLATFORM] Eliminar usuario de un tenant' })
+  async deleteTenantSlot(
+    @Param('tenantId') tenantId: string,
+    @Param('slotId') slotId: string,
+    @Request() req: any,
+  ) {
+    try {
+      return await this.service.deleteTenantSlot(req.user.tenant_id, slotId);
+    } catch (err: any) {
+      throw new BadRequestException(err?.message ?? 'Error al eliminar usuario');
     }
   }
 
