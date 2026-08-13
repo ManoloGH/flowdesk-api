@@ -142,6 +142,14 @@ export class MentoriaService {
 
   // ── CLIENTES ────────────────────────────────────────────────────────────────
 
+  async debugAllClientes() {
+    return this.prisma.mentoriaCliente.findMany({
+      select: { id: true, empresa: true, tenant_id: true, created_at: true },
+      orderBy: { created_at: 'desc' },
+      take: 30,
+    });
+  }
+
   async getClientes(tenantId: string, status?: string) {
     return this.prisma.mentoriaCliente.findMany({
       where: { tenant_id: tenantId, ...(status ? { status } : {}) },

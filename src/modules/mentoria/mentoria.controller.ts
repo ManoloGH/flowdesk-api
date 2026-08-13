@@ -19,6 +19,12 @@ export class MentoriaController {
     return { user: req.user, ts: new Date().toISOString() };
   }
 
+  @Get('debug/clientes-all')
+  async debugClientesAll(@Req() req: any) {
+    const all = await this.service.debugAllClientes();
+    return { req_tenant_id: req.user.tenant_id, clientes: all, ts: new Date().toISOString() };
+  }
+
   // ── PROSPECTOS ──────────────────────────────────────────────────────────────
 
   @Get('prospectos')
