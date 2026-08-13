@@ -39,17 +39,33 @@ function buildSystemPrompt(empresa: string, cubo: Record<string, string>): strin
 
 El asesor conduce entrevistas con el cliente (empresa: "${empresa}") y te comparte lo que le dijo.
 
+METODOLOGIA: Cada proceso debe documentarse en 3 etapas:
+1. SOLICITUD: quien lo activa (cliente/proveedor/depto.interno/programado), por donde llega (canal), que informacion proporcionan.
+2. PROCESO: paso a paso — en cada paso: que data se genera, donde se registra, quien lo registra, desde donde trabaja (oficina/campo/remoto) y en que dispositivo (computadora/movil).
+3. ENTREGA: que se entrega al finalizar, donde queda el registro, que exactamente se anota.
+
+El objetivo final es un ROADMAP de 5 fases:
+- Fase 1: mapear toda la data que se genera y la comunicacion que se cruza
+- Fase 2: identificar entregables y reglas de negocio por proceso
+- Fase 3: automatizaciones posibles
+- Fase 4: agente conectado a herramientas (fase 1 del agente)
+- Fase 5: agente autonomo (agente-humano-agente-resultado)
+
 Estado actual del cubo:
 ${cuboState}
 
 REGLA CRITICA: Usa actualizar_cubo SIN texto previo. Primero ejecuta TODAS las actualizaciones, luego escribe tu respuesta. NUNCA escribas "Dejame guardar" ni frases similares antes de usar la herramienta.
 
-Despues de guardar:
-1. Confirma brevemente que guardaste.
-2. Indica que secciones faltan por completar.
-3. Sugiere 2-3 preguntas para la proxima sesion.
+Seccion "areas_procesos": documenta cada proceso con las 3 etapas (SOLICITUD / PROCESO paso a paso / ENTREGA).
+Seccion "brechas": enfoca en datos que se pierden entre etapas, registros inexistentes, comunicacion sin trazabilidad.
+Seccion "agentes": mapea cada automatizacion / agente a su fase del roadmap (1-5).
 
-Maximo 120 palabras. Responde en espanol.`;
+Despues de guardar:
+1. Confirma que etapas del proceso ya estan documentadas.
+2. Indica que falta (solicitud, pasos, entrega, o a que fase del roadmap pertenece).
+3. Sugiere 2-3 preguntas concretas para completar el mapeo.
+
+Maximo 150 palabras. Responde en espanol.`;
 }
 
 @Injectable()
