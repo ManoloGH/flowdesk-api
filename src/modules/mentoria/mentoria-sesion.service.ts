@@ -12,16 +12,13 @@ interface ChatEntry {
 
 const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
   name: 'actualizar_cubo',
-  description:
-    'Guarda o actualiza informacion extraida de la conversacion en una seccion del cubo del cliente.',
+  description: 'Guarda o actualiza informacion en una seccion del cubo del cliente.',
   input_schema: {
     type: 'object',
     properties: {
       seccion: {
         type: 'string',
         enum: ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'],
-        description:
-          'contexto | areas_procesos | organigrama | sistemas | brechas | agentes',
       },
       contenido: {
         type: 'string',
@@ -35,36 +32,24 @@ const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
 function buildSystemPrompt(empresa: string, cubo: Record<string, string>): string {
   const cuboState = Object.entries(cubo)
     .filter(([, v]) => v?.trim())
-    .map(([k, v]) => `\n[${k.toUpperCase()}]\n${v}`)
-    .join('\n') || '(vacio - primera sesion)';
+    .map(([k, v]) => `[${k.toUpperCase()}]\n${v}`)
+    .join('\n\n') || '(vacio - primera sesion)';
 
   return `Eres el asistente de diagnostico del asesor de MentorIA Systems. Tu interlocutor es SIEMPRE el asesor, nunca el cliente.
 
-El asesor conduce las entrevistas con el cliente (empresa: "${empresa}") y te comparte lo que le dijo el cliente. Tu ayudas a documentar, orientar y analizar.
+El asesor conduce entrevistas con el cliente (empresa: "${empresa}") y te comparte lo que le dijo.
 
-Estado actual del cubo de informacion:
+Estado actual del cubo:
 ${cuboState}
 
-REGLA CRITICA - HERRAMIENTAS:
-- Usa actualizar_cubo DIRECTAMENTE, sin ningun texto previo.
-- Ejecuta TODAS las actualizaciones necesarias primero, luego escribe tu respuesta al asesor.
-- NUNCA escribas "Dejame guardar", "Voy a registrar" ni ninguna frase introductoria antes de usar la herramienta.
+REGLA CRITICA: Usa actualizar_cubo SIN texto previo. Primero ejecuta TODAS las actualizaciones, luego escribe tu respuesta. NUNCA escribas "Dejame guardar" ni frases similares antes de usar la herramienta.
 
-Tu rol (despues de guardar):
-1. Confirma brevemente que seccion(es) actualizaste.
-2. Indica que secciones del cubo siguen vacias o incompletas.
-3. Sugiere 2-3 preguntas concretas para la proxima sesion con el cliente.
+Despues de guardar:
+1. Confirma brevemente que guardaste.
+2. Indica que secciones faltan por completar.
+3. Sugiere 2-3 preguntas para la proxima sesion.
 
-Reglas:
-- Se conciso: maximo 150 palabras en tu respuesta final.
-- Responde siempre en espanol.`;
-}
-
-function sse(res: any, data: object) {
-  if (!res.writableEnded) {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-    if (typeof res.flush === 'function') res.flush();
-  }
+Maximo 120 palabras. Responde en espanol.`;
 }
 
 @Injectable()
@@ -77,138 +62,101 @@ export class MentoriaSesionService {
     tenantId: string;
     clienteId: string;
     message: string;
-    res: any;
-  }): Promise<void> {
-    const { tenantId, clienteId, message, res } = params;
+  }): Promise<{ text: string; cubo: Record<string, string>; sections_updated: string[] }> {
+    const { tenantId, clienteId, message } = params;
 
-    res.set({
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
     });
-    res.socket?.setNoDelay(true);
-    res.flushHeaders?.();
+    if (!cliente) throw new Error('Cliente no encontrado');
 
-    // Notify client the connection is alive (client resets its stall timer)
-    sse(res, { type: 'start' });
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) throw new Error('API key de Anthropic no configurada');
 
-    // Keep connection alive through Railway proxy while Anthropic processes
-    const keepAlive = setInterval(() => {
-      if (!res.writableEnded) {
-        res.write(': ping\n\n');
-        if (typeof res.flush === 'function') res.flush();
-      }
-    }, 10_000);
+    const anthropic = new Anthropic({ apiKey: anthropicKey });
+    let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
 
-    try {
-      const cliente = await this.prisma.mentoriaCliente.findFirst({
-        where: { id: clienteId, tenant_id: tenantId },
+    const fullHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
+    // Last 12 entries (~6 exchanges), only non-empty content
+    const recentHistory = fullHistory
+      .slice(-12)
+      .filter(m => m.content?.trim());
+
+    let currentMessages: Anthropic.MessageParam[] = [
+      ...recentHistory.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user' as const, content: message },
+    ];
+
+    const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo);
+    let assistantText = '';
+    const sectionsUpdated: string[] = [];
+
+    for (let i = 0; i < 8; i++) {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        system: systemPrompt,
+        tools: [TOOL_ACTUALIZAR_CUBO],
+        messages: currentMessages,
       });
 
-      if (!cliente) {
-        sse(res, { type: 'error', message: 'Cliente no encontrado' });
-        return;
+      if (response.stop_reason === 'end_turn') {
+        for (const block of response.content) {
+          if (block.type === 'text') assistantText += block.text;
+        }
+        break;
       }
 
-      const anthropicKey = process.env.ANTHROPIC_API_KEY;
-      if (!anthropicKey) {
-        sse(res, { type: 'error', message: 'API key de Anthropic no configurada' });
-        return;
-      }
+      if (response.stop_reason === 'tool_use') {
+        currentMessages.push({ role: 'assistant', content: response.content });
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-      const anthropic = new Anthropic({ apiKey: anthropicKey });
-      let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
+        for (const block of response.content) {
+          if (block.type !== 'tool_use' || block.name !== 'actualizar_cubo') continue;
 
-      const fullHistory: ChatEntry[] = (cliente.chat_history as ChatEntry[] | null) ?? [];
-      const recentHistory = fullHistory.slice(-16); // last 8 exchanges
+          const input = block.input as { seccion: CuboKey; contenido: string };
+          currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
+          sectionsUpdated.push(input.seccion);
 
-      let currentMessages: Anthropic.MessageParam[] = [
-        ...recentHistory.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user' as const, content: message },
-      ];
-
-      const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo);
-      let assistantText = '';
-
-      // Non-streaming agentic loop — avoids SSE buffering issues with Railway
-      for (let i = 0; i < 8; i++) {
-        if (res.writableEnded) break;
-
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1024,
-          system: systemPrompt,
-          tools: [TOOL_ACTUALIZAR_CUBO],
-          messages: currentMessages,
-        });
-
-        if (response.stop_reason === 'end_turn') {
-          // Extract final text from response
-          for (const block of response.content) {
-            if (block.type === 'text') assistantText += block.text;
-          }
-          // Save history
-          const newHistory: ChatEntry[] = [
-            ...fullHistory,
-            { role: 'user', content: message, ts: new Date().toISOString() },
-            { role: 'assistant', content: assistantText, ts: new Date().toISOString() },
-          ];
           try {
             await this.prisma.mentoriaCliente.update({
               where: { id: clienteId },
-              data: { chat_history: newHistory as any },
+              data: { cubo: currentCubo },
             });
           } catch (e) {
-            this.logger.warn(`Error guardando chat_history: ${(e as any)?.message}`);
-          }
-          break;
-        }
-
-        if (response.stop_reason === 'tool_use') {
-          currentMessages.push({ role: 'assistant', content: response.content });
-
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-          for (const block of response.content) {
-            if (block.type !== 'tool_use' || block.name !== 'actualizar_cubo') continue;
-
-            const input = block.input as { seccion: CuboKey; contenido: string };
-            currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
-
-            try {
-              await this.prisma.mentoriaCliente.update({
-                where: { id: clienteId },
-                data: { cubo: currentCubo },
-              });
-            } catch (e) {
-              this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
-            }
-
-            // Emit tool_use immediately so cubo panel updates in real time
-            sse(res, { type: 'tool_use', seccion: input.seccion, contenido: input.contenido });
-
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify({ ok: true, seccion: input.seccion }),
-            });
+            this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
           }
 
-          currentMessages.push({ role: 'user', content: toolResults });
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: JSON.stringify({ ok: true, seccion: input.seccion }),
+          });
         }
+
+        currentMessages.push({ role: 'user', content: toolResults });
       }
-
-      // Send final response and done
-      sse(res, { type: 'text', text: assistantText });
-      sse(res, { type: 'done', cubo: currentCubo });
-
-    } catch (e) {
-      this.logger.error('chatSesion error', e);
-      sse(res, { type: 'error', message: (e as any)?.message ?? 'Error inesperado' });
-    } finally {
-      clearInterval(keepAlive);
-      if (!res.writableEnded) res.end();
     }
+
+    // Save to chat history (only if non-empty)
+    if (message.trim() || assistantText.trim()) {
+      const newHistory: ChatEntry[] = [
+        ...fullHistory,
+        { role: 'user', content: message, ts: new Date().toISOString() },
+        ...(assistantText.trim()
+          ? [{ role: 'assistant' as const, content: assistantText, ts: new Date().toISOString() }]
+          : []),
+      ];
+      try {
+        await this.prisma.mentoriaCliente.update({
+          where: { id: clienteId },
+          data: { chat_history: newHistory as any },
+        });
+      } catch (e) {
+        this.logger.warn(`Error guardando chat_history: ${(e as any)?.message}`);
+      }
+    }
+
+    return { text: assistantText, cubo: currentCubo, sections_updated: sectionsUpdated };
   }
 }

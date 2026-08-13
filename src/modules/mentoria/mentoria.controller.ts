@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, Res, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
@@ -260,27 +260,28 @@ export class MentoriaController {
     return this.procesamiento.procesarDiagnostico(req.user.tenant_id, id);
   }
 
-  // ── SESIÓN IA (chat streaming) ───────────────────────────────────────────────
+  // ── SESIÓN IA (JSON — sin SSE) ──────────────────────────────────────────────
 
   @Post('clientes/:id/chat')
   async chatSesion(
     @Req() req: any,
     @Param('id') id: string,
     @Body() body: { message?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }>; tipo?: string },
-    @Res() res: any,
   ) {
-    // Acepta tanto el formato nuevo { message } como el viejo { messages[], tipo }
     const message =
       body.message?.trim() ||
       body.messages?.filter(m => m.role === 'user').slice(-1)[0]?.content?.trim() ||
       '';
 
-    return this.sesion.chatSesion({
-      tenantId: req.user.tenant_id,
-      clienteId: id,
-      message,
-      res,
-    });
+    try {
+      return await this.sesion.chatSesion({
+        tenantId: req.user.tenant_id,
+        clienteId: id,
+        message,
+      });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error en el agente', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   // ── AUTOMATIZACIONES ────────────────────────────────────────────────────────
