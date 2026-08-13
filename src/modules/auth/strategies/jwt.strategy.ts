@@ -23,10 +23,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: config.get<string>('JWT_SECRET') as string,
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(req: any, payload: JwtPayload) {
     // Los platform_admin (superadmin) pueden operar sin restricción de tenant
     const where = payload.platform_admin
       ? { id: payload.sub }
@@ -39,9 +40,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!slot) throw new UnauthorizedException('Sesión inválida');
 
+    // Platform admins usan X-Tenant-Id para operar en nombre de otro tenant
+    let effectiveTenantId = slot.tenant_id;
+    if (payload.platform_admin) {
+      const header = req.headers['x-tenant-id'];
+      if (header && typeof header === 'string') effectiveTenantId = header;
+    }
+
     return {
       slot_id:        slot.id,
-      tenant_id:      slot.tenant_id,
+      tenant_id:      effectiveTenantId,
       role:           slot.role,
       type:           slot.type,
       email:          slot.email,
