@@ -121,7 +121,7 @@ export class MentoriaSesionService {
     let assistantText = '';
     const sectionsUpdated: string[] = [];
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 4; i++) {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
