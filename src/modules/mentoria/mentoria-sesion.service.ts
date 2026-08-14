@@ -94,7 +94,7 @@ export class MentoriaSesionService {
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (!anthropicKey) throw new Error('API key de Anthropic no configurada');
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 25_000 });
     let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
 
     // If sesionId provided, load history from that specific session
@@ -121,51 +121,59 @@ export class MentoriaSesionService {
     let assistantText = '';
     const sectionsUpdated: string[] = [];
 
-    for (let i = 0; i < 4; i++) {
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools: [TOOL_ACTUALIZAR_CUBO],
-        messages: currentMessages,
-      });
+    try {
+      for (let i = 0; i < 4; i++) {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 800,
+          system: systemPrompt,
+          tools: [TOOL_ACTUALIZAR_CUBO],
+          messages: currentMessages,
+        });
 
-      if (response.stop_reason === 'end_turn') {
-        for (const block of response.content) {
-          if (block.type === 'text') assistantText += block.text;
+        if (response.stop_reason === 'end_turn') {
+          for (const block of response.content) {
+            if (block.type === 'text') assistantText += block.text;
+          }
+          break;
         }
-        break;
-      }
 
-      if (response.stop_reason === 'tool_use') {
-        currentMessages.push({ role: 'assistant', content: response.content });
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        if (response.stop_reason === 'tool_use') {
+          currentMessages.push({ role: 'assistant', content: response.content });
+          const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-        for (const block of response.content) {
-          if (block.type !== 'tool_use' || block.name !== 'actualizar_cubo') continue;
+          for (const block of response.content) {
+            if (block.type !== 'tool_use' || block.name !== 'actualizar_cubo') continue;
 
-          const input = block.input as { seccion: CuboKey; contenido: string };
-          currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
-          sectionsUpdated.push(input.seccion);
+            const input = block.input as { seccion: CuboKey; contenido: string };
+            currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
+            sectionsUpdated.push(input.seccion);
 
-          try {
-            await this.prisma.mentoriaCliente.update({
-              where: { id: clienteId },
-              data: { cubo: currentCubo },
+            try {
+              await this.prisma.mentoriaCliente.update({
+                where: { id: clienteId },
+                data: { cubo: currentCubo },
+              });
+            } catch (e) {
+              this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
+            }
+
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: JSON.stringify({ ok: true, seccion: input.seccion }),
             });
-          } catch (e) {
-            this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
           }
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: JSON.stringify({ ok: true, seccion: input.seccion }),
-          });
+          currentMessages.push({ role: 'user', content: toolResults });
         }
-
-        currentMessages.push({ role: 'user', content: toolResults });
       }
+    } catch (aiError: any) {
+      const isTimeout = aiError?.name === 'APITimeoutError' || aiError?.code === 'ETIMEDOUT';
+      assistantText = isTimeout
+        ? 'El modelo tardó demasiado en responder (25s). Por favor intenta de nuevo con un mensaje más corto.'
+        : `Error al contactar al modelo: ${aiError?.message ?? 'error desconocido'}`;
+      this.logger.error(`Error Anthropic en chatSesion: ${aiError?.message}`);
     }
 
     // Save messages
@@ -267,7 +275,7 @@ Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
 
 Genera entre 18 y 28 preguntas. Sé específico, usa nombres de sistemas y procesos reales de ${cliente.empresa}.`;
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey });
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 40_000 });
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 3000,
