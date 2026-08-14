@@ -11,62 +11,49 @@ interface ChatEntry {
   ts: string;
 }
 
-const TOOL_ACTUALIZAR_CUBO: Anthropic.Tool = {
-  name: 'actualizar_cubo',
-  description: 'Guarda o actualiza informacion en una seccion del cubo del cliente.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      seccion: {
-        type: 'string',
-        enum: ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'],
-      },
-      contenido: {
-        type: 'string',
-        description: 'Contenido completo de la seccion (previo + nuevo).',
-      },
-    },
-    required: ['seccion', 'contenido'],
-  },
-};
+const CUBO_KEYS = ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'] as const;
 
 function buildSystemPrompt(empresa: string, cubo: Record<string, string>): string {
   const cuboState = Object.entries(cubo)
-    .filter(([, v]) => v?.trim())
+    .filter(([k, v]) => CUBO_KEYS.includes(k as any) && v?.trim())
     .map(([k, v]) => `[${k.toUpperCase()}]\n${v}`)
     .join('\n\n') || '(vacio - primera sesion)';
 
   return `Eres el asistente de diagnostico del asesor de MentorIA Systems. Tu interlocutor es SIEMPRE el asesor, nunca el cliente.
 
-El asesor conduce entrevistas con el cliente (empresa: "${empresa}") y te comparte lo que le dijo.
+El asesor conduce entrevistas con "${empresa}" y te comparte lo que le dijo el cliente.
 
-METODOLOGIA: Cada proceso debe documentarse en 3 etapas:
-1. SOLICITUD: quien lo activa (cliente/proveedor/depto.interno/programado), por donde llega (canal), que informacion proporcionan.
-2. PROCESO: paso a paso — en cada paso: que data se genera, donde se registra, quien lo registra, desde donde trabaja (oficina/campo/remoto) y en que dispositivo (computadora/movil).
-3. ENTREGA: que se entrega al finalizar, donde queda el registro, que exactamente se anota.
-
-El objetivo final es un ROADMAP de 5 fases:
-- Fase 1: mapear toda la data que se genera y la comunicacion que se cruza
-- Fase 2: identificar entregables y reglas de negocio por proceso
-- Fase 3: automatizaciones posibles
-- Fase 4: agente conectado a herramientas (fase 1 del agente)
-- Fase 5: agente autonomo (agente-humano-agente-resultado)
+METODOLOGIA — documenta cada proceso en 3 etapas:
+1. SOLICITUD: quien lo activa, por donde llega, que informacion dan.
+2. PROCESO paso a paso: que data se genera, donde se registra, quien, desde donde trabaja, en que dispositivo.
+3. ENTREGA: que se entrega, donde queda el registro, que exactamente se anota.
 
 Estado actual del cubo:
 ${cuboState}
 
-REGLA CRITICA: Usa actualizar_cubo SIN texto previo. Primero ejecuta TODAS las actualizaciones, luego escribe tu respuesta. NUNCA escribas "Dejame guardar" ni frases similares antes de usar la herramienta.
+INSTRUCCIONES DE RESPUESTA:
+1. Responde al asesor en maximo 120 palabras en espanol.
+2. Confirma lo que ya quedo documentado y lo que falta.
+3. Haz 2 preguntas concretas para completar el mapeo del proceso.
+4. Si hay informacion nueva que guardar, incluye AL FINAL (despues de tu texto) uno o mas bloques asi:
+[CUBO:seccion]contenido completo actualizado de la seccion[/CUBO]
+Secciones: contexto | areas_procesos | organigrama | sistemas | brechas | agentes
+El contenido debe ser el texto COMPLETO de la seccion (incluye lo anterior + lo nuevo).
+Solo incluye bloques [CUBO] cuando hay informacion nueva del cliente.`;
+}
 
-Seccion "areas_procesos": documenta cada proceso con las 3 etapas (SOLICITUD / PROCESO paso a paso / ENTREGA).
-Seccion "brechas": enfoca en datos que se pierden entre etapas, registros inexistentes, comunicacion sin trazabilidad.
-Seccion "agentes": mapea cada automatizacion / agente a su fase del roadmap (1-5).
-
-Despues de guardar:
-1. Confirma que etapas del proceso ya estan documentadas.
-2. Indica que falta (solicitud, pasos, entrega, o a que fase del roadmap pertenece).
-3. Sugiere 2-3 preguntas concretas para completar el mapeo.
-
-Maximo 150 palabras. Responde en espanol.`;
+function parseCuboBlocks(text: string): { cleanText: string; updates: Array<{ seccion: CuboKey; contenido: string }> } {
+  const updates: Array<{ seccion: CuboKey; contenido: string }> = [];
+  const regex = /\[CUBO:(\w+)\]([\s\S]*?)\[\/CUBO\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const seccion = match[1] as CuboKey;
+    if (CUBO_KEYS.includes(seccion)) {
+      updates.push({ seccion, contenido: match[2].trim() });
+    }
+  }
+  const cleanText = text.replace(/\[CUBO:\w+\][\s\S]*?\[\/CUBO\]/g, '').trim();
+  return { cleanText, updates };
 }
 
 @Injectable()
@@ -107,12 +94,12 @@ export class MentoriaSesionService {
       fullHistory = (cliente.chat_history as ChatEntry[] | null) ?? [];
     }
 
-    // Last 6 entries (~3 exchanges), only non-empty content
+    // Last 6 messages (~3 exchanges), only non-empty content
     const recentHistory = fullHistory
       .slice(-6)
       .filter(m => m.content?.trim());
 
-    let currentMessages: Anthropic.MessageParam[] = [
+    const messages: Anthropic.MessageParam[] = [
       ...recentHistory.map(m => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: message },
     ];
@@ -122,56 +109,37 @@ export class MentoriaSesionService {
     const sectionsUpdated: string[] = [];
 
     try {
-      for (let i = 0; i < 2; i++) {
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 500,
-          system: systemPrompt,
-          tools: [TOOL_ACTUALIZAR_CUBO],
-          messages: currentMessages,
-        });
+      // Single API call — no tool use loop
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages,
+      });
 
-        if (response.stop_reason === 'end_turn') {
-          for (const block of response.content) {
-            if (block.type === 'text') assistantText += block.text;
-          }
-          break;
-        }
+      const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+      const { cleanText, updates } = parseCuboBlocks(rawText);
+      assistantText = cleanText;
 
-        if (response.stop_reason === 'tool_use') {
-          currentMessages.push({ role: 'assistant', content: response.content });
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-          for (const block of response.content) {
-            if (block.type !== 'tool_use' || block.name !== 'actualizar_cubo') continue;
-
-            const input = block.input as { seccion: CuboKey; contenido: string };
-            currentCubo = { ...currentCubo, [input.seccion]: input.contenido };
-            sectionsUpdated.push(input.seccion);
-
-            try {
-              await this.prisma.mentoriaCliente.update({
-                where: { id: clienteId },
-                data: { cubo: currentCubo },
-              });
-            } catch (e) {
-              this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
-            }
-
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify({ ok: true, seccion: input.seccion }),
-            });
-          }
-
-          currentMessages.push({ role: 'user', content: toolResults });
+      // Apply cubo updates from parsed blocks
+      for (const { seccion, contenido } of updates) {
+        currentCubo = { ...currentCubo, [seccion]: contenido };
+        sectionsUpdated.push(seccion);
+      }
+      if (updates.length > 0) {
+        try {
+          await this.prisma.mentoriaCliente.update({
+            where: { id: clienteId },
+            data: { cubo: currentCubo },
+          });
+        } catch (e) {
+          this.logger.warn(`Error guardando cubo: ${(e as any)?.message}`);
         }
       }
     } catch (aiError: any) {
       const isTimeout = aiError?.name === 'APIConnectionTimeoutError' || aiError?.name === 'APITimeoutError' || aiError?.code === 'ETIMEDOUT';
       assistantText = isTimeout
-        ? 'El modelo tardó demasiado. Intenta de nuevo — si persiste, escribe mensajes más cortos.'
+        ? 'El modelo tardó demasiado. Intenta de nuevo.'
         : `Error al contactar al modelo: ${aiError?.message ?? 'error desconocido'}`;
       this.logger.error(`Error Anthropic en chatSesion: ${aiError?.message}`);
     }
