@@ -1093,30 +1093,32 @@ curl -s https://api.anthropic.com/v1/messages \\
 
   // ─── Health score ─────────────────────────────────────────────────────────
 
-  async impersonateTenant(callerTenantId: string, targetTenantId: string) {
+  async impersonateTenant(callerTenantId: string, callerSlotId: string, targetTenantId: string) {
     await this.assertPlatform(callerTenantId);
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: targetTenantId },
-      select: { id: true, name: true, tenant_type: true },
-    });
+    const [tenant, callerSlot] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: targetTenantId },
+        select: { id: true, name: true, tenant_type: true },
+      }),
+      this.prisma.teamSlot.findFirst({
+        where: { id: callerSlotId },
+        select: { id: true, email: true, name: true, role: true, type: true },
+      }),
+    ]);
+
     if (!tenant) throw new NotFoundException('Tenant no encontrado');
+    if (!callerSlot) throw new NotFoundException('Slot del administrador no encontrado');
 
-    const slot = await this.prisma.teamSlot.findFirst({
-      where: { tenant_id: targetTenantId, type: 'HUMAN' },
-      orderBy: [{ role: 'asc' }],
-      select: { id: true, email: true, name: true, role: true, type: true },
-    });
-    if (!slot) throw new NotFoundException('No hay usuarios humanos en este tenant');
-
+    // El super admin entra con su propia identidad pero en el contexto del tenant destino
     const payload = {
-      sub: slot.id,
+      sub: callerSlot.id,
       tenant_id: targetTenantId,
-      role: slot.role,
-      type: slot.type,
-      email: slot.email,
+      role: callerSlot.role,
+      type: callerSlot.type,
+      email: callerSlot.email,
       tenant_type: tenant.tenant_type,
-      platform_admin: false,
+      platform_admin: true,
     };
 
     const access_token = this.jwt.sign(payload, {
@@ -1128,14 +1130,14 @@ curl -s https://api.anthropic.com/v1/messages \\
       access_token,
       company_name: tenant.name,
       user: {
-        slot_id: slot.id,
+        slot_id: callerSlot.id,
         tenant_id: targetTenantId,
-        role: slot.role,
-        type: slot.type,
-        email: slot.email ?? '',
-        name: slot.name,
+        role: callerSlot.role,
+        type: callerSlot.type,
+        email: callerSlot.email ?? '',
+        name: callerSlot.name,
         tenant_type: tenant.tenant_type,
-        platform_admin: false,
+        platform_admin: true,
       },
     };
   }
