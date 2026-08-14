@@ -502,6 +502,19 @@ export class MentoriaService {
     });
   }
 
+  async saveCuestionarioGlobal(clienteId: string, cuestionario: any) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { cubo: true },
+    });
+    const cubo = ((c?.cubo ?? {}) as any);
+    const cuestionariosGlobales = [...(cubo.__cuestionarios_globales ?? []), cuestionario];
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { cubo: { ...cubo, __cuestionarios_globales: cuestionariosGlobales } as any },
+    });
+  }
+
   async saveDiagnosticoPublic(clienteId: string, area: string, datos: any) {
     const cliente = await this.prisma.mentoriaCliente.findUnique({ where: { id: clienteId } });
 

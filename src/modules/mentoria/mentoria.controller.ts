@@ -303,6 +303,24 @@ export class MentoriaController {
     return this.service.createSesionDiag(req.user.tenant_id, id, body);
   }
 
+  @Post('clientes/:id/generar-cuestionario')
+  async generarCuestionarioGlobal(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { rolDestino: 'gerente' | 'operador'; area: string },
+  ) {
+    try {
+      return await this.sesion.generarCuestionario({
+        tenantId: req.user.tenant_id,
+        clienteId: id,
+        rolDestino: body.rolDestino,
+        area: body.area,
+      });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al generar cuestionario', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   @Post('clientes/:id/sesiones-diag/:sid/generar-cuestionario')
   async generarCuestionario(
     @Req() req: any,

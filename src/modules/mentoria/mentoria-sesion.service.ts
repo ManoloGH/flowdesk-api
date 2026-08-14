@@ -214,7 +214,7 @@ export class MentoriaSesionService {
   async generarCuestionario(params: {
     tenantId: string;
     clienteId: string;
-    sesionId: string;
+    sesionId?: string;
     rolDestino: 'gerente' | 'operador';
     area: string;
   }): Promise<{ id: string; titulo: string; rol_destino: string; area: string; preguntas: any[]; generado_at: string }> {
@@ -232,15 +232,24 @@ export class MentoriaSesionService {
     const cuboText = Object.entries(cubo)
       .filter(([, v]) => v?.trim())
       .map(([k, v]) => `[${k.toUpperCase()}]\n${v}`)
-      .join('\n\n') || '(sin información en el cubo)';
+      .join('\n\n') || '(sin información en el cubo aún)';
 
-    const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
-    const sesion = sesiones.find((s: any) => s.id === sesionId);
-    if (!sesion) throw new Error('Sesión no encontrada');
-
-    const sesionText = ((sesion.mensajes ?? []) as any[])
-      .map((m: any) => `${m.role === 'user' ? 'Asesor' : 'IA'}: ${m.content}`)
-      .join('\n');
+    // Session context is optional
+    let sesionContexto = '';
+    let interlocutorLabel = 'el equipo directivo';
+    if (sesionId) {
+      const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
+      const sesion = sesiones.find((s: any) => s.id === sesionId);
+      if (sesion) {
+        interlocutorLabel = sesion.interlocutor ?? interlocutorLabel;
+        const sesionText = ((sesion.mensajes ?? []) as any[])
+          .map((m: any) => `${m.role === 'user' ? 'Asesor' : 'IA'}: ${m.content}`)
+          .join('\n');
+        if (sesionText.trim()) {
+          sesionContexto = `\nSESIÓN CON ${(sesion.cargo ?? 'DIRECTIVO').toUpperCase()} — ${sesion.interlocutor}:\n${sesionText}`;
+        }
+      }
+    }
 
     const rolLabel = rolDestino === 'gerente' ? 'GERENTES' : 'OPERADORES';
 
@@ -248,14 +257,12 @@ export class MentoriaSesionService {
 
 CONTEXTO DEL CLIENTE (${cliente.empresa}):
 ${cuboText}
-
-SESIÓN REALIZADA CON ${(sesion.cargo ?? 'DIRECTIVO').toUpperCase()} — ${sesion.interlocutor}:
-${sesionText || '(sesión sin mensajes registrados)'}
+${sesionContexto}
 
 Genera un cuestionario personalizado para los ${rolLabel} del área de ${area} en ${cliente.empresa}.
 
 INSTRUCCIONES:
-1. Usa la terminología y procesos mencionados por ${sesion.interlocutor}
+1. Usa la terminología y procesos reales de ${cliente.empresa} que aparecen en el cubo
 2. Para cada proceso clave del área, genera preguntas que sigan el modelo:
    - SOLICITUD: ¿Quién activa el proceso? ¿Por qué canal llega? ¿Qué información proporcionan?
    - PROCESO paso a paso: ¿Qué datos se generan en cada paso? ¿Dónde se registran? ¿Quién los registra? ¿Desde dónde trabaja? ¿Con qué dispositivo?
@@ -273,9 +280,9 @@ Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
   ]
 }
 
-Genera entre 18 y 28 preguntas. Sé específico, usa nombres de sistemas y procesos reales de ${cliente.empresa}.`;
+Genera entre 18 y 28 preguntas. Sé específico con la empresa y el área.`;
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 40_000 });
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 3000,
@@ -302,10 +309,19 @@ Genera entre 18 y 28 preguntas. Sé específico, usa nombres de sistemas y proce
       generado_at: new Date().toISOString(),
     };
 
-    try {
-      await this.mentoriaService.saveCuestionarioGenerado(clienteId, sesionId, cuestionario);
-    } catch (e) {
-      this.logger.warn(`Error guardando cuestionario: ${(e as any)?.message}`);
+    // Save to session if sesionId provided, otherwise save to client-level list
+    if (sesionId) {
+      try {
+        await this.mentoriaService.saveCuestionarioGenerado(clienteId, sesionId, cuestionario);
+      } catch (e) {
+        this.logger.warn(`Error guardando cuestionario en sesión: ${(e as any)?.message}`);
+      }
+    } else {
+      try {
+        await this.mentoriaService.saveCuestionarioGlobal(clienteId, cuestionario);
+      } catch (e) {
+        this.logger.warn(`Error guardando cuestionario global: ${(e as any)?.message}`);
+      }
     }
 
     return cuestionario;
