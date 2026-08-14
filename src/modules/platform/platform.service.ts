@@ -1096,27 +1096,35 @@ curl -s https://api.anthropic.com/v1/messages \\
   async impersonateTenant(callerTenantId: string, callerSlotId: string, targetTenantId: string) {
     await this.assertPlatform(callerTenantId);
 
-    const [tenant, callerSlot] = await Promise.all([
-      this.prisma.tenant.findUnique({
-        where: { id: targetTenantId },
-        select: { id: true, name: true, tenant_type: true },
-      }),
-      this.prisma.teamSlot.findFirst({
-        where: { id: callerSlotId },
-        select: { id: true, email: true, name: true, role: true, type: true },
-      }),
-    ]);
-
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: targetTenantId },
+      select: { id: true, name: true, tenant_type: true },
+    });
     if (!tenant) throw new NotFoundException('Tenant no encontrado');
-    if (!callerSlot) throw new NotFoundException('Slot del administrador no encontrado');
 
-    // El super admin entra con su propia identidad pero en el contexto del tenant destino
+    // Busca el slot de mayor privilegio del tenant: owner > admin > cualquier humano
+    const slot =
+      (await this.prisma.teamSlot.findFirst({
+        where: { tenant_id: targetTenantId, type: 'HUMAN', role: 'owner' },
+        select: { id: true, email: true, name: true, role: true, type: true },
+      })) ??
+      (await this.prisma.teamSlot.findFirst({
+        where: { tenant_id: targetTenantId, type: 'HUMAN', role: 'admin' },
+        select: { id: true, email: true, name: true, role: true, type: true },
+      })) ??
+      (await this.prisma.teamSlot.findFirst({
+        where: { tenant_id: targetTenantId, type: 'HUMAN' },
+        select: { id: true, email: true, name: true, role: true, type: true },
+      }));
+
+    if (!slot) throw new NotFoundException('No hay usuarios humanos en este tenant');
+
     const payload = {
-      sub: callerSlot.id,
+      sub: slot.id,
       tenant_id: targetTenantId,
-      role: callerSlot.role,
-      type: callerSlot.type,
-      email: callerSlot.email,
+      role: slot.role,
+      type: slot.type,
+      email: slot.email,
       tenant_type: tenant.tenant_type,
       platform_admin: true,
     };
@@ -1130,12 +1138,12 @@ curl -s https://api.anthropic.com/v1/messages \\
       access_token,
       company_name: tenant.name,
       user: {
-        slot_id: callerSlot.id,
+        slot_id: slot.id,
         tenant_id: targetTenantId,
-        role: callerSlot.role,
-        type: callerSlot.type,
-        email: callerSlot.email ?? '',
-        name: callerSlot.name,
+        role: slot.role,
+        type: slot.type,
+        email: slot.email ?? '',
+        name: slot.name,
         tenant_type: tenant.tenant_type,
         platform_admin: true,
       },
