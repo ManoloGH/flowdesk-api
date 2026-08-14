@@ -94,7 +94,7 @@ export class MentoriaSesionService {
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (!anthropicKey) throw new Error('API key de Anthropic no configurada');
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 25_000 });
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
     let currentCubo = (cliente.cubo as Record<string, string>) ?? {};
 
     // If sesionId provided, load history from that specific session
@@ -169,9 +169,9 @@ export class MentoriaSesionService {
         }
       }
     } catch (aiError: any) {
-      const isTimeout = aiError?.name === 'APITimeoutError' || aiError?.code === 'ETIMEDOUT';
+      const isTimeout = aiError?.name === 'APIConnectionTimeoutError' || aiError?.name === 'APITimeoutError' || aiError?.code === 'ETIMEDOUT';
       assistantText = isTimeout
-        ? 'El modelo tardó demasiado en responder (25s). Por favor intenta de nuevo con un mensaje más corto.'
+        ? 'El modelo tardó demasiado. Intenta de nuevo — si persiste, escribe mensajes más cortos.'
         : `Error al contactar al modelo: ${aiError?.message ?? 'error desconocido'}`;
       this.logger.error(`Error Anthropic en chatSesion: ${aiError?.message}`);
     }
