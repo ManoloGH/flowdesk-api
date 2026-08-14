@@ -1093,19 +1093,13 @@ curl -s https://api.anthropic.com/v1/messages \\
 
   // ─── Health score ─────────────────────────────────────────────────────────
 
-  async impersonateTenant(callerTenantId: string, callerSlotId: string, targetTenantId: string) {
+  async impersonateTenant(callerTenantId: string, targetTenantId: string, callerName?: string | null, callerEmail?: string | null) {
     await this.assertPlatform(callerTenantId);
 
-    const [tenant, callerSlot] = await Promise.all([
-      this.prisma.tenant.findUnique({
-        where: { id: targetTenantId },
-        select: { id: true, name: true, tenant_type: true },
-      }),
-      this.prisma.teamSlot.findFirst({
-        where: { id: callerSlotId },
-        select: { id: true, email: true, name: true },
-      }),
-    ]);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: targetTenantId },
+      select: { id: true, name: true, tenant_type: true },
+    });
     if (!tenant) throw new NotFoundException('Tenant no encontrado');
 
     // Busca el slot de mayor privilegio del tenant: owner > admin > cualquier humano
@@ -1135,8 +1129,8 @@ curl -s https://api.anthropic.com/v1/messages \\
       email: slot.email,
       tenant_type: tenant.tenant_type,
       platform_admin: true,
-      impersonator_name: callerSlot?.name ?? null,
-      impersonator_email: callerSlot?.email ?? null,
+      impersonator_name: callerName ?? null,
+      impersonator_email: callerEmail ?? null,
     };
 
     const access_token = this.jwt.sign(payload, {
@@ -1156,8 +1150,8 @@ curl -s https://api.anthropic.com/v1/messages \\
         name: slot.name,
         tenant_type: tenant.tenant_type,
         platform_admin: true,
-        impersonator_name: callerSlot?.name ?? null,
-        impersonator_email: callerSlot?.email ?? null,
+        impersonator_name: callerName ?? null,
+        impersonator_email: callerEmail ?? null,
       },
     };
   }

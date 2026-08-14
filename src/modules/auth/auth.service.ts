@@ -265,6 +265,7 @@ export class AuthService {
   ) {
     const payload = {
       sub: slotId, tenant_id: tenantId, role, type, email,
+      name: name ?? null,
       tenant_type: tenantType ?? 'BRANCH',
       platform_admin: platformAdmin ?? false,
     };

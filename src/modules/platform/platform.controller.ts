@@ -127,7 +127,7 @@ export class PlatformController {
   @Post('platform/network/:tenantId/impersonate')
   @ApiOperation({ summary: '[PLATFORM] Entrar como empresa (impersonation)' })
   impersonate(@Param('tenantId') tenantId: string, @Request() req: any) {
-    return this.service.impersonateTenant(req.user.tenant_id, req.user.sub, tenantId);
+    return this.service.impersonateTenant(req.user.tenant_id, tenantId, req.user.name, req.user.email);
   }
 
   @Patch('platform/network/:tenantId/account-type')
