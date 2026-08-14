@@ -197,8 +197,9 @@ export class MentoriaSesionService {
     if (!anthropicKey) throw new Error('API key de Anthropic no configurada');
 
     const cubo = (cliente.cubo ?? {}) as Record<string, string>;
+    // Only include known cubo sections (exclude internal fields like __cuestionarios_globales)
     const cuboText = Object.entries(cubo)
-      .filter(([, v]) => v?.trim())
+      .filter(([k, v]) => CUBO_KEYS.includes(k as any) && v?.trim())
       .map(([k, v]) => `[${k.toUpperCase()}]\n${v}`)
       .join('\n\n') || '(sin información en el cubo aún)';
 
@@ -248,23 +249,27 @@ Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
   ]
 }
 
-Genera entre 18 y 28 preguntas. Sé específico con la empresa y el área.`;
+Genera entre 12 y 18 preguntas. Sé específico con la empresa y el área.`;
 
     const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 3000,
+      max_tokens: 4000,
       system: 'Generates organizational diagnostic questionnaires. Respond ONLY with valid JSON. No markdown, no explanation.',
       messages: [{ role: 'user', content: prompt }],
     });
 
     const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+    this.logger.debug(`Cuestionario raw response (${text.length} chars): ${text.substring(0, 200)}`);
     let preguntas: any[] = [];
     try {
       const match = text.match(/\{[\s\S]*\}/);
-      const parsed = JSON.parse(match ? match[0] : text);
+      if (!match) throw new Error(`Sin bloque JSON en respuesta (${text.length} chars)`);
+      const parsed = JSON.parse(match[0]);
       preguntas = parsed.preguntas ?? [];
-    } catch {
+      if (preguntas.length === 0) throw new Error('JSON válido pero sin preguntas');
+    } catch (parseErr: any) {
+      this.logger.error(`Error parseando cuestionario: ${parseErr.message} | texto: ${text.substring(0, 500)}`);
       throw new Error('Error al generar el cuestionario. Intenta de nuevo.');
     }
 
