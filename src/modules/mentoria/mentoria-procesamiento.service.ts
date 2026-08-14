@@ -70,6 +70,7 @@ export class MentoriaProcesamientoService {
     plan: any[];
     resumen: string;
     roi: string;
+    roadmap_5_fases: any | null;
   }> {
     const cliente = await this.mentoria.getCliente(tenantId, clienteId);
     const diagnosticos = await this.mentoria.getAllDiagnosticoData(clienteId);
