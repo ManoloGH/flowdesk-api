@@ -107,9 +107,9 @@ export class MentoriaSesionService {
       fullHistory = (cliente.chat_history as ChatEntry[] | null) ?? [];
     }
 
-    // Last 12 entries (~6 exchanges), only non-empty content
+    // Last 6 entries (~3 exchanges), only non-empty content
     const recentHistory = fullHistory
-      .slice(-12)
+      .slice(-6)
       .filter(m => m.content?.trim());
 
     let currentMessages: Anthropic.MessageParam[] = [
@@ -122,10 +122,10 @@ export class MentoriaSesionService {
     const sectionsUpdated: string[] = [];
 
     try {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 2; i++) {
         const response = await anthropic.messages.create({
           model: 'claude-sonnet-4-6',
-          max_tokens: 800,
+          max_tokens: 500,
           system: systemPrompt,
           tools: [TOOL_ACTUALIZAR_CUBO],
           messages: currentMessages,
