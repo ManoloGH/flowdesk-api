@@ -38,7 +38,14 @@ Genera un análisis estructurado con este JSON exacto:
       "notas": "contexto adicional o dependencias"
     }
   ],
-  "roi_estimado": "estimación de ahorro o ganancia mensual en MXN"
+  "roi_estimado": "estimación de ahorro o ganancia mensual en MXN",
+  "roadmap_5_fases": {
+    "fase_1": { "titulo": "Data & Comunicación", "items": ["proceso → qué data se genera y cómo fluye"] },
+    "fase_2": { "titulo": "Entregables & Reglas", "items": ["SOP o entregable a estandarizar"] },
+    "fase_3": { "titulo": "Automatizaciones", "items": ["flujo o notificación a automatizar"] },
+    "fase_4": { "titulo": "Agente Conectado", "items": ["agente IA conectado a herramientas existentes"] },
+    "fase_5": { "titulo": "Agente Autónomo", "items": ["proceso end-to-end gestionado por agente"] }
+  }
 }
 
 Reglas:
@@ -125,11 +132,26 @@ export class MentoriaProcesamientoService {
     // Marcar diagnósticos como procesados
     await this.mentoria.markDiagnosticoProcesado(clienteId);
 
+    // Guardar roadmap_5_fases en el cubo del cliente
+    if (parsed.roadmap_5_fases) {
+      try {
+        const clienteActual = await this.mentoria.getCliente(tenantId, clienteId);
+        const cuboActual = (clienteActual as any).cubo ?? {};
+        const roadmapText = Object.entries(parsed.roadmap_5_fases as Record<string, {titulo: string; items: string[]}>)
+          .map(([fase, data]) => `${fase.toUpperCase()} — ${data.titulo}\n${(data.items ?? []).map((i: string) => `• ${i}`).join('\n')}`)
+          .join('\n\n');
+        await this.mentoria.updateCubo(tenantId, clienteId, { ...cuboActual, agentes: roadmapText });
+      } catch (e) {
+        this.logger.warn(`Error guardando roadmap en cubo: ${(e as any)?.message}`);
+      }
+    }
+
     return {
       hallazgos: hallazgosCreados,
       plan: accionesCreadas,
       resumen: parsed.resumen_ejecutivo ?? '',
       roi: parsed.roi_estimado ?? '',
+      roadmap_5_fases: parsed.roadmap_5_fases ?? null,
     };
   }
 }

@@ -272,7 +272,7 @@ export class MentoriaController {
   async chatSesion(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { message?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }>; tipo?: string },
+    @Body() body: { message?: string; messages?: Array<{ role: 'user' | 'assistant'; content: string }>; tipo?: string; sesionId?: string },
   ) {
     const message =
       body.message?.trim() ||
@@ -284,9 +284,42 @@ export class MentoriaController {
         tenantId: req.user.tenant_id,
         clienteId: id,
         message,
+        sesionId: body.sesionId,
       });
     } catch (e: any) {
       throw new HttpException(e?.message ?? 'Error en el agente', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // ── SESIONES DIAGNÓSTICO (sesiones nombradas con chat propio) ───────────────
+
+  @Get('clientes/:id/sesiones-diag')
+  getSesionesDiag(@Req() req: any, @Param('id') id: string) {
+    return this.service.getSesionesDiag(req.user.tenant_id, id);
+  }
+
+  @Post('clientes/:id/sesiones-diag')
+  createSesionDiag(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.service.createSesionDiag(req.user.tenant_id, id, body);
+  }
+
+  @Post('clientes/:id/sesiones-diag/:sid/generar-cuestionario')
+  async generarCuestionario(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Body() body: { rolDestino: 'gerente' | 'operador'; area: string },
+  ) {
+    try {
+      return await this.sesion.generarCuestionario({
+        tenantId: req.user.tenant_id,
+        clienteId: id,
+        sesionId: sid,
+        rolDestino: body.rolDestino,
+        area: body.area,
+      });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al generar cuestionario', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 

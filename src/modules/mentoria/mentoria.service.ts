@@ -451,6 +451,57 @@ export class MentoriaService {
     return this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo } });
   }
 
+  // ── SESIONES DIAGNÓSTICO (sesiones nombradas con chat propio) ───────────────
+
+  async getSesionesDiag(tenantId: string, clienteId: string) {
+    const c = await this.getCliente(tenantId, clienteId);
+    return ((c as any).sesiones_diagnostico ?? []) as any[];
+  }
+
+  async createSesionDiag(tenantId: string, clienteId: string, data: {
+    id: string; titulo: string; tipo: string;
+    interlocutor: string; cargo: string; area: string; fecha: string;
+  }) {
+    const c = await this.getCliente(tenantId, clienteId);
+    const sesiones: any[] = ((c as any).sesiones_diagnostico ?? []);
+    const nueva = { ...data, mensajes: [], cuestionarios_generados: [] };
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: [...sesiones, nueva] as any },
+    });
+    return nueva;
+  }
+
+  async appendSesionDiagMessages(clienteId: string, sesionId: string, entries: { role: string; content: string; ts: string }[]) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const idx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (idx === -1) return;
+    sesiones[idx].mensajes = [...(sesiones[idx].mensajes ?? []), ...entries];
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+  }
+
+  async saveCuestionarioGenerado(clienteId: string, sesionId: string, cuestionario: any) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const idx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (idx === -1) return;
+    sesiones[idx].cuestionarios_generados = [...(sesiones[idx].cuestionarios_generados ?? []), cuestionario];
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+  }
+
   async saveDiagnosticoPublic(clienteId: string, area: string, datos: any) {
     const cliente = await this.prisma.mentoriaCliente.findUnique({ where: { id: clienteId } });
 
