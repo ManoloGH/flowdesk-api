@@ -171,15 +171,19 @@ export class AuthService {
   }
 
   async loginWithGoogle(profile: GoogleProfile) {
-    const slot = await this.prisma.teamSlot.findFirst({
-      where: {
-        OR: [
-          { google_id: profile.googleId },
-          { email: profile.email, type: 'HUMAN' },
-        ],
-      },
+    // Busca primero por google_id exacto, luego por email — evita mezclar cuentas entre tenants
+    let slot = await this.prisma.teamSlot.findFirst({
+      where: { google_id: profile.googleId },
       include: { tenant: { select: { status: true, tenant_type: true, campus_config: true } } },
     });
+
+    if (!slot) {
+      slot = await this.prisma.teamSlot.findFirst({
+        where: { email: profile.email, type: 'HUMAN' },
+        include: { tenant: { select: { status: true, tenant_type: true, campus_config: true } } },
+        orderBy: { created_at: 'asc' },
+      });
+    }
 
     if (!slot) {
       throw new UnauthorizedException(
