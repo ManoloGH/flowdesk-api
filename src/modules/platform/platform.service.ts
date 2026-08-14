@@ -1096,10 +1096,16 @@ curl -s https://api.anthropic.com/v1/messages \\
   async impersonateTenant(callerTenantId: string, callerSlotId: string, targetTenantId: string) {
     await this.assertPlatform(callerTenantId);
 
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: targetTenantId },
-      select: { id: true, name: true, tenant_type: true },
-    });
+    const [tenant, callerSlot] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: targetTenantId },
+        select: { id: true, name: true, tenant_type: true },
+      }),
+      this.prisma.teamSlot.findFirst({
+        where: { id: callerSlotId },
+        select: { id: true, email: true, name: true },
+      }),
+    ]);
     if (!tenant) throw new NotFoundException('Tenant no encontrado');
 
     // Busca el slot de mayor privilegio del tenant: owner > admin > cualquier humano
@@ -1119,6 +1125,8 @@ curl -s https://api.anthropic.com/v1/messages \\
 
     if (!slot) throw new NotFoundException('No hay usuarios humanos en este tenant');
 
+    // El token usa el slot del tenant destino (para que funcionen sidebar y datos)
+    // pero embebe la identidad del super admin para mostrarla en el banner
     const payload = {
       sub: slot.id,
       tenant_id: targetTenantId,
@@ -1127,6 +1135,8 @@ curl -s https://api.anthropic.com/v1/messages \\
       email: slot.email,
       tenant_type: tenant.tenant_type,
       platform_admin: true,
+      impersonator_name: callerSlot?.name ?? null,
+      impersonator_email: callerSlot?.email ?? null,
     };
 
     const access_token = this.jwt.sign(payload, {
@@ -1146,6 +1156,8 @@ curl -s https://api.anthropic.com/v1/messages \\
         name: slot.name,
         tenant_type: tenant.tenant_type,
         platform_admin: true,
+        impersonator_name: callerSlot?.name ?? null,
+        impersonator_email: callerSlot?.email ?? null,
       },
     };
   }
