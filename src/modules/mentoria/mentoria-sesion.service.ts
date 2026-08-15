@@ -230,13 +230,24 @@ ${sesionContexto}
 
 Genera un cuestionario personalizado para los ${rolLabel} del área de ${area} en ${cliente.empresa}.
 
-INSTRUCCIONES:
-1. Usa la terminología y procesos reales de ${cliente.empresa} que aparecen en el cubo
-2. Para cada proceso clave del área, genera preguntas que sigan el modelo:
-   - SOLICITUD: ¿Quién activa el proceso? ¿Por qué canal llega? ¿Qué información proporcionan?
-   - PROCESO paso a paso: ¿Qué datos se generan en cada paso? ¿Dónde se registran? ¿Quién los registra? ¿Desde dónde trabaja? ¿Con qué dispositivo?
-   - ENTREGA: ¿Qué se entrega al finalizar? ¿Dónde queda el registro? ¿Qué exactamente se anota?
-3. Incluye preguntas sobre herramientas, sistemas, cuellos de botella y tareas repetitivas
+INSTRUCCIONES — genera un cuestionario estructurado por secciones para ${rolLabel} del área de ${area}:
+
+SECCIÓN 1 — Perfil del área: herramientas y sistemas que usa el área, número de personas, roles principales.
+
+SECCIÓN 2 — Procesos principales (al menos 3 procesos del área): para cada proceso documenta las 3 etapas:
+  - SOLICITUD: ¿Quién activa el proceso? ¿Por qué canal llega la solicitud? ¿Qué información proporcionan?
+  - PROCESO paso a paso: ¿Qué ocurre en cada paso? ¿Qué datos se generan? ¿Dónde se registran? ¿Quién los registra? ¿Desde dónde trabaja (oficina/campo/remoto)? ¿Con qué dispositivo?
+  - ENTREGA: ¿Qué se entrega al finalizar? ¿Dónde queda el registro? ¿Qué exactamente se anota? ¿Hay SOP o instructivo?
+
+SECCIÓN 3 — Flujos con otras áreas: ¿Qué información recibe de otras áreas y por qué medio? ¿Qué información entrega a otras áreas?
+
+SECCIÓN 4 — Documentos y archivos clave: ¿Qué documentos, archivos o reportes genera o usa el área? ¿Dónde viven? ¿Quién los crea y quién los consulta?
+
+SECCIÓN 5 — Decisiones y reglas de negocio: ¿Qué decisiones importantes toma el área? ¿Bajo qué condiciones? ¿Requieren autorización?
+
+SECCIÓN 6 — Indicadores y KPIs: ¿Cómo mide su desempeño el área? ¿A quién reporta y con qué frecuencia?
+
+SECCIÓN 7 — Problemas y oportunidades: ¿Cuáles son los 3 principales cuellos de botella? ¿Qué proceso quita más tiempo? ¿Qué errores ocurren con más frecuencia?
 
 Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
 {
@@ -249,12 +260,12 @@ Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
   ]
 }
 
-Genera entre 12 y 18 preguntas. Sé específico con la empresa y el área.`;
+Genera entre 20 y 28 preguntas, distribuidas entre las 7 secciones. Sé específico con ${cliente.empresa} y ${area}.`;
 
     const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      max_tokens: 5000,
       system: 'Generates organizational diagnostic questionnaires. Respond ONLY with valid JSON. No markdown, no explanation.',
       messages: [{ role: 'user', content: prompt }],
     });
@@ -298,5 +309,81 @@ Genera entre 12 y 18 preguntas. Sé específico con la empresa y el área.`;
     }
 
     return cuestionario;
+  }
+
+  async sugerirSiguientesSesiones(params: {
+    tenantId: string;
+    clienteId: string;
+    sesionId: string;
+  }): Promise<Array<{ titulo: string; tipo: string; interlocutor: string; cargo: string; area: string }>> {
+    const { tenantId, clienteId, sesionId } = params;
+
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
+    });
+    if (!cliente) throw new Error('Cliente no encontrado');
+
+    const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
+    const sesion = sesiones.find((s: any) => s.id === sesionId);
+    if (!sesion) throw new Error('Sesión no encontrada');
+
+    const cubo = (cliente.cubo ?? {}) as Record<string, string>;
+    const orgText = cubo.organigrama ?? '';
+    const sesionText = ((sesion.mensajes ?? []) as any[])
+      .map((m: any) => `${m.role === 'user' ? 'Asesor' : 'IA'}: ${m.content}`)
+      .join('\n');
+
+    const NEXT_ROLE: Record<string, string> = { dg: 'director', director: 'gerente', gerente: 'operador' };
+    const nextRole = NEXT_ROLE[sesion.tipo as string] ?? 'gerente';
+    const nextLabel = nextRole === 'director' ? 'Directores de área' : nextRole === 'gerente' ? 'Gerentes' : 'Operadores';
+
+    const prompt = `Eres experto en diagnóstico organizacional de empresas.
+
+SESIÓN ANALIZADA — ${sesion.interlocutor ?? 'Interlocutor'} (${sesion.cargo ?? sesion.tipo}):
+${sesionText || '(sesión sin mensajes registrados)'}
+
+ORGANIGRAMA CONOCIDO:
+${orgText || '(sin datos de organigrama aún)'}
+
+EMPRESA: ${cliente.empresa}
+
+Identifica quiénes son los ${nextLabel} que deberían ser entrevistados a continuación, basándote en lo que mencionó ${sesion.interlocutor ?? 'el interlocutor'} sobre su equipo y la estructura de la empresa.
+
+Devuelve SOLO JSON válido:
+{
+  "sesiones_sugeridas": [
+    {
+      "interlocutor": "nombre de la persona (o 'Por definir' si no se mencionó)",
+      "cargo": "cargo específico",
+      "area": "área o departamento que maneja",
+      "tipo": "${nextRole}",
+      "titulo": "Sesión ${nextRole === 'director' ? 'Director' : nextRole === 'gerente' ? 'Gerente' : 'Operador'} — cargo o área"
+    }
+  ],
+  "notas": "qué información falta para identificar mejor al equipo"
+}
+
+Máximo 8 sugerencias. Si no hay información suficiente, sugiere al menos 1 sesión genérica por área mencionada.`;
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) throw new Error('API key no configurada');
+
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 30_000 });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system: 'Organizational analyst. Respond ONLY with valid JSON. No markdown.',
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match ? match[0] : text);
+      return parsed.sesiones_sugeridas ?? [];
+    } catch {
+      this.logger.warn(`Error parseando sugerencias: ${text.substring(0, 200)}`);
+      return [];
+    }
   }
 }

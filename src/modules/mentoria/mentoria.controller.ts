@@ -303,6 +303,33 @@ export class MentoriaController {
     return this.service.createSesionDiag(req.user.tenant_id, id, body);
   }
 
+  @Patch('clientes/:id/sesiones-diag/:sid')
+  updateSesionDiag(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Body() body: { titulo?: string; area?: string; cargo?: string; interlocutor?: string },
+  ) {
+    return this.service.updateSesionDiag(id, sid, body);
+  }
+
+  @Post('clientes/:id/sesiones-diag/:sid/sugerir-siguientes')
+  async sugerirSiguientesSesiones(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+  ) {
+    try {
+      return await this.sesion.sugerirSiguientesSesiones({
+        tenantId: req.user.tenant_id,
+        clienteId: id,
+        sesionId: sid,
+      });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al sugerir sesiones', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   @Post('clientes/:id/generar-cuestionario')
   async generarCuestionarioGlobal(
     @Req() req: any,

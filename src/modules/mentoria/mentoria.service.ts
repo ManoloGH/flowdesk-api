@@ -502,6 +502,22 @@ export class MentoriaService {
     });
   }
 
+  async updateSesionDiag(clienteId: string, sesionId: string, updates: { titulo?: string; area?: string; cargo?: string; interlocutor?: string }) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const idx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (idx === -1) throw new Error('Sesión no encontrada');
+    sesiones[idx] = { ...sesiones[idx], ...updates };
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+    return sesiones[idx];
+  }
+
   async saveCuestionarioGlobal(clienteId: string, cuestionario: any) {
     const c = await this.prisma.mentoriaCliente.findUnique({
       where: { id: clienteId },
