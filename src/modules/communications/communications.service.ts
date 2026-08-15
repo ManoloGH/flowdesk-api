@@ -310,6 +310,7 @@ export class CommunicationsService {
       criterios_buen_lead: cfg.criterios_buen_lead ?? null, criterios_mal_lead: cfg.criterios_mal_lead ?? null,
       cierre_calificado: cfg.cierre_calificado ?? null, cierre_no_calificado: cfg.cierre_no_calificado ?? null,
       cal_booking_url: cfg.cal_booking_url ?? null, evolution_instance: cfg.evolution_instance ?? null,
+      escalation_phone: cfg.escalation_phone ?? null,
       journey: Array.isArray(cfg.journey) ? cfg.journey : [],
     };
   }
@@ -334,6 +335,7 @@ export class CommunicationsService {
         criterios_buen_lead: body.criterios_buen_lead ?? null, criterios_mal_lead: body.criterios_mal_lead ?? null,
         cierre_calificado: body.cierre_calificado ?? null, cierre_no_calificado: body.cierre_no_calificado ?? null,
         cal_booking_url: body.cal_booking_url ?? null,
+        escalation_phone: body.escalation_phone?.trim() || null,
         journey: Array.isArray(body.journey) ? body.journey : [],
         evolution_instance: evolutionInstance,
         ai_provider: 'openrouter',

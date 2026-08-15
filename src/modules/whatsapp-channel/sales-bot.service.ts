@@ -110,13 +110,29 @@ const TOOLS = [
     function: {
       name: 'derivarHumano',
       description:
-        'Cambia la conversación a modo HUMAN. Usar cuando el lead pida algo fuera del scope: precios específicos, quejas, contratos.',
+        'Cambia la conversación a modo HUMAN sin notificación. Usar para casos fuera de guión: quejas, precios específicos, contratos. Para escalar un lead calificado usa escalarAsesor().',
       parameters: {
         type: 'object',
         properties: {
           razon: { type: 'string', description: '¿Por qué se deriva? Para que el humano tenga contexto.' },
         },
         required: ['razon'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'escalarAsesor',
+      description:
+        'Notifica al asesor (director) vía WhatsApp y cambia la conversación a modo HUMAN. Usar cuando: (1) el lead pide hablar con una persona, (2) ya calificó con score ≥ 7 y quiere avanzar directamente, (3) la situación requiere atención inmediata de alguien del equipo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre_lead: { type: 'string', description: 'Nombre del lead' },
+          resumen:     { type: 'string', description: 'Resumen de 2-3 oraciones: empresa, dolor principal, por qué se escala' },
+        },
+        required: ['nombre_lead', 'resumen'],
       },
     },
   },
@@ -674,7 +690,8 @@ El prospecto ya conoce nuestro servicio y ya nos compartió su situación. Tu ú
 - Habla de los BENEFICIOS concretos que obtendría al trabajar con nosotros.
 - Responde sus dudas y objeciones con calidez y argumentos de valor.
 - Cuando sea el momento, envíale el link de agendamiento con agendar().
-- Si insiste en precios o condiciones específicas, usa derivarHumano().
+- Si pide hablar con alguien de inmediato, usa escalarAsesor() — notifica al director y transfiere.
+- Si insiste en precios o condiciones específicas sin querer hablar directamente, usa derivarHumano().
 
 ## Criterios de calificación
 
@@ -733,7 +750,9 @@ ${seguimientoSection}
 - **generarMicroDiagnostico**: cuando el prospecto haya respondido todas las preguntas del diagnóstico
 - **calificar**: cuando tengas información suficiente para evaluar si encaja
 - **agendar**: SOLO si calificar() devolvió score ≥ 7
-- **derivarHumano**: precios, quejas, casos fuera de guión${skillsSection}${deliverablesSection}${knowledgeSection}`.trim();
+- **escalarAsesor**: cuando el lead pide hablar con una persona O cuando ya calificó (score ≥ 7) y quiere avanzar directamente. Envía notificación al director y cambia a modo humano
+- **derivarHumano**: precios específicos, quejas, contratos — sin notificación
+- **agendar**: SOLO si calificar() devolvió score ≥ 7 y el lead prefiere agendar en lugar de hablar ya${skillsSection}${deliverablesSection}${knowledgeSection}`.trim();
   }
 
   private renderJourneyNodes(nodes: any[], indent: string): string {
@@ -1212,6 +1231,37 @@ ${preguntasList}
           ok: true,
           message: `Conversación derivada a agente humano. Razón: ${args.razon}`,
           instruccion: "Responde al usuario: 'Voy a transferirte con un asesor. Te atenderá en breve.' No respondas más en esta conversación.",
+        };
+      }
+
+      case 'escalarAsesor': {
+        // 1. Obtener teléfono de escalación desde agent_config
+        const escalSlot = await this.prisma.teamSlot.findFirst({
+          where: { tenant_id: _tenantId, type: 'AI_AGENT', agent_role: 'sales' },
+          select: { agent_config: true },
+        });
+        const escalCfg = (escalSlot?.agent_config as Record<string, any>) ?? {};
+        const escalationPhone = (escalCfg.escalation_phone as string | undefined)?.trim();
+
+        // 2. Notificar al asesor por WhatsApp
+        if (escalationPhone) {
+          const notifMsg = `🔔 *Leo escala un lead*\n\n*Nombre:* ${args.nombre_lead}\n*Teléfono del lead:* +${phone}\n\n*Resumen:* ${args.resumen}\n\n_Responde en la Bandeja de FlowDesk o contacta directamente al prospecto._`;
+          await this.evolution.sendText(instanceName, escalationPhone + '@s.whatsapp.net', notifMsg).catch(() => {});
+          this.logger.log(`escalarAsesor → notificación enviada a ${escalationPhone}`);
+        } else {
+          this.logger.warn('escalarAsesor: escalation_phone no configurado en agent_config');
+        }
+
+        // 3. Cambiar conversación a modo HUMAN
+        await this.prisma.botConversation.update({
+          where: { id: conversationId },
+          data: { mode: 'HUMAN' },
+        });
+
+        return {
+          ok: true,
+          message: 'Asesor notificado. Conversación transferida a modo humano.',
+          instruccion: "Dile al prospecto: 'Perfecto, voy a conectarte con Manolo, nuestro director. Te va a escribir en un momento. 🙌' No respondas más en esta conversación.",
         };
       }
 
