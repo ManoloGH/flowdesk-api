@@ -736,7 +736,7 @@ export class MentoriaService {
     const sesion = sesiones.find((s: any) => s.id === sesionId);
     const nombre = sesion?.interlocutor ?? 'Estimado colaborador';
 
-    const mensaje = `Hola ${nombre}, te escribe el equipo de MentorIA Systems.\n\nEstamos realizando el diagnóstico de procesos de *${cliente.empresa}* y nos gustaría conocer cómo funciona tu área.\n\nTe comparto este enlace para una entrevista breve (~15 min) que puedes completar desde tu celular o computadora:\n\n${opts.url}\n\n¡Gracias por tu tiempo! 🙏`;
+    const mensaje = `Hola ${nombre}, te escribe el equipo de MentorIA Systems.\n\nEstamos realizando el diagnóstico de procesos de *${cliente.empresa}* y nos gustaría conocer cómo funciona tu área.\n\nTe comparto un cuestionario breve (~15 min) que puedes completar desde tu celular o computadora:\n\n${opts.url}\n\n¡Gracias por tu tiempo! 🙏`;
 
     if (opts.canal === 'whatsapp') {
       const cfg = await this.prisma.secretaryConfig.findUnique({
