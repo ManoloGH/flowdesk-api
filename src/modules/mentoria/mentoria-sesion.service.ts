@@ -261,12 +261,12 @@ Devuelve SOLO JSON válido (sin markdown, sin texto fuera del JSON):
   ]
 }
 
-Genera entre 20 y 28 preguntas, distribuidas entre las 7 secciones. Sé específico con ${cliente.empresa} y ${area}.`;
+Genera entre 14 y 18 preguntas, distribuidas entre las 7 secciones (2-3 por sección). Sé específico con ${cliente.empresa} y ${area}.`;
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 25_000 });
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 5000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2500,
       system: 'Generates organizational diagnostic questionnaires. Respond ONLY with valid JSON. No markdown, no explanation.',
       messages: [{ role: 'user', content: prompt }],
     });
