@@ -721,6 +721,48 @@ export class MentoriaService {
     return { ok: true, url, mensaje, wa_enviado, wa_error, email_enviado };
   }
 
+  async enviarEntrevista(tenantId: string, clienteId: string, sesionId: string, opts: {
+    canal: 'whatsapp' | 'email';
+    destino: string;
+    token: string;
+    url: string;
+  }) {
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
+    });
+    if (!cliente) throw new Error('Cliente no encontrado');
+
+    const sesiones: any[] = ((cliente as any).sesiones_diagnostico ?? []);
+    const sesion = sesiones.find((s: any) => s.id === sesionId);
+    const nombre = sesion?.interlocutor ?? 'Estimado colaborador';
+
+    const mensaje = `Hola ${nombre}, te escribe el equipo de MentorIA Systems.\n\nEstamos realizando el diagnóstico de procesos de *${cliente.empresa}* y nos gustaría conocer cómo funciona tu área.\n\nTe comparto este enlace para una entrevista breve (~15 min) que puedes completar desde tu celular o computadora:\n\n${opts.url}\n\n¡Gracias por tu tiempo! 🙏`;
+
+    if (opts.canal === 'whatsapp') {
+      const cfg = await this.prisma.secretaryConfig.findUnique({
+        where: { tenant_id: tenantId },
+        select: { evolution_instance: true },
+      });
+      const instanceName = cfg?.evolution_instance;
+      if (!instanceName) throw new Error('Sin instancia WhatsApp configurada para este tenant');
+      await this.evolution.sendText(instanceName, opts.destino, mensaje);
+      return { ok: true, canal: 'whatsapp', destino: opts.destino };
+    }
+
+    if (opts.canal === 'email') {
+      await this.email.sendCuestionario({
+        to: opts.destino,
+        nombre,
+        empresa: cliente.empresa,
+        tipo: 'gerente',
+        url: opts.url,
+      });
+      return { ok: true, canal: 'email', destino: opts.destino };
+    }
+
+    throw new Error('Canal no válido');
+  }
+
   async marcarSesionCompletada(clienteId: string, sesionId: string) {
     const c = await this.prisma.mentoriaCliente.findUnique({
       where: { id: clienteId },

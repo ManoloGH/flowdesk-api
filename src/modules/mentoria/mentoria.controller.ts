@@ -429,6 +429,20 @@ export class MentoriaController {
     }
   }
 
+  @Post('clientes/:id/sesiones-diag/:sid/enviar-entrevista')
+  async enviarEntrevista(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Body() body: { canal: 'whatsapp' | 'email'; destino: string; token: string; url: string },
+  ) {
+    try {
+      return await this.service.enviarEntrevista(req.user.tenant_id, id, sid, body);
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al enviar', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   @Public()
   @Get('publico/sesion/:token')
   async getSesionPublica(@Param('token') token: string) {
