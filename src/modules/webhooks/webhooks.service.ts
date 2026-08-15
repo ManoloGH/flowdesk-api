@@ -188,6 +188,57 @@ export class WebhooksService {
         return;
       }
 
+      // ── Canal registrado en el conmutador ────────────────────────────────
+      // Si existe un Channel con routing_type definido, ese canal manda.
+      const channel = await (this.prisma as any).channel.findFirst({
+        where: { tenant_id: tenantId, external_id: instanceName },
+      });
+
+      if (channel?.routing_type) {
+        const rawJid = payload.data?.key?.remoteJid ?? '';
+        const rawMsg = payload.event === 'messages.upsert' && !payload.data?.key?.fromMe
+          ? (payload.data?.message?.conversation ?? payload.data?.message?.extendedTextMessage?.text)
+          : null;
+
+        if (rawMsg && rawJid) {
+          const phone = rawJid.replace(/@.+$/, '');
+
+          if (channel.routing_type === 'forward' && channel.routing_forward_number) {
+            // Reenviar el mensaje crudo al número destino
+            await this.evolution.sendText(instanceName, channel.routing_forward_number + '@s.whatsapp.net', rawMsg).catch(() => {});
+            this.logger.log(`Channel[${instanceName}] forward → ${channel.routing_forward_number}`);
+            return;
+          }
+
+          if (channel.routing_type === 'user') {
+            // Guardar en bandeja de conversaciones en modo HUMAN
+            const conv = await this.prisma.botConversation.upsert({
+              where: { tenant_id_phone: { tenant_id: tenantId, phone } },
+              create: {
+                tenant_id: tenantId,
+                phone,
+                jid: rawJid,
+                contact_name: payload.data?.pushName ?? null,
+                mode: 'HUMAN',
+                instance_name: instanceName,
+                last_message_at: new Date(),
+              },
+              update: { last_message_at: new Date() },
+            });
+            await this.prisma.botMessage.create({
+              data: { conversation_id: conv.id, role: 'user', content: rawMsg },
+            });
+            messagesGateway?.deliverToTenant(tenantId, 'inbox:new_message', {
+              source: 'whatsapp', channel: 'whatsapp', from: phone, content: rawMsg.slice(0, 80),
+            });
+            this.logger.log(`Channel[${instanceName}] user inbox → conv ${conv.id}`);
+            return;
+          }
+
+          // routing_type === 'agent' → continúa hacia salesBot abajo
+        }
+      }
+
       // ── Detectar instancia del Agente de Ventas ──────────────────────────
       // Si el slot de ventas tiene evolution_instance configurada y coincide,
       // el mensaje va al SalesBotService (con su propio historial y tools).

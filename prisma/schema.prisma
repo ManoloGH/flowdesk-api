@@ -112,6 +112,7 @@ model Tenant {
   business_rules         BusinessRule[]
   excel_uploads          ExcelUpload[]
   intake_tokens          IntakeToken[]
+  channels               Channel[]
 
   // Relaciones de red (PLATFORM → NETWORK → BRANCH)
   network   Tenant?  @relation("NetworkBranches", fields: [network_id], references: [id])
@@ -2191,6 +2192,34 @@ model BotMessage {
   conversation BotConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
 
   @@map("bot_messages")
+}
+
+// ─── CHANNEL — Canal de entrada conectado al conmutador ──────────────────────
+
+model Channel {
+  id                     String   @id @default(cuid())
+  tenant_id              String
+  type                   String   // 'whatsapp' | 'instagram' | 'webchat' | 'phone'
+  external_id            String   // instance name (WhatsApp), page ID (Instagram), widget ID, Twilio number
+  name                   String
+  number                 String?
+  status                 String   @default("unconfigured")
+  config_href            String?
+
+  // Ruteo del conmutador
+  routing_type           String?  // 'agent' | 'user' | 'forward'
+  routing_agent_id       String?  // id del TeamSlot AI agent
+  routing_user_id        String?  // id del TeamSlot humano
+  routing_forward_number String?  // número de teléfono para reenvío
+
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+
+  tenant                 Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, external_id])
+  @@index([tenant_id])
+  @@map("channels")
 }
 
 // ─────────────────────────────────────────────

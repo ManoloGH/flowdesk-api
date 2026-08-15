@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Put, Patch, Post, Delete, Body, Param, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CommunicationsService } from './communications.service';
 import { BotConversationsService } from './bot-conversations.service';
@@ -16,6 +16,18 @@ export class CommunicationsController {
   @ApiOperation({ summary: 'Estado de canales (WhatsApp + Teléfono) del tenant' })
   getChannels(@Request() req: any) {
     return this.service.getChannels(req.user.tenant_id);
+  }
+
+  @Patch('channels/:id')
+  @ApiOperation({ summary: 'Actualiza las reglas de ruteo de un canal' })
+  patchChannel(@Request() req: any, @Param('id') id: string, @Body() body: Record<string, any>) {
+    return this.service.patchChannel(id, req.user.tenant_id, body);
+  }
+
+  @Get('conversations/:id')
+  @ApiOperation({ summary: 'Detalle de una conversación (auditoría)' })
+  getConversationDetail(@Request() req: any, @Param('id') id: string) {
+    return this.service.getConversationDetail(req.user.tenant_id, id);
   }
 
   @Get('contacts')
