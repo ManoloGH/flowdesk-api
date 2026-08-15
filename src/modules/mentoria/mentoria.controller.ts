@@ -406,4 +406,44 @@ export class MentoriaController {
   getAutomatizacionesByCliente(@Req() req: any, @Param('id') id: string) {
     return this.service.getAutomatizaciones(req.user.tenant_id, id);
   }
+
+  // ── REVISIÓN FINAL DEL CUBO ──────────────────────────────────────────────────
+
+  @Post('clientes/:id/revisar-cubo')
+  async revisarCubo(@Req() req: any, @Param('id') id: string) {
+    try {
+      return await this.sesion.revisarCubo({ tenantId: req.user.tenant_id, clienteId: id });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al revisar el cubo', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // ── CHAT PÚBLICO CON TOKEN ───────────────────────────────────────────────────
+
+  @Post('clientes/:id/sesiones-diag/:sid/generar-token')
+  async generarTokenPublico(@Req() req: any, @Param('id') id: string, @Param('sid') sid: string) {
+    try {
+      return await this.service.generarTokenPublico(id, sid);
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al generar token', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Public()
+  @Get('publico/sesion/:token')
+  async getSesionPublica(@Param('token') token: string) {
+    const result = await this.service.obtenerSesionPublica(token);
+    if (!result) throw new HttpException('Sesión no encontrada', HttpStatus.NOT_FOUND);
+    return result;
+  }
+
+  @Public()
+  @Post('publico/sesion/:token/chat')
+  async chatPublico(@Param('token') token: string, @Body() body: { mensaje: string }) {
+    try {
+      return await this.sesion.chatSesionPublico({ token, mensaje: body.mensaje });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error en el chat', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
 }

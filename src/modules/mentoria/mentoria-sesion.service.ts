@@ -234,10 +234,11 @@ INSTRUCCIONES — genera un cuestionario estructurado por secciones para ${rolLa
 
 SECCIÓN 1 — Perfil del área: herramientas y sistemas que usa el área, número de personas, roles principales.
 
-SECCIÓN 2 — Procesos principales (al menos 3 procesos del área): para cada proceso documenta las 3 etapas:
-  - SOLICITUD: ¿Quién activa el proceso? ¿Por qué canal llega la solicitud? ¿Qué información proporcionan?
-  - PROCESO paso a paso: ¿Qué ocurre en cada paso? ¿Qué datos se generan? ¿Dónde se registran? ¿Quién los registra? ¿Desde dónde trabaja (oficina/campo/remoto)? ¿Con qué dispositivo?
-  - ENTREGA: ¿Qué se entrega al finalizar? ¿Dónde queda el registro? ¿Qué exactamente se anota? ¿Hay SOP o instructivo?
+SECCIÓN 2 — Procesos principales: identifica al menos 3 procesos clave del área y documenta cada uno con EXACTAMENTE 3 preguntas usando el campo "seccion" con el formato "<nombre del proceso> — SOLICITUD", "<nombre del proceso> — PROCESO", "<nombre del proceso> — ENTREGA":
+  - <Proceso> — SOLICITUD: ¿Quién activa el proceso? ¿Por qué canal llega (WhatsApp, email, verbal, sistema)? ¿Qué información exacta proporciona quien lo solicita? ¿Con qué frecuencia ocurre?
+  - <Proceso> — PROCESO: ¿Qué pasos ocurren desde que entra la solicitud hasta que se resuelve? ¿Qué datos se generan en cada paso? ¿Dónde se registran (sistema, Excel, papel, WhatsApp)? ¿Quién los registra y desde qué dispositivo? ¿Qué decisiones intermedias se toman y quién las toma?
+  - <Proceso> — ENTREGA: ¿Qué se entrega al finalizar (documento, notificación, registro en sistema)? ¿Dónde queda el registro final? ¿Quién confirma que el proceso terminó correctamente? ¿Existe un SOP o instructivo escrito?
+  Ejemplo de seccion para un proceso de cotización: "Cotización a cliente — SOLICITUD", "Cotización a cliente — PROCESO", "Cotización a cliente — ENTREGA".
 
 SECCIÓN 3 — Flujos con otras áreas: ¿Qué información recibe de otras áreas y por qué medio? ¿Qué información entrega a otras áreas?
 
@@ -385,5 +386,210 @@ Máximo 8 sugerencias. Si no hay información suficiente, sugiere al menos 1 ses
       this.logger.warn(`Error parseando sugerencias: ${text.substring(0, 200)}`);
       return [];
     }
+  }
+
+  // ── REVISIÓN FINAL DEL CUBO ──────────────────────────────────────────────────
+
+  async revisarCubo(params: { tenantId: string; clienteId: string }): Promise<{
+    resumen: string;
+    huecos: Array<{ area: string; descripcion: string; prioridad: 'critico' | 'importante' | 'menor' }>;
+    confirmaciones: string[];
+    entregables: Array<{ id: string; nombre: string; estado: 'listo' | 'incompleto' | 'sin_datos'; faltante?: string }>;
+    preguntas_finales: Array<{ seccion: string; pregunta: string }>;
+  }> {
+    const { tenantId, clienteId } = params;
+
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
+    });
+    if (!cliente) throw new Error('Cliente no encontrado');
+
+    const cubo = (cliente.cubo ?? {}) as Record<string, string>;
+    const cuboText = CUBO_KEYS
+      .filter(k => cubo[k]?.trim())
+      .map(k => `[${k.toUpperCase()}]\n${cubo[k]}`)
+      .join('\n\n') || '(vacío)';
+
+    const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
+    const sesionesText = sesiones.length
+      ? sesiones.map((s: any) => {
+          const msgs = ((s.mensajes ?? []) as any[])
+            .slice(-10)
+            .map((m: any) => `${m.role === 'user' ? 'Asesor' : 'IA'}: ${m.content}`)
+            .join('\n');
+          return `SESIÓN: ${s.titulo} (${s.tipo})\n${msgs || '(sin mensajes)'}`;
+        }).join('\n\n---\n\n')
+      : '(ninguna sesión registrada)';
+
+    const prompt = `Eres experto en diagnóstico organizacional. Revisas el cubo de información de ${cliente.empresa} ANTES de generar los entregables finales para detectar huecos y lo que falta confirmar.
+
+CUBO DE INFORMACIÓN:
+${cuboText}
+
+SESIONES REALIZADAS:
+${sesionesText}
+
+ENTREGABLES QUE SE GENERARÁN:
+1. flujo_asis — Mapa de Procesos AS-IS (necesita: areas_procesos, brechas, sistemas)
+2. org_actual — Organigrama actual (necesita: organigrama, contexto)
+3. flujo_tobe — Flujo TO-BE (necesita: agentes, areas_procesos)
+4. org_nuevo — Organigrama nuevo + costo (necesita: agentes, organigrama)
+5. propuesta — Propuesta agentes IA (necesita: agentes, brechas, contexto)
+6. roadmap — Roadmap 24 meses (necesita: todos los campos)
+
+Devuelve SOLO JSON válido:
+{
+  "resumen": "párrafo de 2-3 oraciones sobre el estado del diagnóstico y qué tan listo está para entregar",
+  "huecos": [
+    { "area": "nombre del área o sección", "descripcion": "qué falta documentar exactamente", "prioridad": "critico | importante | menor" }
+  ],
+  "confirmaciones": [
+    "dato o acuerdo que el asesor debe verificar con el cliente antes de la entrega (frases cortas, accionables)"
+  ],
+  "entregables": [
+    { "id": "flujo_asis | org_actual | flujo_tobe | org_nuevo | propuesta | roadmap", "nombre": "nombre completo", "estado": "listo | incompleto | sin_datos", "faltante": "qué falta (solo si no está listo)" }
+  ],
+  "preguntas_finales": [
+    { "seccion": "cubo key (contexto | areas_procesos | organigrama | sistemas | brechas | agentes)", "pregunta": "pregunta concreta para llenar el hueco" }
+  ]
+}`;
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) throw new Error('API key no configurada');
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 45_000 });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
+      system: 'Organizational diagnosis reviewer. Respond ONLY with valid JSON. No markdown.',
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Sin JSON en respuesta de revisión');
+    return JSON.parse(match[0]);
+  }
+
+  // ── CHAT PÚBLICO (sin auth, para entrevistas a gerentes/operadores) ──────────
+
+  async chatSesionPublico(params: {
+    token: string;
+    mensaje: string;
+  }): Promise<{ text: string; cubo: Record<string, string>; sections_updated: string[] }> {
+    const { token, mensaje } = params;
+
+    // Busca la sesión por token en todos los clientes
+    const clientes = await this.prisma.mentoriaCliente.findMany({
+      select: { id: true, empresa: true, cubo: true, sesiones_diagnostico: true },
+    });
+
+    let clienteId: string | null = null;
+    let sesionId: string | null = null;
+    let empresa = '';
+    let sesionData: any = null;
+
+    for (const c of clientes) {
+      const sesiones: any[] = ((c.sesiones_diagnostico ?? []) as any[]);
+      const sesion = sesiones.find((s: any) => s.token_publico === token);
+      if (sesion) {
+        clienteId = c.id;
+        sesionId = sesion.id;
+        empresa = c.empresa;
+        sesionData = sesion;
+        break;
+      }
+    }
+
+    if (!clienteId || !sesionId || !sesionData) throw new Error('Sesión no encontrada o token inválido');
+
+    const cliente = await this.prisma.mentoriaCliente.findUnique({ where: { id: clienteId } });
+    if (!cliente) throw new Error('Cliente no encontrado');
+
+    const cubo = (cliente.cubo as Record<string, string>) ?? {};
+    const cuboState = CUBO_KEYS
+      .filter(k => cubo[k]?.trim())
+      .map(k => `[${k.toUpperCase()}]\n${cubo[k]}`)
+      .join('\n\n') || '(sin datos aún)';
+
+    const systemPrompt = `Eres un asistente de diagnóstico organizacional. Estás entrevistando a ${sesionData.interlocutor ?? 'un colaborador'} (${sesionData.cargo ?? 'cargo'}) del área de ${sesionData.area ?? 'la empresa'} en ${empresa}.
+
+Tu objetivo: mapear los procesos del área haciendo preguntas conversacionales, una sección a la vez.
+
+Para cada proceso importante que mencionen, pregunta sobre las 3 etapas:
+- SOLICITUD: ¿quién activa el proceso y por qué canal?
+- PROCESO: ¿qué pasos se siguen? ¿dónde registran cada cosa?
+- ENTREGA: ¿qué se entrega al final? ¿queda registro en algún sistema?
+
+Instrucciones:
+- Habla directamente con ${sesionData.interlocutor ?? 'la persona'}, sé amable y conversacional
+- Haz máximo 2 preguntas a la vez
+- Cuando mencionen algo interesante, haz follow-up antes de cambiar de tema
+- No repitas preguntas ya respondidas
+- Responde en español, máximo 120 palabras
+
+Cuando tengas información nueva para documentar, inclúyela AL FINAL con el formato:
+[CUBO:areas_procesos]contenido completo actualizado[/CUBO]
+
+Información ya recopilada:
+${cuboState}`;
+
+    const fullHistory: ChatEntry[] = (sesionData.mensajes ?? []) as ChatEntry[];
+    const recentHistory = fullHistory.slice(-8).filter(m => m.content?.trim());
+
+    const messages: Anthropic.MessageParam[] = [
+      ...recentHistory.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user' as const, content: mensaje },
+    ];
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) throw new Error('API key no configurada');
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
+
+    let assistantText = '';
+    const sectionsUpdated: string[] = [];
+    let currentCubo = { ...cubo };
+
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages,
+      });
+
+      const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+      const { cleanText, updates } = parseCuboBlocks(rawText);
+      assistantText = cleanText;
+
+      for (const { seccion, contenido } of updates) {
+        currentCubo = { ...currentCubo, [seccion]: contenido };
+        sectionsUpdated.push(seccion);
+      }
+      if (updates.length > 0) {
+        await this.prisma.mentoriaCliente.update({
+          where: { id: clienteId },
+          data: { cubo: currentCubo },
+        });
+      }
+    } catch (aiError: any) {
+      const isTimeout = aiError?.name === 'APIConnectionTimeoutError' || aiError?.name === 'APITimeoutError';
+      assistantText = isTimeout
+        ? 'Tardé demasiado en responder. Por favor intenta de nuevo.'
+        : 'Ocurrió un error. Por favor intenta de nuevo.';
+    }
+
+    // Guardar mensajes en la sesión
+    if (mensaje.trim() || assistantText.trim()) {
+      const newEntries: ChatEntry[] = [
+        { role: 'user', content: mensaje, ts: new Date().toISOString() },
+        ...(assistantText.trim() ? [{ role: 'assistant' as const, content: assistantText, ts: new Date().toISOString() }] : []),
+      ];
+      try {
+        await this.mentoriaService.appendSesionDiagMessages(clienteId, sesionId, newEntries);
+      } catch {}
+    }
+
+    return { text: assistantText, cubo: currentCubo, sections_updated: sectionsUpdated };
   }
 }

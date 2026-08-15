@@ -720,4 +720,34 @@ export class MentoriaService {
 
     return { ok: true, url, mensaje, wa_enviado, wa_error, email_enviado };
   }
+
+  async generarTokenPublico(clienteId: string, sesionDiagId: string): Promise<{ token: string; url: string }> {
+    const token = `pub_${clienteId.slice(0, 6)}_${sesionDiagId.slice(-6)}_${Date.now().toString(36)}`;
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const idx = sesiones.findIndex((s: any) => s.id === sesionDiagId);
+    if (idx === -1) throw new Error('Sesión no encontrada');
+    sesiones[idx] = { ...sesiones[idx], token_publico: token };
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+    const baseUrl = process.env.DESK_URL ?? 'https://office.flowdesk.mx';
+    return { token, url: `${baseUrl}/diagnostico/${token}` };
+  }
+
+  async obtenerSesionPublica(token: string): Promise<{ clienteId: string; sesionId: string; empresa: string; sesion: any } | null> {
+    const clientes = await this.prisma.mentoriaCliente.findMany({
+      select: { id: true, empresa: true, sesiones_diagnostico: true },
+    });
+    for (const c of clientes) {
+      const sesiones: any[] = ((c.sesiones_diagnostico ?? []) as any[]);
+      const sesion = sesiones.find((s: any) => s.token_publico === token);
+      if (sesion) return { clienteId: c.id, sesionId: sesion.id, empresa: c.empresa, sesion };
+    }
+    return null;
+  }
 }
