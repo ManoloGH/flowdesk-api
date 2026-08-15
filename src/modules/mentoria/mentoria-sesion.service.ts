@@ -476,7 +476,7 @@ Devuelve SOLO JSON válido:
   async chatSesionPublico(params: {
     token: string;
     mensaje: string;
-  }): Promise<{ text: string; cubo: Record<string, string>; sections_updated: string[] }> {
+  }): Promise<{ text: string; cubo: Record<string, string>; sections_updated: string[]; completada: boolean }> {
     const { token, mensaje } = params;
 
     // Busca la sesión por token en todos los clientes
@@ -512,6 +512,9 @@ Devuelve SOLO JSON válido:
       .map(k => `[${k.toUpperCase()}]\n${cubo[k]}`)
       .join('\n\n') || '(sin datos aún)';
 
+    const intercambiosPrevios = fullHistory.filter((m: any) => m.role === 'user').length;
+    const suficientesIntercambios = intercambiosPrevios >= 8;
+
     const systemPrompt = `Eres un asistente de diagnóstico organizacional. Estás entrevistando a ${sesionData.interlocutor ?? 'un colaborador'} (${sesionData.cargo ?? 'cargo'}) del área de ${sesionData.area ?? 'la empresa'} en ${empresa}.
 
 Tu objetivo: mapear los procesos del área haciendo preguntas conversacionales, una sección a la vez.
@@ -521,15 +524,28 @@ Para cada proceso importante que mencionen, pregunta sobre las 3 etapas:
 - PROCESO: ¿qué pasos se siguen? ¿dónde registran cada cosa?
 - ENTREGA: ¿qué se entrega al final? ¿queda registro en algún sistema?
 
-Instrucciones:
+Cuando documentes cada proceso, actualiza el cubo AL FINAL de tu mensaje:
+[CUBO:areas_procesos]contenido COMPLETO actualizado del área — incluye lo ya recopilado más lo nuevo[/CUBO]
+
+También puedes actualizar otras secciones si el tema sale:
+[CUBO:organigrama]contenido[/CUBO]
+[CUBO:sistemas]contenido[/CUBO]
+[CUBO:brechas]contenido[/CUBO]
+
+Instrucciones de conversación:
 - Habla directamente con ${sesionData.interlocutor ?? 'la persona'}, sé amable y conversacional
 - Haz máximo 2 preguntas a la vez
-- Cuando mencionen algo interesante, haz follow-up antes de cambiar de tema
+- Haz follow-up antes de cambiar de tema
 - No repitas preguntas ya respondidas
-- Responde en español, máximo 120 palabras
+- Responde en español, máximo 150 palabras${suficientesIntercambios ? `
 
-Cuando tengas información nueva para documentar, inclúyela AL FINAL con el formato:
-[CUBO:areas_procesos]contenido completo actualizado[/CUBO]
+CONDICIÓN DE CIERRE — ya llevamos ${intercambiosPrevios} intercambios:
+Cuando consideres que ya documentaste al menos 3 procesos completos (SOLICITUD+PROCESO+ENTREGA cada uno), los flujos con otras áreas, los sistemas usados y los principales problemas del área, CIERRA la entrevista con un mensaje de despedida cálido que:
+1. Agradezca el tiempo de ${sesionData.interlocutor ?? 'la persona'} y mencione qué se logró documentar
+2. Informe que la información quedará guardada en FlowDesk para el diagnóstico
+3. Indique que el consultor les compartirá los resultados pronto
+Después de ese texto, incluye en una línea separada: [ENTREVISTA_COMPLETADA]
+Si aún faltan procesos o información clave, continúa la entrevista normalmente.` : ''}
 
 Información ya recopilada:
 ${cuboState}`;
@@ -549,16 +565,24 @@ ${cuboState}`;
     let assistantText = '';
     const sectionsUpdated: string[] = [];
     let currentCubo = { ...cubo };
+    let entrevistaCompletada = false;
 
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 600,
+        max_tokens: 700,
         system: systemPrompt,
         messages,
       });
 
-      const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+      let rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+
+      // Detectar marcador de cierre
+      if (rawText.includes('[ENTREVISTA_COMPLETADA]')) {
+        entrevistaCompletada = true;
+        rawText = rawText.replace(/\[ENTREVISTA_COMPLETADA\]/g, '').trim();
+      }
+
       const { cleanText, updates } = parseCuboBlocks(rawText);
       assistantText = cleanText;
 
@@ -571,6 +595,11 @@ ${cuboState}`;
           where: { id: clienteId },
           data: { cubo: currentCubo },
         });
+      }
+
+      // Marcar sesión como completada
+      if (entrevistaCompletada) {
+        await this.mentoriaService.marcarSesionCompletada(clienteId, sesionId);
       }
     } catch (aiError: any) {
       const isTimeout = aiError?.name === 'APIConnectionTimeoutError' || aiError?.name === 'APITimeoutError';
@@ -590,6 +619,6 @@ ${cuboState}`;
       } catch {}
     }
 
-    return { text: assistantText, cubo: currentCubo, sections_updated: sectionsUpdated };
+    return { text: assistantText, cubo: currentCubo, sections_updated: sectionsUpdated, completada: entrevistaCompletada };
   }
 }

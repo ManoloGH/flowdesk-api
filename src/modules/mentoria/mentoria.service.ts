@@ -721,6 +721,21 @@ export class MentoriaService {
     return { ok: true, url, mensaje, wa_enviado, wa_error, email_enviado };
   }
 
+  async marcarSesionCompletada(clienteId: string, sesionId: string) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const idx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (idx === -1) return;
+    sesiones[idx] = { ...sesiones[idx], completada: true, fecha_completada: new Date().toISOString() };
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+  }
+
   async generarTokenPublico(clienteId: string, sesionDiagId: string): Promise<{ token: string; url: string }> {
     const token = `pub_${clienteId.slice(0, 6)}_${sesionDiagId.slice(-6)}_${Date.now().toString(36)}`;
     const c = await this.prisma.mentoriaCliente.findUnique({
