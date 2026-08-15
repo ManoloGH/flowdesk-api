@@ -783,7 +783,11 @@ ${seguimientoSection}
           lines.push(`${indent}[${node.label}] — Pregunta: "${node.pregunta}" — Espera respuesta libre.`);
         }
       } else if (node.type === 'entregable') {
-        lines.push(`${indent}[${node.label}] — Llama a ofrecerEntregable({ deliverable_id: "${node.deliverable_id ?? ''}" }) para ofrecer el diagnóstico al prospecto. Cuando acepte, recopila sus respuestas con completarEntregable() y envíale el link.`);
+        if (node.entregable === 'microdiagnostico' || !node.deliverable_id) {
+          lines.push(`${indent}[${node.label}] — Ya tienes TODAS las respuestas del prospecto. Ahora: (1) llama a registrarEnCRM() con nombre, empresa y teléfono si aún no lo hiciste, (2) llama a generarMicroDiagnostico() pasando nombre, empresa, teléfono y las respuestas de las 5 preguntas, (3) envía la URL resultante al prospecto. Luego califica con calificar().`);
+        } else {
+          lines.push(`${indent}[${node.label}] — Llama a ofrecerEntregable({ deliverable_id: "${node.deliverable_id}" }) para ofrecer el diagnóstico al prospecto. Cuando acepte, recopila sus respuestas con completarEntregable() y envíale el link.`);
+        }
       } else if (node.type === 'agendar') {
         lines.push(`${indent}[${node.label}] — Califica con calificar(). Si score ≥ 7, llama a agendar() con la URL de Cal.com configurada. Si no califica, cierra con calidez.`);
       }
