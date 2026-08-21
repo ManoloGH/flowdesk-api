@@ -313,6 +313,47 @@ export class MentoriaController {
     return this.service.updateSesionDiag(id, sid, body);
   }
 
+  @Delete('clientes/:id/sesiones-diag/:sid')
+  async deleteSesionDiag(
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+  ) {
+    try {
+      await this.service.deleteSesionDiag(id, sid);
+      return { ok: true };
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al eliminar sesión', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @Patch('clientes/:id/sesiones-diag/:sid/cuestionarios/:cid')
+  async updateCuestionario(
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Param('cid') cid: string,
+    @Body() body: { titulo?: string; preguntas?: any[] },
+  ) {
+    try {
+      return await this.service.updateCuestionario(id, sid, cid, body);
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al actualizar cuestionario', HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  @Delete('clientes/:id/sesiones-diag/:sid/cuestionarios/:cid')
+  async deleteCuestionario(
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Param('cid') cid: string,
+  ) {
+    try {
+      await this.service.deleteCuestionario(id, sid, cid);
+      return { ok: true };
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error al eliminar cuestionario', HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Post('clientes/:id/sesiones-diag/:sid/sugerir-siguientes')
   async sugerirSiguientesSesiones(
     @Req() req: any,

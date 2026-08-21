@@ -518,6 +518,57 @@ export class MentoriaService {
     return sesiones[idx];
   }
 
+  async deleteSesionDiag(clienteId: string, sesionId: string) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const filtered = sesiones.filter((s: any) => s.id !== sesionId);
+    if (filtered.length === sesiones.length) throw new Error('Sesión no encontrada');
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: filtered as any },
+    });
+  }
+
+  async updateCuestionario(clienteId: string, sesionId: string, cuestionarioId: string, updates: { titulo?: string; preguntas?: any[] }) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const sIdx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (sIdx === -1) throw new Error('Sesión no encontrada');
+    const cuestionarios: any[] = sesiones[sIdx].cuestionarios_generados ?? [];
+    const cIdx = cuestionarios.findIndex((cq: any) => cq.id === cuestionarioId);
+    if (cIdx === -1) throw new Error('Cuestionario no encontrado');
+    cuestionarios[cIdx] = { ...cuestionarios[cIdx], ...updates };
+    sesiones[sIdx].cuestionarios_generados = cuestionarios;
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+    return cuestionarios[cIdx];
+  }
+
+  async deleteCuestionario(clienteId: string, sesionId: string, cuestionarioId: string) {
+    const c = await this.prisma.mentoriaCliente.findUnique({
+      where: { id: clienteId },
+      select: { sesiones_diagnostico: true },
+    });
+    const sesiones: any[] = ((c?.sesiones_diagnostico ?? []) as any[]);
+    const sIdx = sesiones.findIndex((s: any) => s.id === sesionId);
+    if (sIdx === -1) throw new Error('Sesión no encontrada');
+    const before = (sesiones[sIdx].cuestionarios_generados ?? []).length;
+    sesiones[sIdx].cuestionarios_generados = (sesiones[sIdx].cuestionarios_generados ?? []).filter((cq: any) => cq.id !== cuestionarioId);
+    if (sesiones[sIdx].cuestionarios_generados.length === before) throw new Error('Cuestionario no encontrado');
+    await this.prisma.mentoriaCliente.update({
+      where: { id: clienteId },
+      data: { sesiones_diagnostico: sesiones as any },
+    });
+  }
+
   async saveCuestionarioGlobal(clienteId: string, cuestionario: any) {
     const c = await this.prisma.mentoriaCliente.findUnique({
       where: { id: clienteId },
