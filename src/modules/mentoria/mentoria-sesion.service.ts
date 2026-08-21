@@ -43,11 +43,10 @@ INSTRUCCIONES DE RESPUESTA:
 1. Responde al asesor en maximo 150 palabras en espanol.
 2. Confirma lo que ya quedo documentado y lo que falta.
 3. Haz 2 preguntas concretas para completar el mapeo del proceso.
-4. Si hay informacion nueva que guardar, incluye AL FINAL (despues de tu texto) uno o mas bloques asi:
-[CUBO:seccion]contenido completo actualizado de la seccion[/CUBO]
+4. Si hay informacion NUEVA que guardar (no repetir lo que ya esta en el cubo), incluye AL FINAL bloques delta:
+[CUBO:seccion]SOLO el contenido NUEVO a agregar — NO repitas lo que ya esta en el cubo[/CUBO]
 Secciones: contexto | areas_procesos | organigrama | sistemas | brechas | agentes
-El contenido debe ser el texto COMPLETO de la seccion (incluye lo anterior + lo nuevo).
-Solo incluye bloques [CUBO] cuando hay informacion nueva del cliente.`;
+IMPORTANTE: los bloques [CUBO] son ADITIVOS — el sistema concatena lo nuevo al final de la seccion existente. NO incluyas informacion que ya aparece en "Estado actual del cubo". Solo escribe lo que es nuevo en esta sesion.`;
 }
 
 function parseCuboBlocks(text: string): { cleanText: string; updates: Array<{ seccion: CuboKey; contenido: string }> } {
@@ -124,18 +123,25 @@ export class MentoriaSesionService {
       // Single API call — no tool use loop
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
+        max_tokens: 4000,
         system: systemPrompt,
         messages,
       });
+
+      // Detect truncation — log warning when stop_reason is max_tokens
+      const stopReason = (response as any).stop_reason;
+      if (stopReason === 'max_tokens') {
+        this.logger.warn(`chatSesion truncated at max_tokens for client ${clienteId}`);
+      }
 
       const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
       const { cleanText, updates } = parseCuboBlocks(rawText);
       assistantText = cleanText;
 
-      // Apply cubo updates from parsed blocks
+      // Apply cubo updates — ADDITIVE: append new content to existing section
       for (const { seccion, contenido } of updates) {
-        currentCubo = { ...currentCubo, [seccion]: contenido };
+        const existing = (currentCubo[seccion] ?? '').trim();
+        currentCubo = { ...currentCubo, [seccion]: existing ? `${existing}\n\n${contenido}` : contenido };
         sectionsUpdated.push(seccion);
       }
       if (updates.length > 0) {
