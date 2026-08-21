@@ -41,8 +41,8 @@ ${cuboState}
 
 INSTRUCCIONES DE RESPUESTA:
 1. Responde al asesor en maximo 150 palabras en espanol.
-2. Confirma lo que ya quedo documentado y lo que falta.
-3. Haz 2 preguntas concretas para completar el mapeo del proceso.
+2. Confirma brevemente lo que acaba de documentar.
+3. Si hay informacion del proceso que AUN NO esta en el cubo, haz 1-2 preguntas concretas para llenar esos huecos. Si el proceso ya quedo completo (SOLICITUD+PROCESO+ENTREGA documentados), confirma y sugiere avanzar al siguiente proceso o area — NO hagas mas preguntas sobre lo que ya esta documentado.
 4. Si hay informacion NUEVA que guardar (no repetir lo que ya esta en el cubo), incluye AL FINAL bloques delta:
 [CUBO:seccion]SOLO el contenido NUEVO a agregar — NO repitas lo que ya esta en el cubo[/CUBO]
 Secciones: contexto | areas_procesos | organigrama | sistemas | brechas | agentes
@@ -530,6 +530,7 @@ Devuelve SOLO JSON válido:
       .map(k => `[${k.toUpperCase()}]\n${cubo[k]}`)
       .join('\n\n') || '(sin datos aún)';
 
+    const fullHistory: ChatEntry[] = (sesionData.mensajes ?? []) as ChatEntry[];
     const intercambiosPrevios = fullHistory.filter((m: any) => m.role === 'user').length;
     const suficientesIntercambios = intercambiosPrevios >= 8;
 
@@ -568,7 +569,6 @@ Si aún faltan procesos o información clave, continúa la entrevista normalment
 Información ya recopilada:
 ${cuboState}`;
 
-    const fullHistory: ChatEntry[] = (sesionData.mensajes ?? []) as ChatEntry[];
     const recentHistory = fullHistory.slice(-8).filter(m => m.content?.trim());
 
     const messages: Anthropic.MessageParam[] = [
