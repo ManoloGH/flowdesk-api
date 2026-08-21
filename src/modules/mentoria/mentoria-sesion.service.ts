@@ -13,16 +13,24 @@ interface ChatEntry {
 
 const CUBO_KEYS = ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'] as const;
 
-function buildSystemPrompt(empresa: string, cubo: Record<string, string>): string {
+function buildSystemPrompt(
+  empresa: string,
+  cubo: Record<string, string>,
+  sesionCtx?: { area?: string; interlocutor?: string; cargo?: string },
+): string {
   const cuboState = Object.entries(cubo)
     .filter(([k, v]) => CUBO_KEYS.includes(k as any) && v?.trim())
     .map(([k, v]) => `[${k.toUpperCase()}]\n${v}`)
     .join('\n\n') || '(vacio - primera sesion)';
 
+  const sesionLine = sesionCtx?.interlocutor
+    ? `SESION ACTUAL: ${sesionCtx.interlocutor}${sesionCtx.cargo ? ` (${sesionCtx.cargo})` : ''}${sesionCtx.area ? ` — area: ${sesionCtx.area}` : ''}. Enfocate SOLO en esta area/persona.`
+    : '';
+
   return `Eres el asistente de diagnostico del asesor de MentorIA Systems. Tu interlocutor es SIEMPRE el asesor, nunca el cliente.
 
 El asesor conduce entrevistas con "${empresa}" y te comparte lo que le dijo el cliente.
-
+${sesionLine ? '\n' + sesionLine : ''}
 METODOLOGIA — documenta cada proceso en 3 etapas:
 1. SOLICITUD: quien lo activa, por donde llega, que informacion dan.
 2. PROCESO paso a paso: que data se genera, donde se registra, quien, desde donde trabaja, en que dispositivo.
@@ -32,7 +40,7 @@ Estado actual del cubo:
 ${cuboState}
 
 INSTRUCCIONES DE RESPUESTA:
-1. Responde al asesor en maximo 120 palabras en espanol.
+1. Responde al asesor en maximo 150 palabras en espanol.
 2. Confirma lo que ya quedo documentado y lo que falta.
 3. Haz 2 preguntas concretas para completar el mapeo del proceso.
 4. Si hay informacion nueva que guardar, incluye AL FINAL (despues de tu texto) uno o mas bloques asi:
@@ -86,17 +94,21 @@ export class MentoriaSesionService {
 
     // If sesionId provided, load history from that specific session
     let fullHistory: ChatEntry[];
+    let sesionCtx: { area?: string; interlocutor?: string; cargo?: string } | undefined;
     if (sesionId) {
       const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
       const sesion = sesiones.find((s: any) => s.id === sesionId);
       fullHistory = (sesion?.mensajes ?? []) as ChatEntry[];
+      if (sesion) {
+        sesionCtx = { area: sesion.area, interlocutor: sesion.interlocutor, cargo: sesion.cargo };
+      }
     } else {
       fullHistory = (cliente.chat_history as ChatEntry[] | null) ?? [];
     }
 
-    // Last 6 messages (~3 exchanges), only non-empty content
+    // Last 8 messages (~4 exchanges), only non-empty content
     const recentHistory = fullHistory
-      .slice(-6)
+      .slice(-8)
       .filter(m => m.content?.trim());
 
     const messages: Anthropic.MessageParam[] = [
@@ -104,7 +116,7 @@ export class MentoriaSesionService {
       { role: 'user' as const, content: message },
     ];
 
-    const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo);
+    const systemPrompt = buildSystemPrompt(cliente.empresa, currentCubo, sesionCtx);
     let assistantText = '';
     const sectionsUpdated: string[] = [];
 
@@ -112,7 +124,7 @@ export class MentoriaSesionService {
       // Single API call — no tool use loop
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 600,
+        max_tokens: 2000,
         system: systemPrompt,
         messages,
       });
