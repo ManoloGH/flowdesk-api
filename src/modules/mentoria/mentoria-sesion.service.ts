@@ -39,14 +39,16 @@ METODOLOGIA — documenta cada proceso en 3 etapas:
 Estado actual del cubo:
 ${cuboState}
 
-INSTRUCCIONES DE RESPUESTA:
-1. Responde al asesor en maximo 150 palabras en espanol.
-2. Confirma brevemente lo que acaba de documentar.
-3. Si hay informacion del proceso que AUN NO esta en el cubo, haz 1-2 preguntas concretas para llenar esos huecos. Si el proceso ya quedo completo (SOLICITUD+PROCESO+ENTREGA documentados), confirma y sugiere avanzar al siguiente proceso o area — NO hagas mas preguntas sobre lo que ya esta documentado.
-4. Si hay informacion NUEVA que guardar (no repetir lo que ya esta en el cubo), incluye AL FINAL bloques delta:
-[CUBO:seccion]SOLO el contenido NUEVO a agregar — NO repitas lo que ya esta en el cubo[/CUBO]
+INSTRUCCIONES DE CONVERSACION:
+- Responde en maximo 100 palabras en espanol. Tono directo, sin formalismos.
+- Contesta SOLO al ultimo mensaje del asesor — no hagas resumen del cubo ni de otras sesiones.
+- Guia la conversacion hacia lo que falta del proceso ACTUAL: si ya tienes SOLICITUD, pregunta por PROCESO; si ya tienes PROCESO, pregunta por ENTREGA.
+- Si hay huecos claros, haz 1-2 preguntas especificas para llenarlo. Si ya esta completo (SOLICITUD+PROCESO+ENTREGA), di que quedo documentado y sugiere el siguiente proceso o area.
+- NO hagas resumen general en cada mensaje. El resumen va solo cuando el asesor lo pide o al cerrar la sesion.
+- Si hay informacion NUEVA (no repetida del cubo), incluye AL FINAL bloques delta:
+[CUBO:seccion]SOLO el contenido NUEVO — NO repitas lo que ya esta en el cubo[/CUBO]
 Secciones: contexto | areas_procesos | organigrama | sistemas | brechas | agentes
-IMPORTANTE: los bloques [CUBO] son ADITIVOS — el sistema concatena lo nuevo al final de la seccion existente. NO incluyas informacion que ya aparece en "Estado actual del cubo". Solo escribe lo que es nuevo en esta sesion.`;
+IMPORTANTE: bloques [CUBO] son ADITIVOS — el sistema concatena al final de la seccion. Solo escribe lo nuevo de esta sesion.`;
 }
 
 function parseCuboBlocks(text: string): { cleanText: string; updates: Array<{ seccion: CuboKey; contenido: string }> } {
