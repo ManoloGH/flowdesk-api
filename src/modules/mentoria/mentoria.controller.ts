@@ -493,7 +493,7 @@ export class MentoriaController {
     @Req() req: any,
     @Param('id') id: string,
     @Param('agente') agente: 'planificacion' | 'cubo' | 'entregables',
-  ) {
+  ): Promise<any[]> {
     return this.agentes.getHistory(req.user.tenant_id, id, agente);
   }
 
