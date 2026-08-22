@@ -3,6 +3,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { MentoriaService } from './mentoria.service';
 import { MentoriaProcesamientoService } from './mentoria-procesamiento.service';
 import { MentoriaSesionService } from './mentoria-sesion.service';
+import { MentoriaAgentesService } from './mentoria-agentes.service';
 
 @Controller('mentoria')
 export class MentoriaController {
@@ -10,6 +11,7 @@ export class MentoriaController {
     private readonly service: MentoriaService,
     private readonly procesamiento: MentoriaProcesamientoService,
     private readonly sesion: MentoriaSesionService,
+    private readonly agentes: MentoriaAgentesService,
   ) {}
 
   // ── DEBUG (borrar después de verificar) ────────────────────────────────────
@@ -482,6 +484,40 @@ export class MentoriaController {
     } catch (e: any) {
       throw new HttpException(e?.message ?? 'Error al enviar', HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  // ── AGENTES IA (planificacion | cubo | entregables) ────────────────────────────
+
+  @Get('clientes/:id/agente-chat/:agente')
+  async getAgenteHistory(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('agente') agente: 'planificacion' | 'cubo' | 'entregables',
+  ) {
+    return this.agentes.getHistory(req.user.tenant_id, id, agente);
+  }
+
+  @Post('clientes/:id/agente-chat')
+  async agenteChat(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { agente: 'planificacion' | 'cubo' | 'entregables'; mensaje: string },
+  ) {
+    try {
+      return await this.agentes.chat({ tenantId: req.user.tenant_id, clienteId: id, agente: body.agente, mensaje: body.mensaje });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error en agente chat', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Delete('clientes/:id/agente-chat/:agente')
+  async clearAgenteHistory(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('agente') agente: 'planificacion' | 'cubo' | 'entregables',
+  ) {
+    await this.agentes.clearHistory(req.user.tenant_id, id, agente);
+    return { ok: true };
   }
 
   @Public()
