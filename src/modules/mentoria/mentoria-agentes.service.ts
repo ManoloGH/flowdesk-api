@@ -2,7 +2,21 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../database/prisma.service';
 
-type AgenteKey = 'planificacion' | 'cubo' | 'entregables';
+type AgenteKey = 'planificacion' | 'cubo' | 'entregables' | 'sesion_maestra';
+
+const CUBO_KEYS = ['contexto', 'areas_procesos', 'organigrama', 'sistemas', 'brechas', 'agentes'] as const;
+type CuboKey = typeof CUBO_KEYS[number];
+
+function parseCuboBlocks(text: string): { cleanText: string; updates: { seccion: CuboKey; contenido: string }[] } {
+  const updates: { seccion: CuboKey; contenido: string }[] = [];
+  const regex = /\[CUBO:(\w+)\]([\s\S]*?)\[\/CUBO\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const seccion = match[1] as CuboKey;
+    if (CUBO_KEYS.includes(seccion)) updates.push({ seccion, contenido: match[2].trim() });
+  }
+  return { cleanText: text.replace(/\[CUBO:\w+\][\s\S]*?\[\/CUBO\]/g, '').trim(), updates };
+}
 
 interface ChatEntry {
   role: 'user' | 'assistant';
@@ -220,5 +234,131 @@ export class MentoriaAgentesService {
       where: { id: clienteId },
       data: { chats_agente: { ...chats, [agente]: [] } as any },
     });
+  }
+
+  // ── SESIÓN MAESTRA ─────────────────────────────────────────────────────────────
+
+  async chatSesionMaestra(params: {
+    tenantId: string;
+    clienteId: string;
+    mensaje: string;
+  }): Promise<{ text: string; sections_updated: string[]; cubo: any }> {
+    const { tenantId, clienteId, mensaje } = params;
+
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
+    });
+    if (!cliente) throw new Error('Cliente no encontrado');
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) throw new Error('API key no configurada');
+
+    let cubo = (cliente.cubo as any) ?? {};
+    const sesiones = ((cliente as any).sesiones_diagnostico ?? []) as any[];
+    const chatsAgente = ((cliente as any).chats_agente ?? {}) as any;
+    const history: ChatEntry[] = chatsAgente['sesion_maestra'] ?? [];
+
+    // Armar transcript completo de todas las sesiones
+    const transcriptSesiones = sesiones.length
+      ? sesiones.map(s => {
+          const msgs = ((s.mensajes ?? []) as any[])
+            .map((m: any) => `${m.role === 'user' ? 'Asesor' : 'IA'}: ${m.content}`)
+            .join('\n');
+          const cqs = (s.cuestionarios_generados ?? []).length;
+          return `═══ SESIÓN: ${s.titulo} (${s.tipo}) | ${s.interlocutor ?? '?'} — ${s.area ?? '?'} | ${s.completada ? 'completada' : 'en progreso'} | ${cqs} cuestionarios ═══\n${msgs || '(sin mensajes)'}`;
+        }).join('\n\n')
+      : '(ninguna sesión registrada)';
+
+    const cuboCompleto = CUBO_KEYS
+      .map(k => `[${k.toUpperCase()}]\n${cubo[k]?.trim() || '(vacío)'}`)
+      .join('\n\n');
+
+    const entregablesMap = ENTREGABLES_REQUERIDOS.map(e => {
+      const faltantes = e.necesita.filter(k => !cubo[k]?.trim());
+      return `• ${e.titulo}: ${faltantes.length === 0 ? '✓ listo' : `falta: ${faltantes.join(', ')}`}`;
+    }).join('\n');
+
+    const systemPrompt = `Eres el Agente de Síntesis del diagnóstico de "${cliente.empresa}". Tienes acceso al historial COMPLETO de TODAS las sesiones realizadas.
+
+TU OBJETIVO: identificar qué información se cruza entre sesiones, qué quedó incompleto, qué se contradice entre áreas, y guiar al asesor para resolver esos huecos en esta misma conversación.
+
+TRANSCRIPTS COMPLETOS DE TODAS LAS SESIONES:
+${transcriptSesiones}
+
+CUBO DE INFORMACIÓN ACTUAL:
+${cuboCompleto}
+
+ESTADO POR ENTREGABLE:
+${entregablesMap}
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Cruza la información entre sesiones: si Ventas dijo X y Operaciones dijo Y sobre el mismo proceso, señálalo.
+2. Detecta preguntas que quedaron sin respuesta completa en alguna sesión.
+3. Identifica información que surgió en una sesión y que debería complementar otra área.
+4. Prioriza los huecos por impacto en los entregables finales.
+
+INSTRUCCIONES DE CONVERSACIÓN:
+- Responde en español, máximo 250 palabras. Sé directo y específico.
+- Cuando el asesor te proporcione información nueva para el cubo, grábala AL FINAL con bloques delta:
+  [CUBO:seccion]SOLO el contenido nuevo — no repitas lo que ya está[/CUBO]
+  Secciones válidas: contexto | areas_procesos | organigrama | sistemas | brechas | agentes
+- Los bloques [CUBO] son ADITIVOS — el sistema agrega el contenido nuevo al final de la sección.
+- No incluyas bloques [CUBO] si no hay información nueva que guardar.
+- Si el asesor pregunta qué falta, dale una lista concreta y priorizada.`;
+
+    const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 55_000 });
+    const recentHistory = history.slice(-12).filter((m: any) => m.content?.trim());
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [
+        ...recentHistory.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user' as const, content: mensaje },
+      ],
+    });
+
+    const rawText = (response.content.find((b: any) => b.type === 'text') as any)?.text ?? '';
+    const { cleanText, updates } = parseCuboBlocks(rawText);
+
+    const sectionsUpdated: string[] = [];
+    if (updates.length > 0) {
+      for (const { seccion, contenido } of updates) {
+        const existing = (cubo[seccion] ?? '').trim();
+        cubo = { ...cubo, [seccion]: existing ? `${existing}\n\n${contenido}` : contenido };
+        sectionsUpdated.push(seccion);
+      }
+      try {
+        await this.prisma.mentoriaCliente.update({ where: { id: clienteId }, data: { cubo: cubo as any } });
+      } catch (e) {
+        this.logger.warn(`Error guardando cubo desde sesión maestra: ${(e as any)?.message}`);
+      }
+    }
+
+    // Guardar historial de sesión maestra
+    const newHistory: ChatEntry[] = [
+      ...history,
+      { role: 'user', content: mensaje, ts: new Date().toISOString() },
+      { role: 'assistant', content: cleanText, ts: new Date().toISOString() },
+    ];
+    try {
+      await this.prisma.mentoriaCliente.update({
+        where: { id: clienteId },
+        data: { chats_agente: { ...chatsAgente, sesion_maestra: newHistory } as any },
+      });
+    } catch (e) {
+      this.logger.warn(`Error guardando sesión maestra: ${(e as any)?.message}`);
+    }
+
+    return { text: cleanText, sections_updated: sectionsUpdated, cubo };
+  }
+
+  async getSesionMaestraHistory(tenantId: string, clienteId: string): Promise<ChatEntry[]> {
+    const cliente = await this.prisma.mentoriaCliente.findFirst({
+      where: { id: clienteId, tenant_id: tenantId },
+      select: { chats_agente: true },
+    });
+    return ((cliente?.chats_agente as any)?.sesion_maestra ?? []) as ChatEntry[];
   }
 }

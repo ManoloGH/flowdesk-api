@@ -520,6 +520,32 @@ export class MentoriaController {
     return { ok: true };
   }
 
+  // ── SESIÓN MAESTRA ─────────────────────────────────────────────────────────────
+
+  @Get('clientes/:id/sesion-maestra/history')
+  async getSesionMaestraHistory(@Req() req: any, @Param('id') id: string): Promise<any[]> {
+    return this.agentes.getSesionMaestraHistory(req.user.tenant_id, id);
+  }
+
+  @Post('clientes/:id/sesion-maestra/chat')
+  async chatSesionMaestra(@Req() req: any, @Param('id') id: string, @Body() body: { mensaje: string }) {
+    try {
+      return await this.agentes.chatSesionMaestra({
+        tenantId: req.user.tenant_id,
+        clienteId: id,
+        mensaje: body.mensaje,
+      });
+    } catch (e: any) {
+      throw new HttpException(e?.message ?? 'Error en Sesión Maestra', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Delete('clientes/:id/sesion-maestra/history')
+  async clearSesionMaestraHistory(@Req() req: any, @Param('id') id: string) {
+    await this.agentes.clearHistory(req.user.tenant_id, id, 'sesion_maestra');
+    return { ok: true };
+  }
+
   @Public()
   @Get('publico/sesion/:token')
   async getSesionPublica(@Param('token') token: string) {
