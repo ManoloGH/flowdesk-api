@@ -284,7 +284,7 @@ Genera el documento completo. En systems_questions incluye 4-6 preguntas especí
       maxTokens: 8192,
     });
 
-    const rawText = typeof result === 'string' ? result : (result as any).content ?? '';
+    const rawText = typeof result === 'string' ? result : result.response ?? '';
     const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
     let generated: any = {};
     if (jsonMatch?.[1]) {

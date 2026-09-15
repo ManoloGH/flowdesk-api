@@ -130,6 +130,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get agentClassification() { return this.prisma.agentClassification; }
   get agentDeliverable() { return this.prisma.agentDeliverable; }
   get deliverableResponse() { return this.prisma.deliverableResponse; }
+  get deliverableSkill() { return this.prisma.deliverableSkill; }
+  get deliverableGeneration() { return this.prisma.deliverableGeneration; }
+
+  // ── Agente Sensei ─────────────────────────────────────────────────
+  get senseiSkillProject() { return this.prisma.senseiSkillProject; }
+  get senseiEvidence() { return this.prisma.senseiEvidence; }
+  get senseiMessage() { return this.prisma.senseiMessage; }
+  get senseiIteration() { return this.prisma.senseiIteration; }
   get availableModel() { return this.prisma.availableModel; }
 
   // ── Web Builder ───────────────────────────────────────────────────────────

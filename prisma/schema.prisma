@@ -108,6 +108,9 @@ model Tenant {
   agent_classifications  AgentClassification[]
   agent_deliverables     AgentDeliverable[]
   deliverable_responses  DeliverableResponse[]
+  deliverable_skills      DeliverableSkill[]
+  deliverable_generations DeliverableGeneration[]
+  sensei_skill_projects   SenseiSkillProject[]
   requirements           Requirement[]
   business_rules         BusinessRule[]
   excel_uploads          ExcelUpload[]
@@ -2693,6 +2696,140 @@ model DeliverableResponse {
 
   @@index([tenant_id, deliverable_id])
   @@map("deliverable_responses")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DELIVERABLE SKILLS — Plantillas de documentos formales por tenant
+// Motor: string replace determinista sobre html_template con {{PLACEHOLDERS}}
+// Casos de uso: MEJORA SOC, contratos, cotizaciones, reportes, etc.
+// ═══════════════════════════════════════════════════════════════════
+
+// Plantilla de documento formal (skill de entregable)
+model DeliverableSkill {
+  id             String   @id @default(cuid())
+  tenant_id      String
+  tenant         Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name           String                        // "Mejora SOC", "Contrato de Servicios"
+  description    String?  @db.Text
+  doc_type       String                        // "MEJORA", "CONTRATO", "COTIZACION", etc.
+  output_format  String   @default("HTML")     // "HTML" | "EXCEL" | "WORD"
+  intake_schema  Json                          // [{field, label, type, placeholder, required, default_value, section}]
+  business_rules Json?                         // [{condition, action}]
+  html_template  String?  @db.Text             // HTML con {{PLACEHOLDERS}}
+  fixed_fields   Json?                         // {CLAVE: "R-ISO-147"} — se insertan sin preguntar
+  spec_md        String?  @db.Text             // Documentación de la especificación
+  status         String   @default("draft")    // "draft" | "active" | "deprecated"
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  generations       DeliverableGeneration[]
+  sensei_projects   SenseiSkillProject[]
+
+  @@index([tenant_id])
+  @@map("deliverable_skills")
+}
+
+// Documento generado a partir de una skill (uno por caso/cliente)
+model DeliverableGeneration {
+  id           String          @id @default(cuid())
+  skill_id     String
+  skill        DeliverableSkill @relation(fields: [skill_id], references: [id], onDelete: Cascade)
+  tenant_id    String
+  tenant       Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  intake_data  Json            // {CAMPO: valor} — los datos que se usaron
+  output_html  String?         @db.Text  // HTML final con placeholders reemplazados
+  output_url   String?                   // para archivos (Excel, PDF)
+  public_token String          @unique @default(cuid())
+  client_ref   String?                   // referencia al cliente o caso (libre)
+  generated_by String                    // user id de quien generó
+  created_at   DateTime        @default(now())
+
+  @@index([tenant_id, skill_id])
+  @@map("deliverable_generations")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AGENTE SENSEI — Desarrollador de agentes digitales
+// Capacita agentes para reemplazar tareas humanas
+// ═══════════════════════════════════════════════════════════════════
+
+// Proyecto de capacitación de una skill (una por tarea humana a reemplazar)
+model SenseiSkillProject {
+  id                  String   @id @default(cuid())
+  tenant_id           String
+  tenant              Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  name                String   // "Requerimiento de Sistemas SOC"
+  description         String?  @db.Text
+  who_does_it         String?  // "Analista SOC"
+  frequency           String?  // "3-4 veces por semana"
+  output_type         String   @default("document") // document | action | both
+  task_type           String   @default("document") // document | web | data | decision
+  phase               String   @default("intake")
+  // intake → base_questions → analysis → deep_questions → draft → iterations → certified
+  iteration_count     Int      @default(0)
+  max_iterations      Int      @default(10)
+  system_prompt_piece String?  @db.Text // conocimiento que se inyecta al agente destino
+  deliverable_skill_id String? // FK a DeliverableSkill cuando se certifica
+  deliverable_skill   DeliverableSkill? @relation(fields: [deliverable_skill_id], references: [id])
+  target_agent        String?  // slug del agente que usará este skill (ej: "proyectos-soc")
+  created_by          String
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  evidence   SenseiEvidence[]
+  messages   SenseiMessage[]
+  iterations SenseiIteration[]
+
+  @@index([tenant_id])
+  @@map("sensei_skill_projects")
+}
+
+// Evidencia aportada: documentos aprobados, links Loom, videos
+model SenseiEvidence {
+  id         String             @id @default(cuid())
+  project_id String
+  project    SenseiSkillProject @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  type       String             // document | loom_link | video
+  label      String?
+  url        String?            @db.Text
+  filename   String?
+  size_bytes Int?
+  analyzed   Boolean            @default(false)
+  analysis   String?            @db.Text // análisis de Sensei sobre esta evidencia
+  created_at DateTime           @default(now())
+
+  @@index([project_id])
+  @@map("sensei_evidence")
+}
+
+// Mensajes del chat con Sensei (Claude)
+model SenseiMessage {
+  id         String             @id @default(cuid())
+  project_id String
+  project    SenseiSkillProject @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  role       String             // user | assistant
+  content    String             @db.Text
+  phase      String             // fase activa al momento del mensaje
+  created_at DateTime           @default(now())
+
+  @@index([project_id])
+  @@map("sensei_messages")
+}
+
+// Cada prueba de la skill durante el refinamiento
+model SenseiIteration {
+  id          String             @id @default(cuid())
+  project_id  String
+  project     SenseiSkillProject @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  number      Int
+  input_data  Json               // inputs usados en la prueba
+  output_html String?            @db.Text // documento generado
+  feedback    String?            @db.Text // retroalimentación del empleado
+  score       Int?               // 1-10
+  approved    Boolean            @default(false)
+  created_at  DateTime           @default(now())
+
+  @@index([project_id])
+  @@map("sensei_iterations")
 }
 
 // ═══════════════════════════════════════════════════════════════════

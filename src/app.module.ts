@@ -57,6 +57,8 @@ import { CommunicationsModule } from './modules/communications/communications.mo
 import { MicroDiagnosticoModule } from './modules/micro-diagnostico/micro-diagnostico.module';
 import { SocModule } from './modules/soc/soc.module';
 import { ProyectosSocModule } from './modules/proyectos-soc/proyectos-soc.module';
+import { DeliverableSkillsModule } from './modules/deliverable-skills/deliverable-skills.module';
+import { SenseiModule } from './modules/sensei/sensei.module';
 import { ErpAreasModule } from './modules/erp-areas/erp-areas.module';
 import { EmailModule } from './modules/email/email.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -153,6 +155,8 @@ import { RolesGuard } from './modules/auth/guards/roles.guard';
     MicroDiagnosticoModule,
     SocModule,
     ProyectosSocModule,
+    DeliverableSkillsModule,
+    SenseiModule,
     ErpAreasModule,
   ],
   providers: [

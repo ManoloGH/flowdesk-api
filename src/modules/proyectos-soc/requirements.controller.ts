@@ -1,13 +1,30 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { RequirementsService } from './requirements.service';
+import { RequirementsAgentService } from './requirements-agent.service';
 import { CreateRequirementDto, UpdateRequirementDto, UpdateRequirementStatusDto, GenerateRequirementDocDto } from './dto/requirement.dto';
 
 @ApiTags('Proyectos SOC — Requerimientos')
 @ApiBearerAuth()
 @Controller('proyectos-soc/requirements')
 export class RequirementsController {
-  constructor(private service: RequirementsService) {}
+  constructor(
+    private service: RequirementsService,
+    private agent: RequirementsAgentService,
+  ) {}
+
+  @Post('chat')
+  @ApiOperation({ summary: 'Chat con el agente de requerimientos (genera R-ISO-147)' })
+  chat(
+    @Request() req: any,
+    @Body() dto: {
+      message: string;
+      requirement_id?: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    },
+  ) {
+    return this.agent.chat(req.user.tenant_id, req.user.slot_id, dto);
+  }
 
   @Get()
   @ApiOperation({ summary: 'Listar requerimientos del tenant' })
